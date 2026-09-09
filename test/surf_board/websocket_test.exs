@@ -23,10 +23,9 @@ defmodule SurfBoard.V2.WebSocketTest do
 
     test "has expected default state fields" do
       state = %WebSocket{}
-      assert state.next_id == 1
       assert state.pending == %{}
-      assert state.queued == []
-      assert state.websocket == nil
+      assert state.wire == nil
+      assert state.subscribers_table == nil
     end
   end
 end

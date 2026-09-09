@@ -3,7 +3,9 @@ defmodule SurfBoard.Transport.PerSession.Actor do
 
   # Single GenServer per session. Owns:
   #
-  #   * the raw Mint WebSocket (conn + ref + websocket)
+  #   * the raw Mint WebSocket, via `SurfBoard.Transport.WireSocket`
+  #     (shared plumbing with `SurfBoard.WebSocket` — see that module's
+  #     moduledoc for why this actor doesn't just delegate to it)
   #   * per-session state (pending_calls, find_waiters, load_waiters,
   #     page_ready_waiter, frame_stack, frame_contexts, last_page_id)
   #
@@ -22,22 +24,17 @@ defmodule SurfBoard.Transport.PerSession.Actor do
   require Logger
 
   alias SurfBoard.Transport.Common
+  alias SurfBoard.Transport.WireSocket
   alias SurfBoard.Drivers.CDP.Wire
 
   defstruct [
-    # ----- Connection state (was WebSocket) -----
-    :conn,
-    :ref,
-    :websocket,
-    :status,
+    :wire,
     # ----- Per-session state (was Session) -----
     :session,
     :owner_ref,
     :teardown_fun,
     :page_ready_waiter,
     :last_page_id,
-    next_id: 1,
-    queued: [],
     pending_calls: %{},
     loads: %{},
     load_waiters: [],
@@ -97,19 +94,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
     Process.flag(:trap_exit, true)
     ref = Process.monitor(owner)
 
-    uri = URI.parse(ws_url)
-    http_scheme = if uri.scheme in ["wss", "https"], do: :https, else: :http
-    ws_scheme = if uri.scheme in ["wss", "https"], do: :wss, else: :ws
-    port = uri.port || if(http_scheme == :https, do: 443, else: 80)
-    path = (uri.path || "/") <> if(uri.query, do: "?#{uri.query}", else: "")
-
-    # See `SurfBoard.WebSocket.init/1` for the rationale on the
-    # explicit `Host: localhost` header — Chromium 148 rejects upgrades
-    # whose Host isn't `localhost` or an IP literal.
-    upgrade_headers = [{"host", "localhost"}]
-
-    with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, mint_ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers),
+    with {:ok, wire} <- WireSocket.connect(ws_url),
          {:ok, %SurfBoard.Session{} = session} <- init_fun.() do
       session = %{session | pid: self()}
 
@@ -120,8 +105,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
       end
 
       state = %__MODULE__{
-        conn: conn,
-        ref: mint_ref,
+        wire: wire,
         session: session,
         owner_ref: ref,
         teardown_fun: teardown_fun
@@ -129,12 +113,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
 
       {:ok, state}
     else
-      {:error, reason} ->
-        {:stop, {:init_failed, reason}}
-
-      {:error, conn, reason} ->
-        Mint.HTTP.close(conn)
-        {:stop, {:init_failed, {:upgrade_failed, reason}}}
+      {:error, reason} -> {:stop, {:init_failed, reason}}
     end
   end
 
@@ -168,19 +147,10 @@ defmodule SurfBoard.Transport.PerSession.Actor do
     # struct may be stale after focus_window/2).
     opts = override_session_id(opts, state)
 
-    {wire_id, state} = assign_wire_id(state)
-
-    case do_send(state, wire_id, method, params, opts) do
-      {:ok, state} ->
-        t0 = SurfBoard.Bench.Timing.mark_now()
-        pending = Map.put(state.pending_calls, wire_id, {from, t0, method})
-        {:noreply, %{state | pending_calls: pending}}
-
-      {:error, state, reason} ->
-        # Send failed at the WS layer (e.g. socket closed). Reply now;
-        # don't register a pending entry that will never resolve.
-        {:reply, {:error, reason}, state}
-    end
+    t0 = SurfBoard.Bench.Timing.mark_now()
+    {wire_id, wire} = WireSocket.send(state.wire, method, params, opts)
+    pending = Map.put(state.pending_calls, wire_id, {from, t0, method})
+    {:noreply, %{state | wire: wire, pending_calls: pending}}
   end
 
   def handle_call({:subscribe, _event_method, _routing_key}, _from, state) do
@@ -258,41 +228,41 @@ defmodule SurfBoard.Transport.PerSession.Actor do
   @impl true
   def handle_cast({:cdp_cast, method, params, opts}, state) do
     opts = override_session_id(opts, state)
-    {wire_id, state} = assign_wire_id(state)
-
-    case do_send(state, wire_id, method, params, opts) do
-      {:ok, state} ->
-        # No pending entry — response will be dropped when it arrives.
-        {:noreply, state}
-
-      {:error, state, _reason} ->
-        # Best-effort; nothing to report to.
-        {:noreply, state}
-    end
+    # No pending entry — response (via on_reply) will be dropped since
+    # no id in pending_calls matches.
+    {_wire_id, wire} = WireSocket.send(state.wire, method, params, opts)
+    {:noreply, %{state | wire: wire}}
   end
 
   # ----- Inbound: WS frames + timer messages -----
 
   @impl true
   def handle_info(message, state) do
-    case Mint.WebSocket.stream(state.conn, message) do
-      {:ok, conn, responses} ->
-        state = %{state | conn: conn}
-        state = Enum.reduce(responses, state, &process_response/2)
-        {:noreply, state}
+    case WireSocket.handle_message(state.wire, message, state, callbacks()) do
+      {:ok, state, wire} ->
+        {:noreply, %{state | wire: wire}}
 
-      {:error, conn, reason, _responses} ->
+      {:error, reason, state, wire} ->
         Logger.debug(
           "PerSession.Actor transport error pid=#{inspect(self())} reason=#{inspect(reason)}"
         )
 
-        notify_all_pending(state, {:error, :session_closed})
-        {:stop, {:transport_error, reason}, %{state | conn: conn}}
+        state = notify_all_pending(state, {:error, :session_closed})
+        {:stop, {:transport_error, reason}, %{state | wire: wire}}
 
       :unknown ->
         # Not a Mint message — handle our own kinds.
         handle_internal_message(message, state)
     end
+  end
+
+  # ----- WireSocket callbacks -----
+
+  defp callbacks do
+    %{
+      on_reply: &deliver_response/3,
+      on_event: fn method, event, state -> Wire.handle_event(state, method, event) end
+    }
   end
 
   # ----- Internal (non-Mint) messages -----
@@ -325,7 +295,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
   # ----- Termination -----
 
   @impl true
-  def terminate(_reason, %{teardown_fun: fun, session: session, conn: conn})
+  def terminate(_reason, %{teardown_fun: fun, session: session, wire: wire})
       when is_function(fun, 1) do
     try do
       SurfBoard.SessionStore.unregister(session)
@@ -333,7 +303,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
       :exit, _ -> :ok
     end
 
-    if conn, do: Mint.HTTP.close(conn)
+    if wire, do: WireSocket.close(wire)
 
     try do
       fun.(session)
@@ -346,74 +316,14 @@ defmodule SurfBoard.Transport.PerSession.Actor do
     :ok
   end
 
-  def terminate(_reason, %{conn: conn}) do
-    if conn, do: Mint.HTTP.close(conn)
+  def terminate(_reason, %{wire: wire}) do
+    if wire, do: WireSocket.close(wire)
     :ok
   end
 
-  # ----- WS frame processing (was WebSocket.process_response/_frame) -----
-
-  defp process_response({:status, ref, status}, %{ref: ref} = state) do
-    if status != 101 do
-      Logger.error("PerSession.Actor upgrade failed with status #{status}")
-    end
-
-    %{state | status: status}
-  end
-
-  defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do
-    case Mint.WebSocket.new(state.conn, ref, 101, headers) do
-      {:ok, conn, websocket} ->
-        state = %{state | conn: conn, websocket: websocket}
-        flush_queued(state)
-
-      {:error, conn, reason} ->
-        Logger.error("PerSession.Actor handshake failed: #{inspect(reason)}")
-        %{state | conn: conn}
-    end
-  end
-
-  defp process_response({:headers, _ref, _headers}, state), do: state
-
-  defp process_response({:data, ref, data}, %{ref: ref} = state) do
-    case Mint.WebSocket.decode(state.websocket, data) do
-      {:ok, websocket, frames} ->
-        state = %{state | websocket: websocket}
-        Enum.reduce(frames, state, &process_frame/2)
-
-      {:error, websocket, reason} ->
-        Logger.error("PerSession.Actor decode error: #{inspect(reason)}")
-        %{state | websocket: websocket}
-    end
-  end
-
-  defp process_response(_response, state), do: state
-
-  defp process_frame({:text, text}, state) do
-    case Jason.decode(text) do
-      {:ok, %{"id" => id} = response} ->
-        deliver_response(state, id, response)
-
-      {:ok, %{"method" => method} = event} ->
-        Wire.handle_event(state, method, event)
-
-      {:error, _} ->
-        Logger.warning("PerSession.Actor invalid JSON: #{inspect(String.slice(text, 0, 200))}")
-
-        state
-    end
-  end
-
-  defp process_frame({:close, _code, _reason}, state) do
-    notify_all_pending(state, {:error, :websocket_closed})
-    state
-  end
-
-  defp process_frame(_frame, state), do: state
-
   # ----- Response delivery -----
 
-  defp deliver_response(state, id, response) do
+  defp deliver_response(id, result, state) do
     case Map.pop(state.pending_calls, id) do
       {nil, _} ->
         # Fire-and-forget cast or stale id. Drop.
@@ -421,81 +331,12 @@ defmodule SurfBoard.Transport.PerSession.Actor do
 
       {{from, t0, method}, pending} ->
         SurfBoard.Bench.Timing.record(t0, method)
-        GenServer.reply(from, parse_response(response))
+        GenServer.reply(from, result)
         %{state | pending_calls: pending}
     end
   end
 
-  # ----- Wire frame send -----
-
-  defp assign_wire_id(state) do
-    {state.next_id, %{state | next_id: state.next_id + 1}}
-  end
-
-  defp do_send(%{websocket: nil} = state, id, method, params, opts) do
-    # Connection still upgrading. Queue the frame; flushed when 101
-    # arrives.
-    queued = state.queued ++ [{id, method, params, opts}]
-    {:ok, %{state | queued: queued}}
-  end
-
-  defp do_send(state, id, method, params, opts) do
-    message = build_message(id, method, params, opts) |> Jason.encode!()
-    send_frame(state, {:text, message})
-  end
-
-  defp build_message(id, method, params, opts) do
-    base = %{id: id, method: method, params: params}
-
-    cond do
-      Keyword.get(opts, :flat_session_id) ->
-        Map.put(base, :sessionId, Keyword.fetch!(opts, :session_id))
-
-      session_id = Keyword.get(opts, :session_id) ->
-        %{base | params: Map.put(params, :sessionId, session_id)}
-
-      true ->
-        base
-    end
-  end
-
-  defp send_frame(state, frame) do
-    case Mint.WebSocket.encode(state.websocket, frame) do
-      {:ok, websocket, data} ->
-        case Mint.WebSocket.stream_request_body(state.conn, state.ref, data) do
-          {:ok, conn} ->
-            {:ok, %{state | conn: conn, websocket: websocket}}
-
-          {:error, conn, reason} ->
-            {:error, %{state | conn: conn, websocket: websocket}, reason}
-        end
-
-      {:error, websocket, reason} ->
-        {:error, %{state | websocket: websocket}, reason}
-    end
-  end
-
-  defp flush_queued(%{queued: []} = state), do: state
-
-  defp flush_queued(state) do
-    Enum.reduce(state.queued, %{state | queued: []}, fn {id, method, params, opts}, acc ->
-      case do_send(acc, id, method, params, opts) do
-        {:ok, acc} ->
-          acc
-
-        {:error, acc, reason} ->
-          # Reply to any caller waiting on this id.
-          case Map.pop(acc.pending_calls, id) do
-            {nil, _} ->
-              acc
-
-            {{from, _t0, _method}, rest} ->
-              GenServer.reply(from, {:error, reason})
-              %{acc | pending_calls: rest}
-          end
-      end
-    end)
-  end
+  # ----- Helpers -----
 
   defp override_session_id(opts, state) do
     case Keyword.fetch(opts, :session_id) do
@@ -515,14 +356,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
         _, _ -> :ok
       end
     end)
+
+    state
   end
-
-  defp parse_response(%{"error" => error, "message" => message}) when is_binary(error),
-    do: {:error, {error, message}}
-
-  defp parse_response(%{"error" => %{"message" => message} = error}),
-    do: {:error, {Map.get(error, "code", "unknown"), message}}
-
-  defp parse_response(%{"result" => result}), do: {:ok, result}
-  defp parse_response(other), do: {:ok, other}
 end

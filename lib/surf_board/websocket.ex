@@ -1,8 +1,8 @@
 defmodule SurfBoard.WebSocket do
   @moduledoc false
 
-  # New transport layer (the "plexer/demuxer") for CDP and BiDi
-  # WebSocket protocols. Replaces `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
+  # Transport layer (the "plexer/demuxer") for CDP and BiDi WebSocket
+  # protocols. Replaces `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
   # by being deliberately dumber:
   #
   #   * outbound = encode JSON, write bytes, register correlation
@@ -26,19 +26,22 @@ defmodule SurfBoard.WebSocket do
   # The Session that issued a call is identified by passing its `pid`
   # in `cast_send/5`. We stash `wire_id → owner_pid` and reply via
   # `send(owner_pid, {:v2_response, wire_id, result})`.
+  #
+  # The actual Mint-WebSocket connect/upgrade/encode/decode plumbing
+  # lives in `SurfBoard.Transport.WireSocket`, shared with
+  # `SurfBoard.Transport.PerSession.Actor` — this module supplies the
+  # "one socket, many sessions" policy on top of it: the subscriber
+  # table and the owner-pid-keyed pending map.
 
   use GenServer
   require Logger
 
+  alias SurfBoard.Transport.WireSocket
+
   defstruct [
-    :conn,
-    :ref,
-    :websocket,
-    :status,
+    :wire,
     :subscribers_table,
-    next_id: 1,
-    pending: %{},
-    queued: []
+    pending: %{}
   ]
 
   @type routing_key :: String.t() | :global
@@ -140,12 +143,6 @@ defmodule SurfBoard.WebSocket do
 
   @impl true
   def init(ws_url) do
-    uri = URI.parse(ws_url)
-    http_scheme = if uri.scheme in ["wss", "https"], do: :https, else: :http
-    ws_scheme = if uri.scheme in ["wss", "https"], do: :wss, else: :ws
-    port = uri.port || if(http_scheme == :https, do: 443, else: 80)
-    path = (uri.path || "/") <> if(uri.query, do: "?#{uri.query}", else: "")
-
     table =
       :ets.new(:surf_board_v2_subscribers, [
         :set,
@@ -154,25 +151,9 @@ defmodule SurfBoard.WebSocket do
         write_concurrency: true
       ])
 
-    # Chromium 148 tightened DevTools' host allowlist: the upgrade
-    # request must carry `Host: localhost` (or an IP literal) or
-    # Chrome replies 500 "Host header is specified and is not an IP
-    # address or localhost." That bites docker-sibling topologies
-    # where the WS URL targets a hostname like `chrome:9222`.
-    # /json/version discovery already passes Host: localhost; mirror
-    # it here so both legs of the handshake match.
-    upgrade_headers = [{"host", "localhost"}]
-
-    with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers) do
-      {:ok, %__MODULE__{conn: conn, ref: ref, subscribers_table: table}}
-    else
-      {:error, reason} ->
-        {:stop, {:connection_failed, reason}}
-
-      {:error, conn, reason} ->
-        Mint.HTTP.close(conn)
-        {:stop, {:upgrade_failed, reason}}
+    case WireSocket.connect(ws_url) do
+      {:ok, wire} -> {:ok, %__MODULE__{wire: wire, subscribers_table: table}}
+      {:error, reason} -> {:stop, reason}
     end
   end
 
@@ -180,30 +161,12 @@ defmodule SurfBoard.WebSocket do
   def handle_call(
         {:assign_id_and_send, owner_pid, method, params, opts},
         _from,
-        %{websocket: nil} = state
+        state
       ) do
-    # Connection still upgrading. Assign the id now and queue the send.
-    id = state.next_id
     t0 = SurfBoard.Bench.Timing.mark_now()
-    queued = state.queued ++ [{id, owner_pid, method, params, opts}]
+    {id, wire} = WireSocket.send(state.wire, method, params, opts)
     pending = Map.put(state.pending, id, {owner_pid, t0})
-    {:reply, id, %{state | next_id: id + 1, queued: queued, pending: pending}}
-  end
-
-  def handle_call({:assign_id_and_send, owner_pid, method, params, opts}, _from, state) do
-    id = state.next_id
-
-    case do_send(state, id, method, params, opts) do
-      {:ok, state} ->
-        t0 = SurfBoard.Bench.Timing.mark_now()
-        pending = Map.put(state.pending, id, {owner_pid, t0})
-        {:reply, id, %{state | next_id: id + 1, pending: pending}}
-
-      {:error, state, reason} ->
-        # Surface the failure to the owner immediately.
-        send(owner_pid, {:v2_response, id, {:error, reason}})
-        {:reply, id, %{state | next_id: id + 1}}
-    end
+    {:reply, id, %{state | wire: wire, pending: pending}}
   end
 
   def handle_call({:subscribe, event_method, routing_key, subscriber}, _from, state) do
@@ -231,32 +194,23 @@ defmodule SurfBoard.WebSocket do
   end
 
   def handle_call(:close, _from, state) do
-    case send_frame(state, :close) do
-      {:ok, state} ->
-        Mint.HTTP.close(state.conn)
-        {:stop, :normal, :ok, state}
-
-      {:error, state, _reason} ->
-        Mint.HTTP.close(state.conn)
-        {:stop, :normal, :ok, state}
-    end
+    WireSocket.close(state.wire)
+    {:stop, :normal, :ok, state}
   end
 
   @impl true
   def handle_info(message, state) do
-    case Mint.WebSocket.stream(state.conn, message) do
-      {:ok, conn, responses} ->
-        state = %{state | conn: conn}
-        state = Enum.reduce(responses, state, &process_response/2)
-        {:noreply, state}
+    case WireSocket.handle_message(state.wire, message, state, callbacks()) do
+      {:ok, state, wire} ->
+        {:noreply, %{state | wire: wire}}
 
-      {:error, conn, reason, _responses} ->
+      {:error, reason, state, wire} ->
         Logger.warning(
           "WebSocket transport error pid=#{inspect(self())} msg=#{inspect(message)} reason=#{inspect(reason)}"
         )
 
-        notify_all_pending(state, {:error, :session_closed})
-        {:stop, {:transport_error, reason}, %{state | conn: conn}}
+        state = notify_all_pending(state, {:error, :session_closed})
+        {:stop, {:transport_error, reason}, %{state | wire: wire}}
 
       :unknown ->
         {:noreply, state}
@@ -265,90 +219,20 @@ defmodule SurfBoard.WebSocket do
 
   @impl true
   def terminate(_reason, state) do
-    if state.conn, do: Mint.HTTP.close(state.conn)
+    WireSocket.close(state.wire)
     :ok
   end
 
-  # ----- Frame processing -----
+  # ----- WireSocket callbacks -----
 
-  defp process_response({:status, ref, status}, %{ref: ref} = state) do
-    if status != 101 do
-      Logger.error("WebSocket upgrade failed with status #{status}")
-    end
-
-    %{state | status: status}
+  defp callbacks do
+    %{
+      on_reply: &deliver_response/3,
+      on_event: &broadcast_event/3
+    }
   end
 
-  # If the upgrade was rejected (non-101 status), drop body data and
-  # the trailing `:done`. Without this guard, `Mint.WebSocket.decode/2`
-  # would be called with `websocket: nil` and raise on `:buffer`,
-  # masking the real cause (e.g. Chromium 148's Host-header rejection).
-  defp process_response({:data, ref, data}, %{ref: ref, websocket: nil, status: status} = state) do
-    Logger.error(
-      "WebSocket upgrade rejected (status #{status}): #{inspect(String.slice(data, 0, 200))}"
-    )
-
-    state
-  end
-
-  defp process_response({:done, ref}, %{ref: ref, websocket: nil} = state) do
-    state
-  end
-
-  defp process_response({:headers, ref, headers}, %{ref: ref, status: 101} = state) do
-    case Mint.WebSocket.new(state.conn, ref, 101, headers) do
-      {:ok, conn, websocket} ->
-        state = %{state | conn: conn, websocket: websocket}
-        flush_queued(state)
-
-      {:error, conn, reason} ->
-        Logger.error("WebSocket handshake failed: #{inspect(reason)}")
-        %{state | conn: conn}
-    end
-  end
-
-  defp process_response({:headers, _ref, _headers}, state), do: state
-
-  defp process_response({:data, ref, data}, %{ref: ref} = state) do
-    case Mint.WebSocket.decode(state.websocket, data) do
-      {:ok, websocket, frames} ->
-        state = %{state | websocket: websocket}
-        Enum.reduce(frames, state, &process_frame/2)
-
-      {:error, websocket, reason} ->
-        Logger.error("WebSocket decode error: #{inspect(reason)}")
-        %{state | websocket: websocket}
-    end
-  end
-
-  defp process_response(_response, state), do: state
-
-  defp process_frame({:text, text}, state) do
-    case Jason.decode(text) do
-      {:ok, %{"id" => id} = response} ->
-        deliver_response(state, id, response)
-
-      {:ok, %{"method" => method} = event} ->
-        broadcast_event(state, method, event)
-        state
-
-      {:error, _} ->
-        Logger.warning("WebSocket received invalid JSON: #{inspect(String.slice(text, 0, 200))}")
-
-        state
-    end
-  end
-
-  defp process_frame({:close, _code, _reason}, state) do
-    notify_all_pending(state, {:error, :websocket_closed})
-    state
-  end
-
-  defp process_frame(_frame, state), do: state
-
-  # ----- Routing -----
-
-  defp deliver_response(state, id, response) do
+  defp deliver_response(id, result, state) do
     case Map.pop(state.pending, id) do
       {nil, _} ->
         # No registered owner — fire-and-forget cast or stale id. Ignore.
@@ -356,12 +240,12 @@ defmodule SurfBoard.WebSocket do
 
       {{owner_pid, t0}, pending} ->
         SurfBoard.Bench.Timing.record(t0)
-        send(owner_pid, {:v2_response, id, parse_response(response)})
+        send(owner_pid, {:v2_response, id, result})
         %{state | pending: pending}
     end
   end
 
-  defp broadcast_event(state, method, event) do
+  defp broadcast_event(method, event, state) do
     keys =
       [
         event["sessionId"],
@@ -381,6 +265,8 @@ defmodule SurfBoard.WebSocket do
     Enum.each(session_pids ++ global_pids, fn pid ->
       send(pid, {:v2_event, method, event})
     end)
+
+    state
   end
 
   defp lookup_subs(table, key) do
@@ -394,73 +280,7 @@ defmodule SurfBoard.WebSocket do
     Enum.each(state.pending, fn {id, {owner_pid, _t0}} ->
       send(owner_pid, {:v2_response, id, reply})
     end)
+
+    state
   end
-
-  # ----- Send helpers -----
-
-  defp do_send(state, id, method, params, opts) do
-    message = build_message(id, method, params, opts) |> Jason.encode!()
-    send_frame(state, {:text, message})
-  end
-
-  defp build_message(id, method, params, opts) do
-    base = %{id: id, method: method, params: params}
-
-    cond do
-      Keyword.get(opts, :flat_session_id) ->
-        Map.put(base, :sessionId, Keyword.fetch!(opts, :session_id))
-
-      session_id = Keyword.get(opts, :session_id) ->
-        # Non-flat: place sessionId inside params (legacy CDP form).
-        %{base | params: Map.put(params, :sessionId, session_id)}
-
-      true ->
-        base
-    end
-  end
-
-  defp flush_queued(%{queued: []} = state), do: state
-
-  defp flush_queued(state) do
-    Enum.reduce(state.queued, %{state | queued: []}, fn {id, owner_pid, method, params, opts},
-                                                        acc ->
-      case do_send(acc, id, method, params, opts) do
-        {:ok, acc} ->
-          acc
-
-        {:error, acc, reason} ->
-          send(owner_pid, {:v2_response, id, {:error, reason}})
-          %{acc | pending: Map.delete(acc.pending, id)}
-      end
-    end)
-  end
-
-  defp send_frame(state, frame) do
-    case Mint.WebSocket.encode(state.websocket, frame) do
-      {:ok, websocket, data} ->
-        case Mint.WebSocket.stream_request_body(state.conn, state.ref, data) do
-          {:ok, conn} ->
-            {:ok, %{state | conn: conn, websocket: websocket}}
-
-          {:error, conn, reason} ->
-            {:error, %{state | conn: conn, websocket: websocket}, reason}
-        end
-
-      {:error, websocket, reason} ->
-        {:error, %{state | websocket: websocket}, reason}
-    end
-  end
-
-  # ----- Response parsing -----
-
-  # BiDi error: {"error": "string", "message": "..."}
-  defp parse_response(%{"error" => error, "message" => message}) when is_binary(error),
-    do: {:error, {error, message}}
-
-  # CDP error: {"error": {"code": -32000, "message": "..."}}
-  defp parse_response(%{"error" => %{"message" => message} = error}),
-    do: {:error, {Map.get(error, "code", "unknown"), message}}
-
-  defp parse_response(%{"result" => result}), do: {:ok, result}
-  defp parse_response(other), do: {:ok, other}
 end
