@@ -1,0 +1,13 @@
+/_build
+/cover
+/deps
+erl_crash.dump
+*.ez
+/.tool-versions-e
+
+/screenshots
+/doc
+.claude/
+/chrome/
+.browsers/
+/priv/bidi-server/node_modules/
