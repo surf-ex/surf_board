@@ -1,11 +1,11 @@
-defmodule Surfboard.Integration.SessionCase do
+defmodule SurfBoard.Integration.SessionCase do
   @moduledoc false
   use ExUnit.CaseTemplate
 
   using do
     quote do
-      use Surfboard.DSL
-      import Surfboard.Integration.SessionCase
+      use SurfBoard.DSL
+      import SurfBoard.Integration.SessionCase
     end
   end
 
@@ -18,7 +18,7 @@ defmodule Surfboard.Integration.SessionCase do
     # A little retry room for BiDi's chromium-bidi singleton to settle
     # on a slow first boot — same shape as wallabidi's own integration
     # harness.
-    retry(4, fn -> Surfboard.start_session(opts) end)
+    retry(4, fn -> SurfBoard.start_session(opts) end)
   end
 
   @doc """
@@ -34,7 +34,7 @@ defmodule Surfboard.Integration.SessionCase do
 
     on_exit(fn ->
       try do
-        Surfboard.end_session(session)
+        SurfBoard.end_session(session)
       catch
         :exit, _ -> :ok
       end

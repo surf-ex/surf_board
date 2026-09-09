@@ -1,4 +1,4 @@
-// Surfboard BiDi server runner.
+// SurfBoard BiDi server runner.
 //
 // Spawns the chromium-bidi WebSocket server on the requested PORT, with the
 // Chrome binary at BROWSER_BIN. Logs "Listening on port=NNNN" on stderr once
@@ -19,19 +19,19 @@ import {WebSocketServer, debugInfo} from 'chromium-bidi/bidiServer/WebSocketServ
 // BEAM-side launcher then sees just "exit_status=1, buffer=''" which is
 // useless for debugging. These handlers print the reason to stderr first.
 process.on('unhandledRejection', (reason) => {
-  process.stderr.write(`surfboard-bidi-server: unhandledRejection: ${reason?.stack || reason}\n`);
+  process.stderr.write(`surf-board-bidi-server: unhandledRejection: ${reason?.stack || reason}\n`);
 });
 process.on('uncaughtException', (err) => {
-  process.stderr.write(`surfboard-bidi-server: uncaughtException: ${err?.stack || err}\n`);
+  process.stderr.write(`surf-board-bidi-server: uncaughtException: ${err?.stack || err}\n`);
 });
 
 const port = process.env.PORT ? Number(process.env.PORT) : 8080;
 const verbose = process.env.VERBOSE === 'true';
 
-debugInfo(`Launching Surfboard BiDi server on port ${port}...`);
+debugInfo(`Launching SurfBoard BiDi server on port ${port}...`);
 
 const server = new WebSocketServer(port, verbose);
 
 // chromium-bidi's WebSocketServer logs its own readiness; we mirror it on
 // stderr so the BEAM-side launcher can synchronize on a known string.
-process.stderr.write(`surfboard-bidi-server: ready on port=${port}\n`);
+process.stderr.write(`surf-board-bidi-server: ready on port=${port}\n`);

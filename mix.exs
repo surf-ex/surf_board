@@ -1,13 +1,13 @@
-defmodule Surfboard.MixProject do
+defmodule SurfBoard.MixProject do
   use Mix.Project
 
-  @source_url "https://github.com/u2i/surfboard"
+  @source_url "https://github.com/u2i/surf_board"
   @version "0.1.0"
   @maintainers ["Tom Clarke"]
 
   def project do
     [
-      app: :surfboard,
+      app: :surf_board,
       version: @version,
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -25,19 +25,19 @@ defmodule Surfboard.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger], mod: {Surfboard, []}]
+    [extra_applications: [:logger], mod: {SurfBoard, []}]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support", "integration_test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # SURFBOARD_INTEGRATION=1 mix test switches the whole suite root to
+  # SURF_BOARD_INTEGRATION=1 mix test switches the whole suite root to
   # integration_test/cases (real Chrome/Lightpanda/BiDi against a local
   # fixture server) instead of the default unit suite under test/. Kept
   # as an opt-in env var, not a separate Mix env, so `mix test` alone
   # (CI's default) never needs real browsers.
   defp test_paths do
-    if System.get_env("SURFBOARD_INTEGRATION") == "1" do
+    if System.get_env("SURF_BOARD_INTEGRATION") == "1" do
       ["integration_test/cases"]
     else
       ["test"]
@@ -63,7 +63,7 @@ defmodule Surfboard.MixProject do
   defp package do
     [
       # Don't ship priv/bidi-server/node_modules — consumers run `npm install`
-      # via `mix surfboard.install` after pulling the package. Including
+      # via `mix surf_board.install` after pulling the package. Including
       # node_modules pushes the tarball past Hex's 8 MB limit.
       files: [
         "lib",
@@ -74,10 +74,10 @@ defmodule Surfboard.MixProject do
         "priv/run_command.sh",
         # Bootstrap reads this at compile time via @external_resource
         # — it must be in the tarball so the consumer's compile sees it.
-        # priv/surfboard.min.js is a build artifact (`mix surfboard.minify`)
+        # priv/surf_board.min.js is a build artifact (`mix surf_board.minify`)
         # not yet generated for this extraction — ship the readable source
         # only until that's run.
-        "priv/surfboard.js",
+        "priv/surf_board.js",
         "priv/bidi-server/package.json",
         "priv/bidi-server/package-lock.json",
         "priv/bidi-server/run.mjs"

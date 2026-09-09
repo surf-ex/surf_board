@@ -1,10 +1,10 @@
-defmodule Surfboard.Integration.ChromeCDPSmokeTest do
+defmodule SurfBoard.Integration.ChromeCDPSmokeTest do
   @moduledoc """
-  Smoke test for the Chrome CDP driver against the surfboard public API
-  (Surfboard.DSL / Surfboard.Browser), driven by a real Chrome instance.
+  Smoke test for the Chrome CDP driver against the surf_board public API
+  (SurfBoard.DSL / SurfBoard.Browser), driven by a real Chrome instance.
   Not exhaustive — just enough to trust the extraction stands on its own.
   """
-  use Surfboard.Integration.SessionCase, async: false
+  use SurfBoard.Integration.SessionCase, async: false
 
   @moduletag driver: :chrome_cdp
   @moduletag :chrome_cdp
@@ -13,17 +13,17 @@ defmodule Surfboard.Integration.ChromeCDPSmokeTest do
     visit(session, "/index.html")
 
     assert current_url(session) =~ "/index.html"
-    assert page_title(session) == "Surfboard Fixture"
+    assert page_title(session) == "SurfBoard Fixture"
   end
 
   test "find + text + attribute", %{session: session} do
     visit(session, "/index.html")
 
     header = find(session, Query.css("#header"))
-    assert Surfboard.Element.text(header) == "Surfboard Fixture"
+    assert SurfBoard.Element.text(header) == "SurfBoard Fixture"
 
     link = find(session, Query.css("#the-link"))
-    assert Surfboard.Element.attr(link, "href") =~ "/other.html"
+    assert SurfBoard.Element.attr(link, "href") =~ "/other.html"
   end
 
   test "click", %{session: session} do

@@ -1,4 +1,4 @@
-defmodule Surfboard.SettingsTestHelpers do
+defmodule SurfBoard.SettingsTestHelpers do
   @moduledoc """
   Test helpers for working with app environments
   """

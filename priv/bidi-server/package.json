@@ -1,8 +1,8 @@
 {
-  "name": "surfboard-bidi-server",
+  "name": "surf-board-bidi-server",
   "version": "0.0.1",
   "private": true,
-  "description": "Bundled chromium-bidi server for Surfboard BiDi driver. Starts a WebSocket server (default port 8080) that translates BiDi to CDP, talking directly to a Chrome/Chromium instance — no chromedriver in the loop.",
+  "description": "Bundled chromium-bidi server for SurfBoard BiDi driver. Starts a WebSocket server (default port 8080) that translates BiDi to CDP, talking directly to a Chrome/Chromium instance — no chromedriver in the loop.",
   "type": "module",
   "scripts": {
     "start": "node run.mjs"

@@ -1,4 +1,4 @@
-defmodule Surfboard.Integration.FixtureServer do
+defmodule SurfBoard.Integration.FixtureServer do
   @moduledoc false
 
   # Plain static-file server for the integration smoke suite — serves

@@ -1,4 +1,4 @@
-defmodule Surfboard.Integration.LiveViewAwareTest do
+defmodule SurfBoard.Integration.LiveViewAwareTest do
   @moduledoc """
   Verifies the `live_view_aware` opt-in surgery end-to-end (see commit
   completing the JS-side gating of installLvHook/onPatchEnd). Doesn't
@@ -8,11 +8,11 @@ defmodule Surfboard.Integration.LiveViewAwareTest do
   installLvHook to wrap). This checks the bootstrap's own
   detection/hook-install logic, not a real LiveView round-trip.
 
-  window.__w.lvHooked (surfboard.js's W.lvHooked) is the ground truth:
+  window.__w.lvHooked (surf_board.js's W.lvHooked) is the ground truth:
   true once installLvHook() has run, false if detectReady() took the
   non-LV path instead.
   """
-  use Surfboard.Integration.SessionCase, async: false
+  use SurfBoard.Integration.SessionCase, async: false
 
   @moduletag :chrome_cdp
   @moduletag skip_test_session: true
@@ -29,7 +29,7 @@ defmodule Surfboard.Integration.LiveViewAwareTest do
       assert hooked == false
     end)
 
-    Surfboard.end_session(session)
+    SurfBoard.end_session(session)
   end
 
   test "live_view_aware: true installs the onPatchEnd hook on a LiveView-shaped page" do
@@ -42,7 +42,7 @@ defmodule Surfboard.Integration.LiveViewAwareTest do
       assert hooked == true
     end)
 
-    Surfboard.end_session(session)
+    SurfBoard.end_session(session)
   end
 
   test "live_view_aware: true on a PLAIN (non-LiveView-shaped) page never installs the hook" do
@@ -55,6 +55,6 @@ defmodule Surfboard.Integration.LiveViewAwareTest do
       assert hooked == false
     end)
 
-    Surfboard.end_session(session)
+    SurfBoard.end_session(session)
   end
 end
