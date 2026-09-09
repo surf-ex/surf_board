@@ -128,7 +128,7 @@ defmodule Surfboard.Transport.BiDi do
   # any payload it sends comes back as a `script.message` event that
   # the SessionActor decodes into find / page_ready dispatches.
   defp install_bootstrap(session) do
-    fn_decl = Surfboard.Bootstrap.bidi_preload()
+    fn_decl = Surfboard.Bootstrap.bidi_preload(session.live_view_aware?)
     channel_arg = [%{"type" => "channel", "value" => %{"channel" => "__surfboard"}}]
 
     case Protocol.cdp_send(

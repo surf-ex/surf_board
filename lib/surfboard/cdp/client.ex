@@ -124,7 +124,7 @@ defmodule Surfboard.CDP.Client do
     cdp_cast(session, "Runtime.addBinding", %{name: "__surfboard"})
 
     cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
-      source: Surfboard.Bootstrap.cdp_iife()
+      source: Surfboard.Bootstrap.cdp_iife(session.live_view_aware?)
     })
 
     case cdp_send(session, "Page.getFrameTree", %{}) do

@@ -950,7 +950,13 @@ function markReady(reason) {
 }
 
 function detectReady() {
-  if (!document.querySelector('[data-phx-session]')) {
+  // A LiveView-shaped page (has [data-phx-session]) under a session
+  // that didn't opt into live_view_aware: true is treated exactly like
+  // a non-LV page for readiness purposes — the onPatchEnd hook is never
+  // installed, so W.observedPatch can never become true here. Falling
+  // through to the LV branch below would hang forever waiting for a
+  // signal that will never arrive.
+  if (!document.querySelector('[data-phx-session]') || !__surfboardLiveViewAware) {
     transition('NonLVReady');
     return markReady('non-lv');
   }

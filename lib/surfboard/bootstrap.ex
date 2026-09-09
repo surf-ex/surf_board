@@ -26,14 +26,26 @@ defmodule Surfboard.Bootstrap do
            _ -> File.read!(@bootstrap_src_path)
          end)
 
-  @cdp_iife "(function() {\n" <> @body <> "\n})()"
-  @bidi_preload "(__surfboard) => {\n" <> @body <> "\n}"
+  @doc """
+  CDP form: IIFE that assumes `__surfboard` is a global binding.
 
-  @doc "CDP form: IIFE that assumes `__surfboard` is a global binding."
-  def cdp_iife, do: @cdp_iife
+  `live_view_aware?` gates the LiveView `onPatchEnd` hook inside the
+  bootstrap body (see priv/surfboard.js's `detectReady`/`installLvHook`)
+  — false by default, so a plain scraping/automation session never
+  activates LiveView-patch tracking, even on a LiveView page.
+  """
+  def cdp_iife(live_view_aware? \\ false) do
+    "(function() {\nvar __surfboardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
+      @body <> "\n})()"
+  end
 
   @doc "BiDi form: arrow function receiving `__surfboard` as channel parameter."
-  def bidi_preload, do: @bidi_preload
+  def bidi_preload(live_view_aware? \\ false) do
+    "(__surfboard) => {\nvar __surfboardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
+      @body <> "\n}"
+  end
+
+  defp live_view_flag(flag), do: Jason.encode!(!!flag)
 
   @doc """
   Build a JS expression that calls `window.__w.registerQuery(id, ops,
