@@ -39,7 +39,7 @@ defmodule SurfBoard.Wire.BiDi do
   def handle_event(state, "script.message", event) do
     params = Map.get(event, "params", %{})
 
-    if params["channel"] == "__surf_board" do
+    if params["channel"] == "__surfboard" do
       payload = get_in(params, ["data", "value"]) || ""
       Common.route_bootstrap_payload(state, payload)
     else

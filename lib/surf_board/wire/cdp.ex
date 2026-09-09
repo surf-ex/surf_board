@@ -82,7 +82,7 @@ defmodule SurfBoard.Wire.CDP do
   def handle_event(state, "Runtime.bindingCalled", event) do
     params = Map.get(event, "params", %{})
 
-    if params["name"] == "__surf_board" and is_binary(params["payload"]) do
+    if params["name"] == "__surfboard" and is_binary(params["payload"]) do
       Common.route_bootstrap_payload(state, params["payload"])
     else
       state

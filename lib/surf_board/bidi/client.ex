@@ -330,7 +330,7 @@ defmodule SurfBoard.BiDi.Client do
           {:ok, %{"error" => "stale_reference"}} ->
             {:error, :stale_reference}
 
-          {:ok, %{"value" => %{"__surf_board_stale" => true}}} ->
+          {:ok, %{"value" => %{"__surfboard_stale" => true}}} ->
             {:error, :stale_reference}
 
           {:ok, %{"value" => v}} ->
@@ -373,9 +373,9 @@ defmodule SurfBoard.BiDi.Client do
       {:ok, result} ->
         case decode_eval_result(result) do
           # call_on_element callers can opt into the stale sentinel by
-          # returning `{__surf_board_stale: true}` — translate it here so
+          # returning `{__surfboard_stale: true}` — translate it here so
           # they don't all repeat the same pattern.
-          {:ok, %{"__surf_board_stale" => true}} -> {:error, :stale_reference}
+          {:ok, %{"__surfboard_stale" => true}} -> {:error, :stale_reference}
           other -> other
         end
 

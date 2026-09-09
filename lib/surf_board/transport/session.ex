@@ -47,7 +47,7 @@ defmodule SurfBoard.Transport.Session do
     #   1. Caller calls register_find(query_id, timeout) — stashes
     #      a {:pending, timeout_ref, nil} entry.
     #   2. Caller fires JS that injects a query into window.__w.queries
-    #      and arranges for __surf_board(...) to be called when matched.
+    #      and arranges for __surfboard(...) to be called when matched.
     #   3. The Runtime.bindingCalled event arrives here as a v2_event;
     #      we transition to {:resolved, result}.
     #   4. Caller calls await_find_result(query_id) — either gets the
@@ -55,7 +55,7 @@ defmodule SurfBoard.Transport.Session do
     #      when the binding fires.
     find_waiters: %{},
     # Page-ready tracking. The bootstrap fires
-    # __surf_board(JSON.stringify({type: "page_ready", pageId: ...}))
+    # __surfboard(JSON.stringify({type: "page_ready", pageId: ...}))
     # whenever a new document parses or LiveView applies a patch (the
     # patch hook bumps pageId). Captures the most-recent pageId so the
     # click flow can capture pre_page_id BEFORE issuing the click and
@@ -236,7 +236,7 @@ defmodule SurfBoard.Transport.Session do
   arrives before the waiter is registered.
 
   After this returns, fire whatever JS injects the query and calls
-  `__surf_board(...)` — when the matching `Runtime.bindingCalled` event
+  `__surfboard(...)` — when the matching `Runtime.bindingCalled` event
   arrives the waiter transitions to `{:resolved, payload}`.
   """
   @spec register_find(SurfBoard.Session.t(), String.t(), timeout) :: :ok
@@ -251,7 +251,7 @@ defmodule SurfBoard.Transport.Session do
   Block until the find waiter registered by `register_find/3` resolves.
 
   Returns the binding payload (the parsed JSON the JS passed to
-  `__surf_board(...)`) on success, or `{:timeout, 0}` on timeout.
+  `__surfboard(...)`) on success, or `{:timeout, 0}` on timeout.
   """
   @spec await_find_result(SurfBoard.Session.t(), String.t(), timeout) ::
           {:ok, term} | {:timeout, 0} | {:error, term}

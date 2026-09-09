@@ -35,7 +35,7 @@ defmodule SurfBoard.Transport.Protocol do
   #   * `{:await_page_ready_after, pre_page_id, timeout_ms}` → blocks
   #     until the bootstrap reports a different `pageId`.
   #   * `{:await_find_result, query_id}` → blocks until the bootstrap
-  #     fires `__surf_board(...)` for that query id.
+  #     fires `__surfboard(...)` for that query id.
   #   * `{:register_find, query_id, timeout_ms}` → reserves a
   #     find-waiter slot before the JS that fires the binding runs.
   #   * `:current_context_id` → returns the focused frame's

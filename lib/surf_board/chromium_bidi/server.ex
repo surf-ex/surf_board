@@ -144,8 +144,8 @@ defmodule SurfBoard.ChromiumBiDi.Server do
           state
       end
 
-    if String.contains?(buffer, "surf_board-bidi-server: ready on port=") do
-      case Regex.run(~r/surf_board-bidi-server: ready on port=(\d+)/, buffer) do
+    if String.contains?(buffer, "surf-board-bidi-server: ready on port=") do
+      case Regex.run(~r/surf-board-bidi-server: ready on port=(\d+)/, buffer) do
         [_, p] ->
           tcp_port = String.to_integer(p)
           state = %{state | tcp_port: tcp_port, ready?: true, buffer: ""}

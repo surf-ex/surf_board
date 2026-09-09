@@ -18,7 +18,7 @@ defmodule SurfBoard.OpsShared do
   #     run `fn_decl` (a JS function expression) with `this` bound
   #     to the element. Args are positional. Returns
   #     `{:ok, deserialized_value} | {:error, :stale_reference | term}`.
-  #     The {__surf_board_stale: true} sentinel must be translated to
+  #     The {__surfboard_stale: true} sentinel must be translated to
   #     `{:error, :stale_reference}`.
   #
   #   * `evaluate(session, expression)` and

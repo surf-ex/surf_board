@@ -89,7 +89,7 @@ defmodule SurfBoard.CDP.Client do
   Installs the surf_board browser-side bootstrap (`window.__w`):
 
     1. `Runtime.enable` — required for `Runtime.addBinding`.
-    2. `Runtime.addBinding(name: "__surf_board")` — exposes a binding
+    2. `Runtime.addBinding(name: "__surfboard")` — exposes a binding
        that, when called from JS, fires a `Runtime.bindingCalled` event
        up the WebSocket. Subscribes the Session to that event.
     3. `Page.addScriptToEvaluateOnNewDocument(source: Bootstrap.cdp_iife())` —
@@ -121,7 +121,7 @@ defmodule SurfBoard.CDP.Client do
     # and Lightpanda.
     :ok = Protocol.subscribe(session, "Runtime.bindingCalled")
     cdp_cast(session, "Runtime.enable", %{})
-    cdp_cast(session, "Runtime.addBinding", %{name: "__surf_board"})
+    cdp_cast(session, "Runtime.addBinding", %{name: "__surfboard"})
 
     cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
       source: SurfBoard.Bootstrap.cdp_iife(session.live_view_aware?)
@@ -426,7 +426,7 @@ defmodule SurfBoard.CDP.Client do
       {:ok, %{"result" => %{"value" => %{"error" => "stale_reference"}}}} ->
         {:error, :stale_reference}
 
-      {:ok, %{"result" => %{"value" => %{"value" => %{"__surf_board_stale" => true}}}}} ->
+      {:ok, %{"result" => %{"value" => %{"value" => %{"__surfboard_stale" => true}}}}} ->
         {:error, :stale_reference}
 
       {:ok, %{"result" => %{"value" => %{"value" => v}}}} ->
@@ -466,7 +466,7 @@ defmodule SurfBoard.CDP.Client do
         else: params
 
     case cdp_send(session, "Runtime.callFunctionOn", params) do
-      {:ok, %{"result" => %{"value" => %{"__surf_board_stale" => true}}}} ->
+      {:ok, %{"result" => %{"value" => %{"__surfboard_stale" => true}}}} ->
         # JS opted into the stale sentinel by returning a flag map
         # — translate to :stale_reference so callers don't all repeat
         # the same pattern. Mirrors BiDiClient.call_on_element.
@@ -1304,13 +1304,13 @@ defmodule SurfBoard.CDP.Client do
   @spec get_window_size(Session.t()) ::
           {:ok, %{width: non_neg_integer, height: non_neg_integer}} | {:error, term}
   def get_window_size(%Session{} = session) do
-    # Prefer a previously-stashed `window.__surf_board_window_size`
+    # Prefer a previously-stashed `window.__surfboard_window_size`
     # (set by set_window_size below) — `Emulation.setDeviceMetricsOverride`
     # is a no-op on engines without a real layout pass (Lightpanda),
     # so the JS override is the only source of truth there.
     js =
       "(window.__w && window.__w.run([['get_window_size']])) || " <>
-        "JSON.stringify(window.__surf_board_window_size || " <>
+        "JSON.stringify(window.__surfboard_window_size || " <>
         "{width: window.innerWidth, height: window.innerHeight})"
 
     case evaluate(session, js) do
@@ -1354,14 +1354,14 @@ defmodule SurfBoard.CDP.Client do
     # page that booted before W was installed.
     set_js =
       "if (window.__w) window.__w.run([['set_window_size', #{width}, #{height}]]); " <>
-        "else window.__surf_board_window_size = {width: #{width}, height: #{height}};"
+        "else window.__surfboard_window_size = {width: #{width}, height: #{height}};"
 
     _ = cdp_send(session, "Runtime.evaluate", %{expression: set_js, returnByValue: true})
 
     # The bootstrap doesn't necessarily exist when an early addScript
     # runs, so the preload form uses the raw global to be safe in
     # either case.
-    persist_js = "window.__surf_board_window_size = {width: #{width}, height: #{height}};"
+    persist_js = "window.__surfboard_window_size = {width: #{width}, height: #{height}};"
     _ = cdp_send(session, "Page.addScriptToEvaluateOnNewDocument", %{source: persist_js})
 
     {:ok, nil}

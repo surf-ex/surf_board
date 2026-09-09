@@ -11,7 +11,7 @@ defmodule SurfBoard.Session do
       pre-click page id; await the next `page_ready` notification.
     * `:armed` — `prepare_patch` was called, but no pre-click id
       exists (e.g. `fill_in` deferred); resolve via the existing
-      `__surf_board_patch_promise` machinery.
+      `__surfboard_patch_promise` machinery.
   """
   @type pending_await :: nil | {:page_ready_after, String.t() | nil} | :armed
 

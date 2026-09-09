@@ -253,7 +253,7 @@ defmodule SurfBoard.Transport.Common do
   # ----- Bootstrap channel payload routing -----
 
   @doc """
-  Routes a JSON payload from the bootstrap channel (`__surf_board(...)` in
+  Routes a JSON payload from the bootstrap channel (`__surfboard(...)` in
   CDP, `script.message` in BiDi) to the appropriate state-machine update.
   Recognises find results and page_ready signals. Unknown payloads return
   the state unchanged.

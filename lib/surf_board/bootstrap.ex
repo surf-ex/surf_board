@@ -3,7 +3,7 @@ defmodule SurfBoard.Bootstrap do
   # Shared browser-side bootstrap JS for push-based element finding.
   #
   # The body installs window.__w with an opcode interpreter, MutationObserver,
-  # LiveView onPatchEnd hook, and query checker. It references `__surf_board`
+  # LiveView onPatchEnd hook, and query checker. It references `__surfboard`
   # as a free variable — the caller provides it as either:
   #   - CDP: a global binding via Runtime.addBinding
   #   - BiDi: a channel callback via script.addPreloadScript argument
@@ -27,7 +27,7 @@ defmodule SurfBoard.Bootstrap do
          end)
 
   @doc """
-  CDP form: IIFE that assumes `__surf_board` is a global binding.
+  CDP form: IIFE that assumes `__surfboard` is a global binding.
 
   `live_view_aware?` gates the LiveView `onPatchEnd` hook inside the
   bootstrap body (see priv/surf_board.js's `detectReady`/`installLvHook`)
@@ -35,13 +35,13 @@ defmodule SurfBoard.Bootstrap do
   activates LiveView-patch tracking, even on a LiveView page.
   """
   def cdp_iife(live_view_aware? \\ false) do
-    "(function() {\nvar __surf_boardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
+    "(function() {\nvar __surfboardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
       @body <> "\n})()"
   end
 
-  @doc "BiDi form: arrow function receiving `__surf_board` as channel parameter."
+  @doc "BiDi form: arrow function receiving `__surfboard` as channel parameter."
   def bidi_preload(live_view_aware? \\ false) do
-    "(__surf_board) => {\nvar __surf_boardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
+    "(__surfboard) => {\nvar __surfboardLiveViewAware = #{live_view_flag(live_view_aware?)};\n" <>
       @body <> "\n}"
   end
 
@@ -69,8 +69,8 @@ defmodule SurfBoard.Bootstrap do
       "else{try{" <>
       "var r={els:[],error:null};" <>
       "try{var _o=#{ops_json};for(var i=0;i<_o.length;i++){var o=_o[i];if(o[0]==='query'){r.els=Array.from(document.querySelectorAll(o[2]));}}}catch(e){r.error=e.message;}" <>
-      "if(r.error)__surf_board(JSON.stringify({id:#{id_js},count:0,error:r.error}));" <>
-      "else{var c=r.els.length;var m=#{count_js}===null?c>0:c===#{count_js};if(m)__surf_board(JSON.stringify({id:#{id_js},count:c}));}" <>
+      "if(r.error)__surfboard(JSON.stringify({id:#{id_js},count:0,error:r.error}));" <>
+      "else{var c=r.els.length;var m=#{count_js}===null?c>0:c===#{count_js};if(m)__surfboard(JSON.stringify({id:#{id_js},count:c}));}" <>
       "}catch(e){}}"
   end
 

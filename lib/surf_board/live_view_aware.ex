@@ -18,7 +18,7 @@ defmodule SurfBoard.LiveViewAware do
   alias SurfBoard.Session
 
   @doc """
-  Installs a one-shot promise on `window.__surf_board_patch_promise` that
+  Installs a one-shot promise on `window.__surfboard_patch_promise` that
   resolves after the next LiveView patch is applied. Returns `:prepared`
   if a LiveSocket exists, `:no_liveview` otherwise.
   """
