@@ -20,12 +20,9 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClientTest do
   describe "struct" do
     test "has expected default fields" do
       state = %WebSocketClient{}
-      assert state.next_id == 1
       assert state.pending == %{}
       assert state.subscribers_table == nil
-      assert state.queued_commands == []
-      assert state.websocket == nil
-      assert state.status == nil
+      assert state.wire == nil
     end
   end
 end
