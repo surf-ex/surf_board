@@ -1422,6 +1422,6 @@ defmodule SurfBoard.Drivers.CDP.Client do
 
   # ----- Dialog handling -----
   #
-  # Dialog flow lives in SurfBoard.Dialogs.ChromeCDP (which uses
+  # Dialog flow lives in SurfBoard.Drivers.ChromeCDP.Dialogs (which uses
   # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
 end

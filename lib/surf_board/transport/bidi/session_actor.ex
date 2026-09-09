@@ -13,8 +13,8 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
   require Logger
 
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Drivers.ChromeBiDi.Wire
   alias SurfBoard.Transport.Common
-  alias SurfBoard.Wire
 
   defstruct [
     :ws_pid,
@@ -292,7 +292,7 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
 
   @impl true
   def handle_info({:bidi_event, method, event}, state) do
-    {:noreply, Wire.BiDi.handle_event(state, method, event)}
+    {:noreply, Wire.handle_event(state, method, event)}
   end
 
   def handle_info({:find_timeout, query_id}, state) do

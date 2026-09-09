@@ -1,4 +1,4 @@
-defmodule SurfBoard.Frames.ChromeCDP do
+defmodule SurfBoard.Drivers.ChromeCDP.Frames do
   @moduledoc false
 
   @behaviour SurfBoard.Frames

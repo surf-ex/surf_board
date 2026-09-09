@@ -1,4 +1,4 @@
-defmodule SurfBoard.Dialogs.ChromeBiDi do
+defmodule SurfBoard.Drivers.ChromeBiDi.Dialogs do
   @moduledoc false
 
   # BiDi dialog handling. Uses `browsingContext.userPromptOpened`

@@ -19,18 +19,16 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Drivers.ChromeCDP.SharedConnection
-  alias SurfBoard.Dialogs
+  alias SurfBoard.Drivers.ChromeCDP.{Dialogs, Frames, Windows}
   alias SurfBoard.Driver.Spec
-  alias SurfBoard.Frames
   alias SurfBoard.Transport.Protocol
-  alias SurfBoard.Windows
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
     wire_protocol: CDPClient,
-    dialogs: Dialogs.ChromeCDP,
-    windows: Windows.ChromeCDP,
-    frames: Frames.ChromeCDP,
+    dialogs: Dialogs,
+    windows: Windows,
+    frames: Frames,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }

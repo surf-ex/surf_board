@@ -1,4 +1,4 @@
-defmodule SurfBoard.Wire.BiDi do
+defmodule SurfBoard.Drivers.ChromeBiDi.Wire do
   @moduledoc false
 
   # BiDi wire-level event decoder used by

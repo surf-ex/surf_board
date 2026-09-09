@@ -200,7 +200,7 @@ defmodule SurfBoard.Transport.Common do
   load waiter — the CDP buffer-and-wake semantics where milestones persist
   for the lifetime of the loader_id.
 
-  Used by `Wire.CDP` for `Page.lifecycleEvent`. BiDi has different
+  Used by `Drivers.CDP.Wire` for `Page.lifecycleEvent`. BiDi has different
   semantics (`record_load_or_wake_once/3`).
   """
   @spec record_load_milestone(map(), term(), String.t()) :: map()

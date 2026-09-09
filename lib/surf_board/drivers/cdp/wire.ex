@@ -1,4 +1,4 @@
-defmodule SurfBoard.Wire.CDP do
+defmodule SurfBoard.Drivers.CDP.Wire do
   @moduledoc false
 
   # CDP wire-level event decoder shared by the two CDP transport actors:

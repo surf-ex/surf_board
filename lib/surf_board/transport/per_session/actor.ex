@@ -22,7 +22,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
   require Logger
 
   alias SurfBoard.Transport.Common
-  alias SurfBoard.Wire
+  alias SurfBoard.Drivers.CDP.Wire
 
   defstruct [
     # ----- Connection state (was WebSocket) -----
@@ -42,7 +42,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
     loads: %{},
     load_waiters: [],
     # Main-frame HTTP responses keyed by loaderId — see the same field on
-    # Transport.Session; both actors share Wire.CDP.handle_event/3.
+    # Transport.Session; both actors share Drivers.CDP.Wire.handle_event/3.
     responses: %{},
     last_loader_id: nil,
     find_waiters: %{},
@@ -395,7 +395,7 @@ defmodule SurfBoard.Transport.PerSession.Actor do
         deliver_response(state, id, response)
 
       {:ok, %{"method" => method} = event} ->
-        Wire.CDP.handle_event(state, method, event)
+        Wire.handle_event(state, method, event)
 
       {:error, _} ->
         Logger.warning("PerSession.Actor invalid JSON: #{inspect(String.slice(text, 0, 200))}")

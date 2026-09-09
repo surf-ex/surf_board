@@ -13,20 +13,18 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   alias SurfBoard.{Metadata, Session, UserAgent}
   alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Drivers.ChromeBiDi.{Dialogs, Frames, Windows}
   alias SurfBoard.Browser
-  alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
-  alias SurfBoard.Frames
   alias SurfBoard.Transport.BiDi
   alias SurfBoard.Transport.Protocol
-  alias SurfBoard.Windows
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
     wire_protocol: BiDiClient,
-    dialogs: Dialogs.ChromeBiDi,
-    windows: Windows.ChromeBiDi,
-    frames: Frames.ChromeBiDi,
+    dialogs: Dialogs,
+    windows: Windows,
+    frames: Frames,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }

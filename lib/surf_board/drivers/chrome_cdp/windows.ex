@@ -1,4 +1,4 @@
-defmodule SurfBoard.Windows.ChromeCDP do
+defmodule SurfBoard.Drivers.ChromeCDP.Windows do
   @moduledoc false
 
   # Window/tab management for Chrome over CDP — uses Target.*

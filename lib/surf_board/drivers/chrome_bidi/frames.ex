@@ -1,4 +1,4 @@
-defmodule SurfBoard.Frames.ChromeBiDi do
+defmodule SurfBoard.Drivers.ChromeBiDi.Frames do
   @moduledoc false
 
   @behaviour SurfBoard.Frames

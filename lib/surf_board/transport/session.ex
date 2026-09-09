@@ -19,7 +19,7 @@ defmodule SurfBoard.Transport.Session do
 
   alias SurfBoard.Transport.Common
   alias SurfBoard.WebSocket
-  alias SurfBoard.Wire
+  alias SurfBoard.Drivers.CDP.Wire
 
   defstruct [
     :session,
@@ -576,7 +576,7 @@ defmodule SurfBoard.Transport.Session do
   end
 
   def handle_info({:v2_event, method, event}, state) do
-    {:noreply, Wire.CDP.handle_event(state, method, event)}
+    {:noreply, Wire.handle_event(state, method, event)}
   end
 
   def handle_info({:load_timeout, from}, state) do

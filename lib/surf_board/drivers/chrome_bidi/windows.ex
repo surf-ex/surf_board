@@ -1,4 +1,4 @@
-defmodule SurfBoard.Windows.ChromeBiDi do
+defmodule SurfBoard.Drivers.ChromeBiDi.Windows do
   @moduledoc false
 
   # Window/tab management for Chrome over BiDi. Uses

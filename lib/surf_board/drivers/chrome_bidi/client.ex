@@ -1154,7 +1154,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Client do
 
   # ----- Dialog handling -----
   #
-  # Dialog flow lives in SurfBoard.Dialogs.ChromeBiDi (which uses
+  # Dialog flow lives in SurfBoard.Drivers.ChromeBiDi.Dialogs (which uses
   # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
 
   @doc """
