@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Fake LiveView Page</title>
+  </head>
+  <body>
+    <!--
+      Shaped like a LiveView page for surfboard.js's detectReady():
+      [data-phx-session] presence is the only thing that gate checks,
+      plus a minimal window.liveSocket stand-in so installLvHook() (when
+      live_view_aware is true) has domCallbacks to wrap. There's no real
+      Phoenix backend here — this only exercises the bootstrap's own
+      detection/hook-install logic, not an actual LiveView round-trip.
+    -->
+    <div data-phx-session="fake-session-token">
+      <h1>Fake LiveView Page</h1>
+    </div>
+    <script>
+      window.liveSocket = {
+        domCallbacks: {
+          onPatchEnd: null
+        }
+      };
+    </script>
+  </body>
+</html>

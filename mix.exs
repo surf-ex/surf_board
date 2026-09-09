@@ -19,7 +19,8 @@ defmodule Surfboard.MixProject do
           "via CDP/BiDi. Extracted from Wallabidi's driving layer.",
       deps: deps(),
       docs: docs(),
-      dialyzer: dialyzer()
+      dialyzer: dialyzer(),
+      test_paths: test_paths()
     ]
   end
 
@@ -27,7 +28,21 @@ defmodule Surfboard.MixProject do
     [extra_applications: [:logger], mod: {Surfboard, []}]
   end
 
+  defp elixirc_paths(:test), do: ["lib", "test/support", "integration_test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  # SURFBOARD_INTEGRATION=1 mix test switches the whole suite root to
+  # integration_test/cases (real Chrome/Lightpanda/BiDi against a local
+  # fixture server) instead of the default unit suite under test/. Kept
+  # as an opt-in env var, not a separate Mix env, so `mix test` alone
+  # (CI's default) never needs real browsers.
+  defp test_paths do
+    if System.get_env("SURFBOARD_INTEGRATION") == "1" do
+      ["integration_test/cases"]
+    else
+      ["test"]
+    end
+  end
 
   defp deps do
     [
@@ -36,6 +51,9 @@ defmodule Surfboard.MixProject do
       {:mint_web_socket, "~> 1.0"},
       {:lazy_html, "~> 0.1"},
       {:lightpanda, "~> 0.3.6"},
+      # Test-only: a plain static-file server for the integration smoke
+      # suite's fixture pages — not Phoenix, just Plug.Static + Cowboy.
+      {:plug_cowboy, "~> 2.7", only: :test},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.28", only: :dev}
