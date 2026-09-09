@@ -1,7 +1,7 @@
-defmodule SurfBoard.BiDi.CommandsTest do
+defmodule SurfBoard.Drivers.ChromeBiDi.CommandsTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.BiDi.Commands
+  alias SurfBoard.Drivers.ChromeBiDi.Commands
 
   describe "perform_actions/2" do
     test "builds input.performActions command" do

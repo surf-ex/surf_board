@@ -1,4 +1,4 @@
-defmodule SurfBoard.Chrome.SharedConnection do
+defmodule SurfBoard.Drivers.ChromeCDP.SharedConnection do
   @moduledoc false
 
   # Single shared `WebSocket` connection to Chrome's browser-level
@@ -84,7 +84,7 @@ defmodule SurfBoard.Chrome.SharedConnection do
       case SurfBoard.BrowserPaths.chrome_url() || legacy_remote_url() do
         nil ->
           # Local Chrome — get ws_url from the server we launched.
-          SurfBoard.Chrome.Server.ws_url(Module.concat(driver_mod, Server))
+          SurfBoard.Drivers.ChromeCDP.Server.ws_url(Module.concat(driver_mod, Server))
 
         "ws://" <> _ = url ->
           url

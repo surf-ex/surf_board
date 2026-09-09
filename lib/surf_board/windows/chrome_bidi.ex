@@ -8,7 +8,7 @@ defmodule SurfBoard.Windows.ChromeBiDi do
 
   @behaviour SurfBoard.Windows
 
-  alias SurfBoard.BiDi.Client, as: BiDiClient
+  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
   alias SurfBoard.Session
 
   @impl true

@@ -293,7 +293,7 @@ defmodule SurfBoard.Driver.Generic do
     # via a process-dict shim set during start_session.
     # For now, delegate to the Chrome.Logger by default since that's
     # what both Chrome drivers used.
-    SurfBoard.Chrome.Logger.parse_log(log)
+    SurfBoard.Drivers.ChromeCDP.Logger.parse_log(log)
   end
 
   # ----- Spec lookup -----

@@ -1,4 +1,4 @@
-defmodule SurfBoard.CDP.Client do
+defmodule SurfBoard.Drivers.CDP.Client do
   @moduledoc false
 
   # CDP-shaped façade over `SurfBoard.Transport.Protocol` —
@@ -11,7 +11,7 @@ defmodule SurfBoard.CDP.Client do
   # point `wire_protocol: CDPClient` and the Orchestrator dispatches
   # straight to these functions, no adapter wrapper in between.
   #
-  # The BiDi counterpart at `SurfBoard.BiDi.Client` exposes the
+  # The BiDi counterpart at `SurfBoard.Drivers.ChromeBiDi.Client` exposes the
   # same surface area in the same section layout — diff them to see
   # which differences are genuine (mostly: wire method names + param
   # shapes) versus which are protocol-mandated (frame focus, element
@@ -20,7 +20,7 @@ defmodule SurfBoard.CDP.Client do
   @behaviour SurfBoard.WireProtocol
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.CDP.{Commands, ResponseParser}
+  alias SurfBoard.Drivers.CDP.{Commands, ResponseParser}
   alias SurfBoard.OpsShared
   alias SurfBoard.Transport.Protocol
 

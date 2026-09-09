@@ -1,4 +1,4 @@
-defmodule SurfBoard.CDP.Commands do
+defmodule SurfBoard.Drivers.CDP.Commands do
   @moduledoc false
 
   # Browser context management (incognito-like isolation)

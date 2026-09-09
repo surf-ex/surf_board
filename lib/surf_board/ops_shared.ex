@@ -498,7 +498,7 @@ defmodule SurfBoard.OpsShared do
   #     so callers see the actual element count for error messaging.
 
   alias SurfBoard.Bootstrap
-  alias SurfBoard.CDP.Ops
+  alias SurfBoard.Drivers.CDP.Ops
   alias SurfBoard.Transport.Protocol
 
   @doc false

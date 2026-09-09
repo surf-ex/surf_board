@@ -3,7 +3,7 @@ defmodule SurfBoard.Driver.PermissionsDispatchTest do
 
   # Regression coverage for the same class of bug caught while building
   # open_stream/1: Chrome CDP and Lightpanda share the exact same
-  # `wire_protocol` module (`SurfBoard.CDP.Client`), so a CDP-only
+  # `wire_protocol` module (`SurfBoard.Drivers.CDP.Client`), so a CDP-only
   # capability can't be gated in the Orchestrator via `function_exported?/3`
   # — it can't tell the two drivers apart. LightpandaCDP and ChromeBiDi
   # must both override the Generic delegate directly so dispatch never

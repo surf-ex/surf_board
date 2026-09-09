@@ -1,4 +1,4 @@
-defmodule SurfBoard.BiDi.WebSocketClient do
+defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   @moduledoc false
   # GenServer managing a single WebSocket connection per session using Mint.WebSocket.
 

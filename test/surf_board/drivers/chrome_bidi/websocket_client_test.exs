@@ -1,7 +1,7 @@
-defmodule SurfBoard.BiDi.WebSocketClientTest do
+defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClientTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.BiDi.WebSocketClient
+  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
 
   # These tests verify the GenServer's internal logic by sending it
   # messages directly, without a real WebSocket connection.

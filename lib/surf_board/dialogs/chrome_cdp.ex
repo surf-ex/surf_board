@@ -8,7 +8,7 @@ defmodule SurfBoard.Dialogs.ChromeCDP do
 
   @behaviour SurfBoard.Dialogs
 
-  alias SurfBoard.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs.Flow
   alias SurfBoard.WebSocket
   alias SurfBoard.Session

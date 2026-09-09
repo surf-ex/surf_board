@@ -8,7 +8,7 @@ defmodule SurfBoard.Dialogs.ChromeBiDi do
 
   @behaviour SurfBoard.Dialogs
 
-  alias SurfBoard.BiDi.{Commands, ResponseParser, WebSocketClient}
+  alias SurfBoard.Drivers.ChromeBiDi.{Commands, ResponseParser, WebSocketClient}
   alias SurfBoard.Dialogs.Flow
   alias SurfBoard.Session
 

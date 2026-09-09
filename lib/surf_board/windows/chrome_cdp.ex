@@ -8,7 +8,7 @@ defmodule SurfBoard.Windows.ChromeCDP do
   @behaviour SurfBoard.Windows
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.WebSocket
 
   @impl true

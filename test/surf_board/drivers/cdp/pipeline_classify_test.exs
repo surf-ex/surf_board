@@ -1,4 +1,4 @@
-defmodule SurfBoard.CDP.PipelineClassifyTest do
+defmodule SurfBoard.Drivers.CDP.PipelineClassifyTest do
   use ExUnit.Case, async: true
 
   # Tests `W.classify` from priv/surf_board.js — the production classifier
@@ -11,7 +11,7 @@ defmodule SurfBoard.CDP.PipelineClassifyTest do
 
   @moduletag :classifier
 
-  @bundle_path Path.expand("../../../priv/surf_board.js", __DIR__)
+  @bundle_path Path.expand("../../../../priv/surf_board.js", __DIR__)
 
   setup_all do
     case System.find_executable("node") do

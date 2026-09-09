@@ -16,9 +16,9 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
   alias SurfBoard.{DependencyError, Metadata, Session, UserAgent}
   alias SurfBoard.{Browser, Transport, WebSocket}
-  alias SurfBoard.CDP.Client, as: CDPClient
-  alias SurfBoard.Chrome.Server, as: ChromeServer
-  alias SurfBoard.Chrome.SharedConnection
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
+  alias SurfBoard.Drivers.ChromeCDP.SharedConnection
   alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Frames
@@ -187,7 +187,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   # and prints console output, which is exactly what JSErrorsTest checks
   # for. The Generic-injected parse_log/1 routes here via session.driver,
   # so we override the generic stub.
-  defdelegate parse_log(log), to: SurfBoard.Chrome.Logger
+  defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
 
   # ----- Internal -----
 

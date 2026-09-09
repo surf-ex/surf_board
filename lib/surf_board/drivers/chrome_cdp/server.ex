@@ -1,4 +1,4 @@
-defmodule SurfBoard.Chrome.Server do
+defmodule SurfBoard.Drivers.ChromeCDP.Server do
   @moduledoc false
 
   # Manages a Chrome process launched directly via CDP.

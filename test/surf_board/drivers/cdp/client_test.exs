@@ -1,7 +1,7 @@
-defmodule SurfBoard.CDP.ClientTest do
+defmodule SurfBoard.Drivers.CDP.ClientTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Session
 
   describe "grant_permissions/2" do

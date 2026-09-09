@@ -1,4 +1,4 @@
-defmodule SurfBoard.BiDi.Commands do
+defmodule SurfBoard.Drivers.ChromeBiDi.Commands do
   @moduledoc false
   # Pure functions building BiDi command payloads (method + params maps).
 

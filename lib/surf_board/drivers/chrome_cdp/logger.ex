@@ -1,4 +1,4 @@
-defmodule SurfBoard.Chrome.Logger do
+defmodule SurfBoard.Drivers.ChromeCDP.Logger do
   @moduledoc false
   @log_regex ~r/^(?<url>\S+) (?<line>\d+):(?<column>\d+) (?<message>.*)$/s
   @string_regex ~r/^"(?<string>.+)"$/

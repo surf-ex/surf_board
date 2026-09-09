@@ -11,8 +11,8 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   use SurfBoard.Driver.Generic
 
   alias SurfBoard.{Metadata, Session, UserAgent}
-  alias SurfBoard.BiDi.Client, as: BiDiClient
-  alias SurfBoard.BiDi.WebSocketClient
+  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
+  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Browser
   alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
@@ -62,7 +62,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   @impl Supervisor
   def init(_) do
     children = [
-      {SurfBoard.ChromiumBiDi.Server, [name: @bidi_server_name]}
+      {SurfBoard.Drivers.ChromeBiDi.Server, [name: @bidi_server_name]}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -158,11 +158,11 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   # :noproc before the new pid registers under the name. Retry with a
   # small backoff to ride out the gap.
   defp bidi_ws_url_with_retry(0) do
-    SurfBoard.ChromiumBiDi.Server.ws_url(@bidi_server_name)
+    SurfBoard.Drivers.ChromeBiDi.Server.ws_url(@bidi_server_name)
   end
 
   defp bidi_ws_url_with_retry(retries_left) do
-    SurfBoard.ChromiumBiDi.Server.ws_url(@bidi_server_name)
+    SurfBoard.Drivers.ChromeBiDi.Server.ws_url(@bidi_server_name)
   catch
     :exit, _ ->
       Process.sleep(500)
@@ -201,9 +201,9 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   # grant_permissions: CDP-only for now — BiDiClient has no equivalent
   # to CDP's Browser.grantPermissions wired up. See
-  # SurfBoard.CDP.Client.grant_permissions/2.
+  # SurfBoard.Drivers.CDP.Client.grant_permissions/2.
   def grant_permissions(%Session{}, _permissions),
     do: raise(SurfBoard.DriverError.not_supported("grant_permissions/2", __MODULE__))
 
-  defdelegate parse_log(log), to: SurfBoard.Chrome.Logger
+  defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
 end

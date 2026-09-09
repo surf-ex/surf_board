@@ -168,10 +168,10 @@ defmodule SurfBoard.Driver.Orchestrator do
 
   @doc """
   Grants media permissions. CDP only — see
-  `SurfBoard.CDP.Client.grant_permissions/2`.
+  `SurfBoard.Drivers.CDP.Client.grant_permissions/2`.
 
   Unconditional delegation: `spec.wire_protocol` is
-  `SurfBoard.CDP.Client` on BOTH Chrome CDP and Lightpanda (they
+  `SurfBoard.Drivers.CDP.Client` on BOTH Chrome CDP and Lightpanda (they
   share the same CDP façade), so this must never be reached for
   Lightpanda — `LightpandaCDP.grant_permissions/2` overrides the
   `Generic` delegate to raise before dispatch gets here. Don't gate this

@@ -16,7 +16,7 @@ defmodule SurfBoard.Transport.PerSession do
   # Target + attachToTarget on that WS, and the resulting actor
   # handles everything for that session.
 
-  alias SurfBoard.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Transport.PerSession.Actor
   alias SurfBoard.Session
 

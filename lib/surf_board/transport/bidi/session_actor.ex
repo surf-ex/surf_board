@@ -1,7 +1,7 @@
 defmodule SurfBoard.Transport.BiDi.SessionActor do
   @moduledoc false
 
-  # One actor per BiDi session. Owns a SurfBoard.BiDi.WebSocketClient
+  # One actor per BiDi session. Owns a SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   # (which in turn owns the Mint WebSocket) and translates
   # Transport.Protocol calls into BiDi commands & event waits.
   #
@@ -12,7 +12,7 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
 
   require Logger
 
-  alias SurfBoard.BiDi.WebSocketClient
+  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Transport.Common
   alias SurfBoard.Wire
 

@@ -1,9 +1,9 @@
-defmodule SurfBoard.Chrome.SharedConnectionTest do
+defmodule SurfBoard.Drivers.ChromeCDP.SharedConnectionTest do
   # Not async: starts the named SharedConnection Agent and mutates the
   # shared :persistent_term holding the ws pid.
   use ExUnit.Case, async: false
 
-  alias SurfBoard.Chrome.SharedConnection
+  alias SurfBoard.Drivers.ChromeCDP.SharedConnection
 
   @pid_key {SharedConnection, :ws_pid}
 

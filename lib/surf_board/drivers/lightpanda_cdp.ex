@@ -11,7 +11,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   alias SurfBoard.{Element, Metadata, Session, UserAgent}
   alias SurfBoard.Browser
-  alias SurfBoard.CDP.Client, as: CDPClient
+  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Frames
@@ -328,7 +328,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   # grant_permissions: Lightpanda has no camera/mic or getUserMedia
   # support, and would otherwise silently dispatch through the SAME
   # wire_protocol module Chrome CDP uses (both point at
-  # SurfBoard.CDP.Client) — Generic's delegate can't tell the two
+  # SurfBoard.Drivers.CDP.Client) — Generic's delegate can't tell the two
   # drivers apart, so this must be overridden here rather than gated in
   # Orchestrator.
   def grant_permissions(%Session{}, _permissions),

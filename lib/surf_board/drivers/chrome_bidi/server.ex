@@ -1,8 +1,8 @@
-defmodule SurfBoard.ChromiumBiDi.Server do
+defmodule SurfBoard.Drivers.ChromeBiDi.Server do
   @moduledoc false
 
   # Manages a chromium-bidi Node process that exposes a BiDi WebSocket
-  # server for the SurfBoard.Chrome (BiDi) driver path.
+  # server for the SurfBoard.Drivers.ChromeBiDi driver path.
   #
   # The Node runner lives at `priv/bidi-server/run.mjs` and depends on
   # the `chromium-bidi` npm package (installed via `npm install` in that

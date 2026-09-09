@@ -136,9 +136,9 @@ defmodule SurfBoard.Transport do
            owner: caller
          ) do
       {:ok, session} ->
-        :ok = SurfBoard.CDP.Client.enable_page_lifecycle_events(session)
-        :ok = SurfBoard.CDP.Client.install_bootstrap(session)
-        :ok = SurfBoard.CDP.Client.enable_frame_tracking(session)
+        :ok = SurfBoard.Drivers.CDP.Client.enable_page_lifecycle_events(session)
+        :ok = SurfBoard.Drivers.CDP.Client.install_bootstrap(session)
+        :ok = SurfBoard.Drivers.CDP.Client.enable_frame_tracking(session)
         {:ok, session}
 
       err ->
