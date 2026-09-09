@@ -7,7 +7,8 @@ defmodule Surfboard do
 
   Surfboard supports the following options:
 
-  * `:otp_app` - The name of your OTP application. This is used to check out your Ecto repos into the SQL Sandbox.
+  * `:driver` - Which driver `start_session/1` uses when no `:driver` opt
+    is given. Defaults to `:chrome_cdp`.
   * `:screenshot_dir` - The directory to store screenshots.
   * `:screenshot_on_failure` - if Surfboard should take screenshots on test failures (defaults to `false`).
   * `:max_wait_time` - The amount of time that Surfboard should wait to find an element on the page. (defaults to `3_000`)
@@ -23,71 +24,49 @@ defmodule Surfboard do
   def start(_type, _args) do
     Surfboard.Bench.Timing.setup()
 
-    # The primary driver (the one untagged tests route to) must be
-    # available — validate it and raise if not. Tag-routed drivers
-    # (`@tag :browser` / `@tag :headless`) are started best-effort so a
-    # single `mix test` run can route each test to the cheapest driver
-    # that supports it without the consumer wiring up supervisors by hand.
-    primary_mod = driver_module()
-
-    case primary_mod.validate() do
-      :ok -> :ok
-      {:error, exception} -> raise exception
-    end
-
-    driver_children =
-      configured_driver_modules()
-      |> Enum.map(fn mod -> {mod, [name: Module.concat(mod, Supervisor)]} end)
-
-    children = driver_children ++ [{Surfboard.SessionStore, [name: Surfboard.SessionStore]}]
+    # No driver is started here — a session's driver isn't known until
+    # `start_session/1` is called, so its supervisor starts lazily then
+    # (see `ensure_driver_started/1`). Nothing about booting the
+    # application should depend on Chrome/Lightpanda being installed.
+    children = [
+      {DynamicSupervisor, name: Surfboard.DriverSupervisor, strategy: :one_for_one},
+      {Surfboard.SessionStore, [name: Surfboard.SessionStore]}
+    ]
 
     opts = [strategy: :one_for_one, name: Surfboard.Supervisor]
-    result = Supervisor.start_link(children, opts)
+    Supervisor.start_link(children, opts)
+  end
 
-    if match?({:ok, _}, result) do
-      primary_mod.cleanup_stale_sessions()
+  # Starts `mod`'s supervisor under `Surfboard.DriverSupervisor` on first
+  # use, idempotently — a second call for an already-running driver is a
+  # no-op. Runs `mod.cleanup_stale_sessions/0` once, right after a fresh
+  # start.
+  defp ensure_driver_started(mod) do
+    case DynamicSupervisor.start_child(
+           Surfboard.DriverSupervisor,
+           {mod, [name: Module.concat(mod, Supervisor)]}
+         ) do
+      {:ok, _pid} ->
+        mod.cleanup_stale_sessions()
+        :ok
+
+      {:error, {:already_started, _pid}} ->
+        :ok
+
+      # A driver whose supervisor starts a fixed-named child (e.g.
+      # ChromeBiDi's ChromiumBiDi.Server) reports a second concurrent
+      # start attempt this way rather than as a flat :already_started —
+      # the DynamicSupervisor call for the driver itself succeeds far
+      # enough to spawn the child before the child's own name clash
+      # unwinds the start. Treat it the same as :already_started: some
+      # other call already has (or is bringing up) this driver.
+      {:error, {:shutdown, {:failed_to_start_child, _child, {:already_started, _pid}}}} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
-
-    result
   end
-
-  # The set of driver supervisor modules a single test run can route to:
-  # the primary `:driver` plus the drivers `@tag :browser` / `@tag
-  # :headless` tests resolve to (via the `driver_for/1` ladder). Deduped,
-  # primary first.
-  #
-  # When `SURFBOARD_DRIVER` / `SURFBOARD_BROWSER` pins a single driver for
-  # the run (per-driver CI matrices, the integration suite), tag routing
-  # is disabled in `Feature.resolve_test_driver`, so we start only the
-  # primary — no point booting Chrome for a Lightpanda-pinned run.
-  defp configured_driver_modules do
-    primary = driver_module()
-
-    tag_routed =
-      if driver_pinned_by_env?() do
-        []
-      else
-        [driver_for(:headless), driver_for(:browser)]
-        |> Enum.map(&driver_module_for/1)
-        |> Enum.uniq()
-        |> Enum.reject(&(&1 == primary))
-        # Non-primary drivers are best-effort: only start ones whose
-        # module is loadable AND whose dependency is actually available
-        # (e.g. Chrome installed). A failing one would otherwise crash the
-        # whole supervision tree at boot.
-        |> Enum.filter(fn mod -> module_loadable?(mod) and mod.validate() == :ok end)
-      end
-
-    [primary | tag_routed]
-  end
-
-  defp driver_pinned_by_env?, do: not is_nil(pinned_driver())
-
-  # A tag-routed driver module is only startable if its module (and the
-  # browser package behind it) is loadable — e.g. the Lightpanda driver
-  # needs the `lightpanda` dep. Skip the ones that aren't there so a
-  # CDP-only consumer doesn't fail to boot over an unconfigured tag route.
-  defp module_loadable?(mod), do: Code.ensure_loaded?(mod)
 
   @type reason :: any
   @type start_session_opts :: {atom, any}
@@ -183,18 +162,10 @@ defmodule Surfboard do
   defp stash_session_opts(other, _opts), do: other
 
   defp do_start_session(opts) do
-    case resolve_driver(opts) do
-      :lightpanda ->
-        Surfboard.Drivers.LightpandaCDP.start_session(opts)
+    mod = opts |> resolve_driver() |> driver_module_for()
 
-      :chrome_cdp ->
-        Surfboard.Drivers.ChromeCDP.start_session(opts)
-
-      :chrome ->
-        Surfboard.Drivers.ChromeBiDi.start_session(opts)
-
-      _browser ->
-        Surfboard.Drivers.ChromeCDP.start_session(opts)
+    with :ok <- ensure_driver_started(mod) do
+      mod.start_session(opts)
     end
   end
 
@@ -226,52 +197,6 @@ defmodule Surfboard do
   end
 
   @doc false
-  def driver_module, do: driver_module_for(primary_driver())
-
-  @doc """
-  The driver untagged tests / the app supervisor use as primary.
-
-  A `SURFBOARD_DRIVER` / `SURFBOARD_BROWSER` env pin wins (so a pinned CI
-  lane boots the right supervisor and routes every test there); otherwise
-  the configured/default `:driver`.
-  """
-  def primary_driver do
-    case pinned_driver() do
-      nil -> driver_for(:default)
-      driver -> driver
-    end
-  end
-
-  @pinnable_drivers ~w(
-    lightpanda
-    chrome_cdp
-    chrome
-  )
-
-  @doc """
-  The driver pinned via `SURFBOARD_DRIVER` / `SURFBOARD_BROWSER`, or `nil`.
-
-  Raises if the env var holds an unknown driver name (loud beats a stray
-  atom / silent wrong-driver run).
-  """
-  def pinned_driver do
-    value = System.get_env("SURFBOARD_BROWSER") || System.get_env("SURFBOARD_DRIVER")
-
-    cond do
-      is_nil(value) ->
-        nil
-
-      value in @pinnable_drivers ->
-        String.to_existing_atom(value)
-
-      true ->
-        raise ArgumentError,
-              "SURFBOARD_DRIVER/SURFBOARD_BROWSER=#{inspect(value)} is not a known driver. " <>
-                "Expected one of: #{Enum.join(@pinnable_drivers, ", ")}"
-    end
-  end
-
-  @doc false
   def driver_module_for(driver) do
     case driver do
       :lightpanda -> Surfboard.Drivers.LightpandaCDP
@@ -282,43 +207,14 @@ defmodule Surfboard do
   end
 
   @doc """
-  Resolves the driver for an untagged/default session.
-
-  Explicit `opts[:driver]` wins; otherwise the configured default
-  (`driver_for(:default)`). This is what a bare `Surfboard.start_session/1`
-  and untagged `feature` tests use.
+  Resolves the driver for a session. Explicit `opts[:driver]` wins;
+  otherwise `config :surfboard, driver: ...`, defaulting to `:chrome_cdp`.
   """
   def resolve_driver(opts \\ []) do
-    Keyword.get_lazy(opts, :driver, fn -> driver_for(:default) end)
+    Keyword.get_lazy(opts, :driver, fn ->
+      Application.get_env(:surfboard, :driver, :chrome_cdp)
+    end)
   end
-
-  @doc """
-  Resolves a driver for a capability tier, applying surfboard's default
-  ladder so the sensible path needs no configuration:
-
-    * `:default`  — untagged tests / bare sessions. `config :driver`,
-      else `:chrome_cdp`.
-    * `:headless` — `@tag :headless`. `config :headless`, else
-      Lightpanda when its package is available, else the `:browser`
-      driver (so a Chrome-only project still runs headless tests).
-    * `:browser`  — `@tag :browser`. `config :browser`, else `:chrome_cdp`.
-
-  Each `config :surfboard, <key>: <driver>` entry is purely an override.
-  """
-  def driver_for(:default), do: Application.get_env(:surfboard, :driver, :chrome_cdp)
-
-  def driver_for(:browser), do: Application.get_env(:surfboard, :browser, :chrome_cdp)
-
-  def driver_for(:headless) do
-    case Application.get_env(:surfboard, :headless) do
-      nil -> if lightpanda_available?(), do: :lightpanda, else: driver_for(:browser)
-      driver -> driver
-    end
-  end
-
-  # The Lightpanda driver needs the `lightpanda` package (it provides the
-  # binary + server). Gauge availability the same way the driver does.
-  defp lightpanda_available?, do: Code.ensure_loaded?(Module.concat([Lightpanda, Server]))
 
   @doc false
   def screenshot_on_failure? do
