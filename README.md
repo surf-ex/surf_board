@@ -52,3 +52,16 @@ mix surf_board.install
 
 This is a fresh extraction (v0.1.0) — the driving code itself has real production mileage as
 part of Wallabidi, but this package boundary and its own test suite are new.
+
+## Credits
+
+SurfBoard is built on the foundation of [Wallabidi](https://github.com/u2i/wallabidi), which is
+itself built on the foundation of [Wallaby](https://github.com/elixir-wallaby/wallaby), the work
+of its original author and [many contributors](https://github.com/elixir-wallaby/wallaby/graphs/contributors)
+over the years, and currently maintained by [Mitchell Hanberg](https://github.com/mhanberg). The
+Browser, Query, and Element APIs, and the CDP/BiDi transport this package extracts, trace back
+through both. SurfBoard's own contribution is separating that driving layer out from Wallabidi's
+ExUnit/Phoenix testing-framework integration, so it can be used on its own.
+
+Licensed under MIT, same as Wallaby and Wallabidi. See [LICENSE.md](LICENSE.md) and
+[NOTICE.md](NOTICE.md).

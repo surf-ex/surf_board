@@ -1,7 +1,7 @@
 defmodule SurfBoard.MixProject do
   use Mix.Project
 
-  @source_url "https://github.com/u2i/surf_board"
+  @source_url "https://github.com/surf-ex/surf_board"
   @version "0.1.0"
   @maintainers ["Tom Clarke"]
 
@@ -16,7 +16,7 @@ defmodule SurfBoard.MixProject do
       package: package(),
       description:
         "Concurrent browser automation for Elixir — drive Chrome, Chromium, or Lightpanda " <>
-          "via CDP/BiDi. Extracted from Wallabidi's driving layer.",
+          "via CDP/BiDi. Extracted from Wallabidi's driving layer, itself a fork of Wallaby.",
       deps: deps(),
       docs: docs(),
       dialyzer: dialyzer(),
@@ -70,6 +70,7 @@ defmodule SurfBoard.MixProject do
         "mix.exs",
         "README.md",
         "LICENSE.md",
+        "NOTICE.md",
         "priv/cdp",
         "priv/run_command.sh",
         # Bootstrap reads this at compile time via @external_resource
@@ -85,7 +86,9 @@ defmodule SurfBoard.MixProject do
       maintainers: @maintainers,
       licenses: ["MIT"],
       links: %{
-        "GitHub" => @source_url
+        "GitHub" => @source_url,
+        "Wallabidi (upstream)" => "https://github.com/u2i/wallabidi",
+        "Wallaby (upstream of Wallabidi)" => "https://github.com/elixir-wallaby/wallaby"
       }
     ]
   end
