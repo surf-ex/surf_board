@@ -14,12 +14,10 @@ defmodule SurfBoard.Transport.SharedWS do
   # Teardown disposes the BrowserContext (which kills its targets)
   # but leaves the shared WS alone.
 
-  @behaviour SurfBoard.Transport
-
   alias SurfBoard.Transport
   alias SurfBoard.WebSocket
 
-  @impl true
+  @spec acquire(keyword) :: {:ok, Transport.acquired()} | {:error, term}
   def acquire(opts) do
     connection = Keyword.fetch!(opts, :connection)
     driver_mod = Keyword.fetch!(opts, :driver)

@@ -10,12 +10,10 @@ defmodule SurfBoard.Transport.IsolatedProcess do
   # one connection (or has bugs that surface under concurrent load).
   # Currently the default Lightpanda transport.
 
-  @behaviour SurfBoard.Transport
-
   alias SurfBoard.Transport
   alias SurfBoard.WebSocket
 
-  @impl true
+  @spec acquire(keyword) :: {:ok, Transport.acquired()} | {:error, term}
   def acquire(opts) do
     {:ok, ws_url, server_pid} = ensure_server(opts)
 

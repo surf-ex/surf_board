@@ -65,9 +65,12 @@ defmodule SurfBoard.Transport.Protocol do
   #
   # Lifecycle:
   #
-  #   * The actor is started by a transport-specific function (e.g.
-  #     `Transport.PerSession.acquire/1`,
-  #     `Transport.IsolatedProcess.acquire/1`).
+  #   * The actor is started by a driver-specific bootstrap function —
+  #     `Transport.start_session_from/3` (fed by `Transport.SharedWS.
+  #     acquire/1` or `Transport.IsolatedProcess.acquire/1`),
+  #     `Transport.PerSession.start_session/1`, or `Transport.BiDi.
+  #     start_session/1` — depending on which driver is starting the
+  #     session. Each ends with an actor pid honoring this contract.
   #   * The actor monitors its owner; if the owner dies, it stops
   #     itself and runs its teardown_fun.
   #   * `stop/1` triggers an orderly shutdown.

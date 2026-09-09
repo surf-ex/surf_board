@@ -27,6 +27,9 @@ defmodule SurfBoard.Transport do
   #
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
+  # This is documented convention, not a `@behaviour` — a driver picks
+  # its transport strategy by module name once, at author time; nothing
+  # dispatches across strategies at runtime.
 
   alias SurfBoard.Transport.Session, as: V2Session
   alias SurfBoard.WebSocket
@@ -56,11 +59,15 @@ defmodule SurfBoard.Transport do
           capabilities: map
         }
 
-  @doc """
-  Acquire a transport context for one session. Called by
-  `start_session/1`. Failure should propagate as `{:error, term}`.
-  """
-  @callback acquire(opts :: keyword) :: {:ok, acquired} | {:error, term}
+  # `acquire/1` is a plain function on each implementer (SharedWS,
+  # IsolatedProcess) with this shape, not a `@behaviour` callback: each
+  # driver calls its own chosen strategy by name (ChromeCDP always
+  # calls SharedWS.acquire/1; Lightpanda's IsolatedProcess fallback
+  # calls IsolatedProcess.acquire/1 directly) rather than dispatching
+  # through a shared interface, so there's no polymorphic call site for
+  # a callback to serve.
+  #
+  #   @spec acquire(opts :: keyword) :: {:ok, acquired} | {:error, term}
 
   # ----- Default implementations of common teardown shapes -----
   # Drivers can use these directly or build their own.
