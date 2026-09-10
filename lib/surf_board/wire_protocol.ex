@@ -89,6 +89,13 @@ defmodule SurfBoard.WireProtocol do
   @callback find_elements(Session.t() | Element.t(), term) ::
               {:ok, list(Element.t())} | {:error, term}
 
+  @doc """
+  Find elements matching the query, returning lazy `Element`s (no
+  eager V8 ref-fetch round trip) — see `SurfBoard.OpsShared`.
+  """
+  @callback find_elements_lazy(Session.t() | Element.t(), term, keyword) ::
+              {:ok, list(Element.t())} | {:error, term}
+
   @doc "Send keys to an element."
   @callback send_keys(Session.t(), Element.t(), list) :: {:ok, nil} | {:error, term}
 

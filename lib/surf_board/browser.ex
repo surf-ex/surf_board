@@ -198,7 +198,7 @@ defmodule SurfBoard.Browser do
         _ =
           find_lazy(parent, query, fn element ->
             session = SurfBoard.Element.root_session(element)
-            remote_client(session).fill_in(session, element, value, 0)
+            spec(session).wire_protocol.fill_in(session, element, value, 0)
           end)
 
         armed
@@ -214,16 +214,18 @@ defmodule SurfBoard.Browser do
 
         find_lazy(parent, query, fn element ->
           session = SurfBoard.Element.root_session(element)
-          remote_client(session).fill_in(session, element, value, drain_idle_ms)
+          spec(session).wire_protocol.fill_in(session, element, value, drain_idle_ms)
         end)
     end
   end
 
-  # CDP/BiDi clients ship element ops through W.run; the LV driver
-  # doesn't have W.run and uses its own Element handle shape.
-  defp remote_session?(%Session{driver: SurfBoard.Drivers.ChromeBiDi}), do: true
-  defp remote_session?(%Session{driver: SurfBoard.Drivers.ChromeCDP}), do: true
-  defp remote_session?(%Session{driver: SurfBoard.Drivers.LightpandaCDP}), do: true
+  # A real session (as opposed to nil, e.g. from get_session/1 on a
+  # detached element). Every current driver's wire_protocol ships
+  # element ops through W.run, so this is a nil-guard, not a driver
+  # capability check — if a future driver's wire_protocol genuinely
+  # can't support the W.run pipeline, that's a DriverSpec field to add
+  # then, not something to guess at now.
+  defp remote_session?(%Session{}), do: true
   defp remote_session?(_), do: false
 
   defp maybe_snapshot_page_id(%Session{pending_await: nil} = session) when is_struct(session) do
@@ -235,11 +237,6 @@ defmodule SurfBoard.Browser do
   end
 
   defp maybe_snapshot_page_id(parent), do: parent
-
-  defp remote_client(%Session{driver: SurfBoard.Drivers.ChromeBiDi}),
-    do: SurfBoard.Clients.BiDi.Client
-
-  defp remote_client(_), do: SurfBoard.Clients.CDP.Client
 
   # @doc """
   # Clears an input field. Input elements are looked up by id, label text, or name.
@@ -846,7 +843,7 @@ defmodule SurfBoard.Browser do
     if remote_session?(get_session(parent)) do
       find_lazy(parent, query, fn element ->
         session = SurfBoard.Element.root_session(element)
-        remote_client(session).set_checked(session, element, true)
+        spec(session).wire_protocol.set_checked(session, element, true)
       end)
     else
       find(parent, query, fn element ->
@@ -862,7 +859,7 @@ defmodule SurfBoard.Browser do
     if remote_session?(get_session(parent)) do
       find_lazy(parent, query, fn element ->
         session = SurfBoard.Element.root_session(element)
-        remote_client(session).set_checked(session, element, false)
+        spec(session).wire_protocol.set_checked(session, element, false)
       end)
     else
       find(parent, query, fn element ->
@@ -1282,18 +1279,14 @@ defmodule SurfBoard.Browser do
   # one or two ops — e.g. Browser.text/2, attr/3. Subsequent ops on
   # lazy elements re-resolve via [query, target N] inside W.run.
   #
-  # Falls back to eager find on drivers that don't support the ops
-  # pipeline (LiveView driver), since the lazy path requires the
-  # W.run interpreter on the page.
+  # Falls back to eager find inside a frame or a non-default window,
+  # since the lazy path's [query, target N] re-resolution isn't taught
+  # about frame/window scoping yet (every current driver's wire_protocol
+  # supports the pipeline itself — see remote_session?/1).
   defp find_lazy(parent, %Query{} = query) do
     session = get_session(parent)
 
-    if session &&
-         session.driver in [
-           SurfBoard.Drivers.LightpandaCDP,
-           SurfBoard.Drivers.ChromeCDP,
-           SurfBoard.Drivers.ChromeBiDi
-         ] && not in_frame?(session) && not in_switched_window?(session) do
+    if remote_session?(session) && not in_frame?(session) && not in_switched_window?(session) do
       do_find_lazy(parent, query, current_time())
     else
       do_find(parent, query, current_time())
@@ -1415,7 +1408,12 @@ defmodule SurfBoard.Browser do
     session = SurfBoard.Element.root_session(element)
 
     if remote_session?(session) do
-      case remote_client(session).await_value(session, element, value, max_wait_time(session)) do
+      case spec(session).wire_protocol.await_value(
+             session,
+             element,
+             value,
+             max_wait_time(session)
+           ) do
         {:ok, true} -> true
         _ -> false
       end
@@ -1475,7 +1473,7 @@ defmodule SurfBoard.Browser do
       # Single-RT await: V8 polls textContent with MutationObserver +
       # onPatchEnd until match or timeout. Replaces an Elixir-side
       # retry loop that polled Element.text every 25ms.
-      case remote_client(session).await_text(session, element, text, max_wait_time(session)) do
+      case spec(session).wire_protocol.await_text(session, element, text, max_wait_time(session)) do
         {:ok, true} -> true
         _ -> false
       end
@@ -1823,40 +1821,27 @@ defmodule SurfBoard.Browser do
   end
 
   # Ops pipeline: compile find + visibility/text/selected filters into one
-  # JS evaluation. Both CDP and BiDi use push-based find:
-  # CDP: Runtime.addBinding → Runtime.bindingCalled
-  # BiDi: script.addPreloadScript channel → script.message
+  # JS evaluation. Both CDP and BiDi use push-based find (CDP:
+  # Runtime.addBinding → Runtime.bindingCalled; BiDi: script.channel),
+  # dispatched generically through whichever wire_protocol this
+  # session's driver_spec names — no driver-identity branching, since
+  # every wire_protocol implements both find_elements/3 and
+  # find_elements_lazy/3 (see OpsShared).
   defp execute_query_pipeline(parent, query, opts) do
     alias SurfBoard.Clients.CDP.Ops
 
     session = get_session(parent)
     lazy? = Keyword.get(opts, :lazy, false)
+    wire_protocol = spec(session).wire_protocol
 
     with {:ok, _ops, validated} <- Ops.compile_query(parent, query) do
       timeout = query_timeout(session, validated)
 
       result =
-        cond do
-          session.driver == SurfBoard.Drivers.ChromeBiDi and lazy? ->
-            SurfBoard.Clients.BiDi.Client.find_elements_lazy(parent, validated, timeout: timeout)
-
-          session.driver == SurfBoard.Drivers.ChromeBiDi ->
-            # BiDi: push-based bootstrap pipeline speaking BiDi.
-            SurfBoard.Clients.BiDi.Client.find_elements(parent, validated, timeout: timeout)
-
-          session.driver in [
-            SurfBoard.Drivers.LightpandaCDP,
-            SurfBoard.Drivers.ChromeCDP
-          ] and
-              lazy? ->
-            SurfBoard.Clients.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
-
-          session.driver in [
-            SurfBoard.Drivers.LightpandaCDP,
-            SurfBoard.Drivers.ChromeCDP
-          ] ->
-            # CDP: same push pipeline routed through Session.
-            SurfBoard.Clients.CDP.Client.find_elements(parent, validated, timeout: timeout)
+        if lazy? do
+          wire_protocol.find_elements_lazy(parent, validated, timeout: timeout)
+        else
+          wire_protocol.find_elements(parent, validated, timeout: timeout)
         end
 
       case result do
