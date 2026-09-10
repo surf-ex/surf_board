@@ -15,18 +15,26 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
   alias SurfBoard.Transport
   alias SurfBoard.WebSocket
 
+  defmodule Config do
+    @moduledoc false
+    # Either `ws_url` (connect to an already-running browser — the
+    # "external" case) or `spawn_fun`+`url_fun` (spawn a fresh private
+    # browser process, then derive its ws_url from the returned pid —
+    # the "isolated" case). Exactly one of the two shapes, never both.
+    defstruct [:ws_url, :spawn_fun, :url_fun]
+  end
+
   @impl true
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) do
     template = Keyword.fetch!(opts, :session_struct)
-    {:ok, ws_url, server_pid} = ensure_server(opts)
+    config = Keyword.fetch!(opts, :config)
+    {:ok, ws_url, server_pid} = ensure_server(config)
 
     with {:ok, ws_pid} <- WebSocket.start_link(ws_url),
          {:ok, %{"targetId" => target_id}} <-
            WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
          {:ok, session_id} <- Transport.attach_to_target(ws_pid, target_id) do
-      caps = Keyword.get(opts, :extra_capabilities, %{})
-
       teardown = fn _session ->
         Transport.close_ws(ws_pid)
         if is_pid(server_pid), do: stop_server(server_pid)
@@ -39,12 +47,11 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
         session_id: session_id,
         browser_context_id: nil,
         teardown_fun: teardown,
-        capabilities:
-          Map.merge(caps, %{
-            target_id: target_id,
-            flat_session_id: true,
-            server_pid: server_pid
-          })
+        capabilities: %{
+          target_id: target_id,
+          flat_session_id: true,
+          server_pid: server_pid
+        }
       }
 
       Transport.start_session_from(acquired, template, opts)
@@ -57,18 +64,15 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
     end
   end
 
-  defp ensure_server(opts) do
-    case Keyword.get(opts, :ws_url) do
-      url when is_binary(url) ->
-        {:ok, url, nil}
+  defp ensure_server(%Config{ws_url: url}) when is_binary(url) do
+    {:ok, url, nil}
+  end
 
-      _ ->
-        spawn_fun = Keyword.fetch!(opts, :spawn_fun)
-        {:ok, server} = spawn_fun.()
-        url_fun = Keyword.fetch!(opts, :url_fun)
-        ws_url = url_fun.(server)
-        {:ok, ws_url, server}
-    end
+  defp ensure_server(%Config{spawn_fun: spawn_fun, url_fun: url_fun})
+       when is_function(spawn_fun, 0) and is_function(url_fun, 1) do
+    {:ok, server} = spawn_fun.()
+    ws_url = url_fun.(server)
+    {:ok, ws_url, server}
   end
 
   defp stop_server(pid) do

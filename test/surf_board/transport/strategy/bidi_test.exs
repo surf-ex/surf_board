@@ -169,7 +169,7 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
 
     BiDi.start_session(
       Keyword.merge(
-        [base_url: base_url, session_struct: session_struct],
+        [config: %BiDi.Config{base_url: base_url}, session_struct: session_struct],
         extra
       )
     )

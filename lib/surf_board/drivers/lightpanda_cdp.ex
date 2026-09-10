@@ -227,25 +227,23 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       _pid ->
         # credo:disable-for-next-line Credo.Check.Refactor.Apply
         ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
-        {:ok, &start_per_session(&1, ws_url)}
+        config = %Transport.Strategy.PerSession.Config{ws_url: ws_url}
+        {:ok, &start_via_strategy(&1, Transport.Strategy.PerSession, config)}
     end
   end
 
   defp isolated_connection(_opts) do
     if Code.ensure_loaded?(@lightpanda_server) do
-      base_caps = %{needs_xpath_polyfill: true}
-
-      transport_opts = [
+      config = %Transport.Strategy.IsolatedProcess.Config{
         spawn_fun: fn ->
           # credo:disable-for-next-line Credo.Check.Refactor.Apply
           apply(@lightpanda_server, :start_link, [[name: nil, wrapper_script: wrapper_script()]])
         end,
         # credo:disable-for-next-line Credo.Check.Refactor.Apply
-        url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
-        extra_capabilities: base_caps
-      ]
+        url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end
+      }
 
-      {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
+      {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, config)}
     else
       {:error, :lightpanda_package_not_loaded}
     end
@@ -254,16 +252,15 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   defp external_connection(opts) do
     case Keyword.get(opts, :ws_url) do
       url when is_binary(url) ->
-        base_caps = %{needs_xpath_polyfill: true}
-        transport_opts = [ws_url: url, extra_capabilities: base_caps]
-        {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
+        config = %Transport.Strategy.IsolatedProcess.Config{ws_url: url}
+        {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, config)}
 
       _ ->
         {:error, :ws_url_required}
     end
   end
 
-  defp start_per_session(opts, ws_url) do
+  defp start_via_strategy(opts, transport_mod, config) do
     session_struct = %Session{
       id: "v2drv-#{System.unique_integer([:positive])}",
       url: "about:blank",
@@ -271,7 +268,6 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       driver: __MODULE__,
       driver_spec: @driver_spec,
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-      browsing_context: nil,
       capabilities: %{
         flat_session_id: true,
         # Lightpanda's JS engine doesn't ship a real document.evaluate
@@ -280,31 +276,11 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       }
     }
 
-    with {:ok, session} <-
-           Transport.Strategy.PerSession.start_session(
-             ws_url: ws_url,
-             session_struct: session_struct,
-             owner: Keyword.get(opts, :owner, self())
-           ) do
-      apply_session_opts(session, opts)
-      {:ok, session}
-    end
-  end
-
-  defp start_via_strategy(opts, transport_mod, transport_opts) do
-    session_struct = %Session{
-      id: "v2drv-#{System.unique_integer([:positive])}",
-      url: "about:blank",
-      session_url: "about:blank",
-      driver: __MODULE__,
-      driver_spec: @driver_spec,
-      live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-      capabilities: %{}
-    }
-
-    strategy_opts =
-      transport_opts ++
-        [session_struct: session_struct, owner: Keyword.get(opts, :owner, self())]
+    strategy_opts = [
+      config: config,
+      session_struct: session_struct,
+      owner: Keyword.get(opts, :owner, self())
+    ]
 
     with {:ok, session} <- transport_mod.start_session(strategy_opts) do
       apply_session_opts(session, opts)

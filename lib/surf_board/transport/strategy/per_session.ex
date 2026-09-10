@@ -23,11 +23,19 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Session
 
+  defmodule Config do
+    @moduledoc false
+    # `ws_url` — the shared browser's WebSocket URL; this session opens
+    # its own connection to it (Lightpanda accepts many WS to one binary).
+    @enforce_keys [:ws_url]
+    defstruct [:ws_url]
+  end
+
   @doc """
   Bring up a new session.
 
   Required opts:
-    * `:ws_url`  — the shared browser's WebSocket URL
+    * `:config` — `%Config{ws_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` to back the session
       with (driver fills in id/url/capabilities/etc.)
 
@@ -39,12 +47,12 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
-    ws_url = Keyword.fetch!(opts, :ws_url)
+    %Config{ws_url: ws_url} = Keyword.fetch!(opts, :config)
     session_struct = Keyword.fetch!(opts, :session_struct)
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())
 
-    config = %Actor.Config{
+    actor_config = %Actor.Config{
       socket: {:fused, ws_url},
       send: :inline,
       load: :buffer,
@@ -54,7 +62,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
 
     with {:ok, session} <-
            Actor.start_link(
-             config: config,
+             config: actor_config,
              init_fun: fn -> {:ok, session_struct} end,
              teardown_fun: teardown_fun,
              owner: owner

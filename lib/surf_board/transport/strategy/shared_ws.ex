@@ -4,8 +4,8 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
   # Transport: ONE WebSocket per BEAM, shared across all sessions
   # via CDP's flat-session protocol. Each `start_session/1`:
   #
-  #   1. Fetches the shared ws_pid from a connection-holder Agent
-  #      (typically `SurfBoard.Drivers.ChromeCDP.SharedConnection`).
+  #   1. Fetches the shared ws_pid from `config.connection` (typically
+  #      `SurfBoard.Drivers.ChromeCDP.SharedConnection`).
   #   2. Creates a fresh BrowserContext on that shared WS.
   #   3. Creates a Target inside that BrowserContext (about:blank).
   #   4. Attaches to the target (flat session) → gets a sessionId
@@ -21,11 +21,20 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
   alias SurfBoard.Transport
   alias SurfBoard.WebSocket
 
+  defmodule Config do
+    @moduledoc false
+    # `connection` — module implementing `get(driver_mod) :: pid`,
+    # returning the shared WebSocket (lazily connecting on first call).
+    # `driver` — the driver module, passed through to `connection.get/1`
+    # so it can resolve its own server name / remote URL.
+    @enforce_keys [:connection, :driver]
+    defstruct [:connection, :driver]
+  end
+
   @impl true
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) do
-    connection = Keyword.fetch!(opts, :connection)
-    driver_mod = Keyword.fetch!(opts, :driver)
+    %Config{connection: connection, driver: driver_mod} = Keyword.fetch!(opts, :config)
     template = Keyword.fetch!(opts, :session_struct)
 
     ws_pid = connection.get(driver_mod)

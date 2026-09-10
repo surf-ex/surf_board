@@ -110,19 +110,25 @@ strategy for an existing vendor).
        # Build a template %SurfBoard.Session{driver: __MODULE__, driver_spec:
        # @driver_spec, capabilities: ..., ...} — leave bidi_pid/browsing_context
        # unset, your chosen Transport.Strategy fills those in — and hand it
-       # to your strategy's start_session/1 as :session_struct:
+       # to your strategy's start_session/1 alongside a :config built from
+       # that strategy's own Config struct (each strategy defines its own,
+       # e.g. Transport.Strategy.SharedWS.Config):
        #
        #   Transport.Strategy.SharedWS.start_session(
-       #     connection: YourSharedConnection,
-       #     driver: __MODULE__,
+       #     config: %Transport.Strategy.SharedWS.Config{
+       #       connection: YourSharedConnection,
+       #       driver: __MODULE__
+       #     },
        #     session_struct: template,
        #     owner: Keyword.get(opts, :owner, self())
        #   )
        #
        # Every SurfBoard.Transport.Strategy implementation shares this
        # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
-       # contract (see "Own your connection" below), so reusing one is
-       # just picking the module and supplying its required opts.
+       # contract (see "Own your connection" below) — opts only ever
+       # carries :session_struct, :config, and :owner, never bare
+       # connection details, so reusing a strategy is just picking the
+       # module and building its Config.
      end
 
      @impl SurfBoard.Driver

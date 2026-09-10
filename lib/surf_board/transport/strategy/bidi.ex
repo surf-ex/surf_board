@@ -28,12 +28,23 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Session
 
+  defmodule Config do
+    @moduledoc false
+    # `base_url` — the chromium-bidi server's HTTP base URL (e.g.
+    # `http://localhost:12345`).
+    # `capabilities` — WebDriver session-creation capabilities for the
+    # POST /session body (distinct from `session_struct.capabilities`,
+    # which is SurfBoard's own session bookkeeping) — nil uses
+    # Handshake's default.
+    @enforce_keys [:base_url]
+    defstruct [:base_url, :capabilities]
+  end
+
   @doc """
   Bring up a new BiDi session.
 
   Required opts:
-    * `:base_url`       — the chromium-bidi server's HTTP base
-                          URL (e.g. `http://localhost:12345`)
+    * `:config`         — `%Config{base_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` template; this
                           function fills in `pid`, `bidi_pid` and
                           `browsing_context`.
@@ -41,21 +52,16 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   Optional:
     * `:owner`        — process to monitor (defaults to caller)
     * `:teardown_fun` — 1-arity, called from terminate/2
-    * `:capabilities` — capabilities map for the POST body
   """
   @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
-    base_url = Keyword.fetch!(opts, :base_url)
+    %Config{base_url: base_url, capabilities: caps} = Keyword.fetch!(opts, :config)
     session_struct = Keyword.fetch!(opts, :session_struct)
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())
 
-    handshake_opts =
-      case Keyword.fetch(opts, :capabilities) do
-        {:ok, caps} -> [capabilities: caps]
-        :error -> []
-      end
+    handshake_opts = if caps, do: [capabilities: caps], else: []
 
     # chromium-bidi's session.subscribe can transiently time out on
     # slow runners. Retry the WHOLE handshake → SessionActor.start_link →

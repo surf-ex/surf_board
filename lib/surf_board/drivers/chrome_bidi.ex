@@ -105,7 +105,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
     with {:ok, session} <-
            BiDi.start_session(
-             base_url: base_url,
+             config: %BiDi.Config{base_url: base_url},
              session_struct: session_struct,
              owner: Keyword.get(opts, :owner, self())
            ) do

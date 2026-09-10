@@ -135,8 +135,10 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
     with {:ok, session} <-
            Transport.Strategy.SharedWS.start_session(
-             connection: SharedConnection,
-             driver: __MODULE__,
+             config: %Transport.Strategy.SharedWS.Config{
+               connection: SharedConnection,
+               driver: __MODULE__
+             },
              session_struct: session_struct,
              owner: caller
            ) do
