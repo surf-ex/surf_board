@@ -96,7 +96,8 @@ defmodule SurfBoard.MixProject do
   defp docs do
     [
       extras: [
-        "README.md": [title: "Introduction"]
+        "README.md": [title: "Introduction"],
+        "guides/implementing_a_driver.md": [title: "Implementing a Driver"]
       ],
       source_ref: "v#{@version}",
       source_url: @source_url,
