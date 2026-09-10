@@ -45,32 +45,70 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
+  # `connection` picks which of the two ways this driver's ONE Chrome
+  # instance for the life of the BEAM gets connected — unlike
+  # LightpandaCDP's `:connection` opt (re-resolved on every
+  # `start_session/1` call), this is decided once, here, at
+  # Supervisor.init/1 time: the driver's supervisor starts lazily on
+  # first `start_session/1` and is never restarted per call, so by the
+  # time a second call could pass a different opt, this choice is
+  # already fixed. It's app config, not a session opt.
+  #
+  #   * `:shared`   — spawn and own a local Chrome process
+  #                   (`ChromeServer`), then multiplex every session
+  #                   over one shared WebSocket (`SharedConnection`).
+  #   * `:external` — never spawn anything; connect `SharedConnection`
+  #                   to a Chrome instance this driver doesn't manage,
+  #                   via `remote_url/0`.
+  #
+  # Omitted (the default): auto-detect — `:external` if `remote_url/0`
+  # resolves to something, else `:shared`.
   @impl Supervisor
   def init(_) do
     children =
-      if remote_url() do
-        [SharedConnection]
-      else
-        [{ChromeServer, [name: __MODULE__.Server]}, SharedConnection]
+      case resolve_connection() do
+        :external -> [SharedConnection]
+        :shared -> [{ChromeServer, [name: __MODULE__.Server]}, SharedConnection]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
   end
 
+  defp resolve_connection do
+    case configured_connection() do
+      nil -> if remote_url(), do: :external, else: :shared
+      :external -> :external
+      :shared -> :shared
+    end
+  end
+
+  defp configured_connection do
+    Application.get_env(:surf_board, :chrome_cdp_v2, []) |> Keyword.get(:connection)
+  end
+
   @doc false
   def validate do
-    cond do
-      remote_url() ->
-        :ok
+    case resolve_connection() do
+      :external ->
+        if remote_url() do
+          :ok
+        else
+          {:error,
+           DependencyError.exception(
+             "connection: :external configured, but no remote_url is set. " <>
+               "Set SURF_BOARD_CHROME_URL or config :surf_board, :chrome_cdp_v2, remote_url: \"...\"."
+           )}
+        end
 
-      chrome_available?() ->
-        :ok
-
-      true ->
-        {:error,
-         DependencyError.exception(
-           "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
-         )}
+      :shared ->
+        if chrome_available?() do
+          :ok
+        else
+          {:error,
+           DependencyError.exception(
+             "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
+           )}
+        end
     end
   end
 
