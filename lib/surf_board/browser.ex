@@ -342,8 +342,15 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec grant_permissions(session, [:camera | :microphone]) :: :ok | {:error, term}
-  def grant_permissions(%Session{} = session, permissions) when is_list(permissions),
-    do: spec(session).grant_permissions.grant_permissions(session, permissions)
+  def grant_permissions(%Session{} = session, permissions) when is_list(permissions) do
+    case spec(session).grant_permissions do
+      SurfBoard.Permissions.Unsupported ->
+        raise SurfBoard.DriverError.not_supported("grant_permissions/2", session.driver)
+
+      mod ->
+        mod.grant_permissions(session, permissions)
+    end
+  end
 
   @doc """
   Gets the window handle of the current window.
@@ -761,8 +768,14 @@ defmodule SurfBoard.Browser do
   end
 
   def send_keys(%Session{} = parent, keys) when is_list(keys) do
-    {:ok, _} = spec(parent).send_keys_session.send_keys_to_session(parent, keys)
-    parent
+    case spec(parent).send_keys_session do
+      SurfBoard.SendKeysSession.Unsupported ->
+        raise SurfBoard.DriverError.not_supported("send_keys/2", parent.driver)
+
+      mod ->
+        {:ok, _} = mod.send_keys_to_session(parent, keys)
+        parent
+    end
   end
 
   @doc """
