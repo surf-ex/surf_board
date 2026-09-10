@@ -89,6 +89,38 @@ callers reference it. `LightpandaCDP`'s `:isolated`/`:external` opts (and
 because their strategies cache nothing — there's no state worth keeping
 around past that one session's startup.
 
+### Launchers are a complete entry point, not just connection state
+
+A launcher can also hold two driver-supplied hooks — `:build_template`
+and `:post_start` — set at `start_link/1` time. When both are present,
+`SurfBoard.Launcher.start_session/2` is a fully standalone way to start
+a session: no driver module, no `SurfBoard.start_session/1` call, just
+the launcher.
+
+```elixir
+{:ok, session} = SurfBoard.Launcher.start_session(MyApp.TestChrome)
+```
+
+* **`build_template.(opts)`** — builds the `%SurfBoard.Session{}`
+  template (id/driver/driver_spec/live_view_aware?/base capabilities)
+  that gets handed to the strategy. This is exactly what a driver's own
+  `start_session/1` used to build inline.
+* **`post_start.(session, opts)`** — driver-specific work that has to
+  run after the strategy returns a live session (UA override, window
+  size, log-event subscription, …); returns
+  `{:ok, session} | {:error, term}`.
+
+A driver that wants its launchers to support this attaches both hooks
+when it starts them (its default one in `init/1`, and any transient
+ones it builds per call) and its own `start_session/1` collapses to
+"resolve which launcher, then call `Launcher.start_session/2`" — see
+`ChromeCDP.start_session/1` for the smallest example: it's three lines,
+with `build_template/1` and `post_start/2` as private functions the
+default launcher was started with. `SurfBoard.start_session(driver: ...)`
+stays the entry point when you don't already have a launcher in hand
+(most callers, most of the time) — the hooks exist so that once you
+*do* have one, it's not a dead end.
+
 ## What a driver module actually does
 
 `SurfBoard.Driver` is a 2-callback behaviour: `start_session/1` and
@@ -149,7 +181,8 @@ strategy for an existing vendor).
      @impl Supervisor
      def init(_) do
        # Start whatever process(es) your connection strategy needs, plus
-       # one default SurfBoard.Launcher wrapping your strategy's Config —
+       # one default SurfBoard.Launcher wrapping your strategy's Config
+       # and this module's build_template/1 + post_start/2 hooks —
        # nothing else if you connect directly with nothing to launch.
        # Mirror ChromeCDP/LightpandaCDP's `init/1` for the shape.
        children = [
@@ -158,7 +191,9 @@ strategy for an existing vendor).
           strategy: SurfBoard.Transport.Strategy.SharedWS,
           config: %SurfBoard.Transport.Strategy.SharedWS.Config{
             resolve_ws_url: fn -> :your_server.ws_url(:your_server_name) end
-          }}
+          },
+          build_template: &build_template/1,
+          post_start: &post_start/2}
        ]
 
        Supervisor.init(children, strategy: :one_for_one)
@@ -168,27 +203,26 @@ strategy for an existing vendor).
      @impl SurfBoard.Driver
      def start_session(opts \\ []) do
        launcher = Keyword.get(opts, :launcher, @default_launcher_name)
+       SurfBoard.Launcher.start_session(launcher, opts)
+     end
 
-       # Build a template %SurfBoard.Session{driver: __MODULE__, driver_spec:
-       # @driver_spec, capabilities: ..., ...} — leave bidi_pid/browsing_context
-       # unset, your chosen Transport.Strategy fills those in — and hand it
-       # to your strategy's start_session/1 alongside the :launcher (the
-       # default one above, or opts[:launcher] if the caller passed their
-       # own independently-started one):
-       #
-       #   Transport.Strategy.SharedWS.start_session(
-       #     launcher: launcher,
-       #     session_struct: template,
-       #     owner: Keyword.get(opts, :owner, self())
-       #   )
-       #
-       # Every SurfBoard.Transport.Strategy implementation shares this
-       # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
-       # contract (see "Own your connection" below and
-       # [Launchers](#launchers-started-instances-of-a-strategy)) — opts
-       # only ever carries :session_struct, :launcher, and :owner, never
-       # bare connection details, so reusing a strategy is just picking
-       # the module and starting the right kind of launcher.
+     # ----- Launcher hooks (see "Launchers are a complete entry point") -----
+
+     defp build_template(opts) do
+       %SurfBoard.Session{
+         driver: __MODULE__,
+         driver_spec: @driver_spec,
+         live_view_aware?: Keyword.get(opts, :live_view_aware, false),
+         capabilities: Keyword.get(opts, :capabilities, %{})
+         # bidi_pid/browsing_context stay unset — your strategy fills
+         # those in.
+       }
+     end
+
+     defp post_start(session, _opts) do
+       # Whatever has to run after the strategy hands back a live
+       # session — UA override, window size, log subscriptions, ...
+       {:ok, session}
      end
 
      @impl SurfBoard.Driver
@@ -198,6 +232,14 @@ strategy for an existing vendor).
      end
    end
    ```
+
+   Every `SurfBoard.Transport.Strategy` implementation shares the
+   `start_session(opts) :: {:ok, Session.t()} | {:error, term}` contract
+   (see "Own your connection" below and
+   [Launchers](#launchers-started-instances-of-a-strategy)) — `opts`
+   only ever carries `:session_struct`, `:launcher`, and `:owner`, never
+   bare connection details, so reusing a strategy is just picking the
+   module and starting the right kind of launcher.
 
 2. **Add a vendor marker** in `lib/surf_board/browser/your_vendor.ex` — an empty
    module (see `browser/chrome.ex`, `browser/lightpanda.ex`). It's a tag, not a

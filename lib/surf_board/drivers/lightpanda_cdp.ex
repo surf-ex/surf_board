@@ -268,11 +268,26 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   # `Launcher` per session rather than referencing a driver-owned default
   # one. None of PerSession/IsolatedProcess cache connection state on
   # their launcher (unlike SharedWS), so nothing is lost by not keeping
-  # it around past this one session's start.
+  # it around past this one session's start. It still gets the same
+  # build_template/post_start hooks as ChromeCDP's default launcher, so
+  # a caller holding one of these (via opts[:launcher] on a future call)
+  # gets the same standalone Launcher.start_session/2 capability.
   defp start_via_strategy(opts, strategy, config) do
-    {:ok, launcher} = Launcher.start_link(strategy: strategy, config: config)
+    {:ok, launcher} =
+      Launcher.start_link(
+        strategy: strategy,
+        config: config,
+        build_template: &build_template/1,
+        post_start: &apply_session_opts/2
+      )
 
-    session_struct = %Session{
+    result = Launcher.start_session(launcher, opts)
+    Agent.stop(launcher)
+    result
+  end
+
+  defp build_template(opts) do
+    %Session{
       id: "v2drv-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
@@ -286,20 +301,6 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         needs_xpath_polyfill: true
       }
     }
-
-    strategy_opts = [
-      launcher: launcher,
-      session_struct: session_struct,
-      owner: Keyword.get(opts, :owner, self())
-    ]
-
-    result = strategy.start_session(strategy_opts)
-    Agent.stop(launcher)
-
-    with {:ok, session} <- result do
-      apply_session_opts(session, opts)
-      {:ok, session}
-    end
   end
 
   # Apply post-start session options shared by both transports: the BEAM
@@ -325,7 +326,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
     end
 
-    :ok
+    {:ok, session}
   end
 
   # Lightpanda accepts `Network.setUserAgentOverride` and returns

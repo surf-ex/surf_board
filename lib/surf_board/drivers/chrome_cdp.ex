@@ -5,15 +5,20 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   # launcher (one shared WebSocket for every session started against
   # it), per-session BrowserContext + Target + sessionId for routing.
   #
-  # Only owns lifecycle (start/end_session, the Supervisor surface) and
-  # its @driver_spec. Every capability is dispatched by Browser.ex/
-  # Element.ex calling session.driver_spec's dimension modules directly.
+  # Only owns lifecycle (start/end_session, the Supervisor surface),
+  # its @driver_spec, and the two `Launcher` hooks (`build_template/1`,
+  # `post_start/2`) that make its default launcher a complete entry
+  # point on its own — `start_session/1` itself is just "resolve which
+  # launcher, then call `Launcher.start_session/2`". Every capability is
+  # dispatched by Browser.ex/Element.ex calling session.driver_spec's
+  # dimension modules directly.
   #
   # Starts one default `SurfBoard.Launcher` under its own Supervisor,
-  # lazily, same as always — pass `launcher:` to `start_session/1` to
-  # use a different, independently-started launcher instead (e.g. an
-  # application connecting to a remote Chrome while its own test suite
-  # launches and owns a second, local one, both alive in the same BEAM).
+  # lazily, same as always — pass `launcher:` to `start_session/1` (or
+  # call `Launcher.start_session/2` on it directly) to use a different,
+  # independently-started launcher instead (e.g. an application
+  # connecting to a remote Chrome while its own test suite launches and
+  # owns a second, local one, both alive in the same BEAM).
 
   use Supervisor
 
@@ -75,18 +80,22 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   # resolves to something, else `:shared`.
   @impl Supervisor
   def init(_) do
+    launcher_opts = [
+      name: @default_launcher_name,
+      strategy: SharedWS,
+      build_template: &build_template/1,
+      post_start: &post_start/2
+    ]
+
     children =
       case resolve_connection() do
         :external ->
-          [
-            {Launcher,
-             name: @default_launcher_name, strategy: SharedWS, config: external_config()}
-          ]
+          [{Launcher, launcher_opts ++ [config: external_config()]}]
 
         :shared ->
           [
             {ChromeServer, [name: __MODULE__.Server]},
-            {Launcher, name: @default_launcher_name, strategy: SharedWS, config: shared_config()}
+            {Launcher, launcher_opts ++ [config: shared_config()]}
           ]
       end
 
@@ -146,59 +155,59 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
-    caller = Keyword.get(opts, :owner, self())
-    user_caps = Keyword.get(opts, :capabilities, %{})
     launcher = Keyword.get(opts, :launcher, @default_launcher_name)
+    Launcher.start_session(launcher, opts)
+  end
 
-    session_struct = %Session{
+  # ----- Launcher hooks (see Launcher's moduledoc) -----
+
+  defp build_template(opts) do
+    %Session{
       id: "v2-chrome-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
       driver: __MODULE__,
       driver_spec: @driver_spec,
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-      capabilities: user_caps
+      capabilities: Keyword.get(opts, :capabilities, %{})
     }
+  end
 
-    with {:ok, session} <-
-           SharedWS.start_session(
-             launcher: launcher,
-             session_struct: session_struct,
-             owner: caller
-           ) do
-      # Forward console + exception events to the test caller's mailbox
-      # so LogChecker.check_logs! can drain them after each operation.
-      _ =
-        WebSocket.subscribe(
-          session.bidi_pid,
-          "Runtime.consoleAPICalled",
-          session.browsing_context,
-          caller
-        )
+  defp post_start(session, opts) do
+    caller = Keyword.get(opts, :owner, self())
 
-      _ =
-        WebSocket.subscribe(
-          session.bidi_pid,
-          "Runtime.exceptionThrown",
-          session.browsing_context,
-          caller
-        )
+    # Forward console + exception events to the test caller's mailbox
+    # so LogChecker.check_logs! can drain them after each operation.
+    _ =
+      WebSocket.subscribe(
+        session.bidi_pid,
+        "Runtime.consoleAPICalled",
+        session.browsing_context,
+        caller
+      )
 
-      if UserAgent.override?(opts) do
-        ua =
-          opts
-          |> UserAgent.resolve(@base_user_agent)
-          |> Metadata.append(Keyword.get(opts, :metadata))
+    _ =
+      WebSocket.subscribe(
+        session.bidi_pid,
+        "Runtime.exceptionThrown",
+        session.browsing_context,
+        caller
+      )
 
-        _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
-      end
+    if UserAgent.override?(opts) do
+      ua =
+        opts
+        |> UserAgent.resolve(@base_user_agent)
+        |> Metadata.append(Keyword.get(opts, :metadata))
 
-      if window_size = Keyword.get(opts, :window_size) do
-        _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
-      end
-
-      {:ok, session}
+      _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
     end
+
+    if window_size = Keyword.get(opts, :window_size) do
+      _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
+    end
+
+    {:ok, session}
   end
 
   @impl SurfBoard.Driver

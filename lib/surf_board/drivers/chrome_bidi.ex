@@ -91,8 +91,42 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
     {launcher, cleanup} = resolve_launcher(opts)
+    result = Launcher.start_session(launcher, opts)
+    cleanup.()
+    result
+  end
 
-    session_struct = %Session{
+  # An explicit `:launcher` opt uses that started launcher as-is (no
+  # cleanup — it's the caller's own, independently-started launcher; it
+  # already carries whatever hooks it was started with). Otherwise,
+  # since Strategy.BiDi caches nothing on its launcher (each session
+  # does its own POST /session — see Strategy.BiDi's moduledoc), build
+  # a transient, unnamed one from opts[:base_url] (or the driver's own
+  # BidiServer), with the same build_template/post_start hooks
+  # ChromeCDP's default launcher gets, and tear it down again once
+  # start_session/1 returns.
+  defp resolve_launcher(opts) do
+    case Keyword.get(opts, :launcher) do
+      nil ->
+        config = %BiDi.Config{base_url: resolve_base_url(opts)}
+
+        {:ok, launcher} =
+          Launcher.start_link(
+            strategy: BiDi,
+            config: config,
+            build_template: &build_template/1,
+            post_start: &post_start/2
+          )
+
+        {launcher, fn -> Agent.stop(launcher) end}
+
+      launcher ->
+        {launcher, fn -> :ok end}
+    end
+  end
+
+  defp build_template(opts) do
+    %Session{
       id: "v2bidi-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
@@ -102,59 +136,32 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       browsing_context: nil,
       capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()
     }
-
-    result =
-      BiDi.start_session(
-        launcher: launcher,
-        session_struct: session_struct,
-        owner: Keyword.get(opts, :owner, self())
-      )
-
-    cleanup.()
-
-    with {:ok, session} <- result do
-      caller = Keyword.get(opts, :owner, self())
-      _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
-
-      if UserAgent.override?(opts) do
-        ua =
-          opts
-          |> UserAgent.resolve(@base_user_agent)
-          |> Metadata.append(Keyword.get(opts, :metadata))
-
-        _ =
-          Protocol.cdp_send(
-            session,
-            "emulation.setUserAgentOverride",
-            %{"userAgent" => ua, "contexts" => [session.browsing_context]},
-            []
-          )
-      end
-
-      if window_size = Keyword.get(opts, :window_size) do
-        _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
-      end
-
-      {:ok, session}
-    end
   end
 
-  # An explicit `:launcher` opt uses that started launcher as-is (no
-  # cleanup — it's the caller's own, independently-started launcher).
-  # Otherwise, since Strategy.BiDi caches nothing on its launcher (each
-  # session does its own POST /session — see Strategy.BiDi's moduledoc),
-  # build a transient, unnamed one from opts[:base_url] (or the driver's
-  # own BidiServer) and tear it down again once start_session/1 returns.
-  defp resolve_launcher(opts) do
-    case Keyword.get(opts, :launcher) do
-      nil ->
-        config = %BiDi.Config{base_url: resolve_base_url(opts)}
-        {:ok, launcher} = Launcher.start_link(strategy: BiDi, config: config)
-        {launcher, fn -> Agent.stop(launcher) end}
+  defp post_start(session, opts) do
+    caller = Keyword.get(opts, :owner, self())
+    _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
 
-      launcher ->
-        {launcher, fn -> :ok end}
+    if UserAgent.override?(opts) do
+      ua =
+        opts
+        |> UserAgent.resolve(@base_user_agent)
+        |> Metadata.append(Keyword.get(opts, :metadata))
+
+      _ =
+        Protocol.cdp_send(
+          session,
+          "emulation.setUserAgentOverride",
+          %{"userAgent" => ua, "contexts" => [session.browsing_context]},
+          []
+        )
     end
+
+    if window_size = Keyword.get(opts, :window_size) do
+      _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
+    end
+
+    {:ok, session}
   end
 
   defp resolve_base_url(opts) do
