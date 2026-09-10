@@ -167,20 +167,17 @@ defmodule SurfBoard.Driver.Orchestrator do
   end
 
   @doc """
-  Grants media permissions. CDP only — see
-  `SurfBoard.Drivers.CDP.Client.grant_permissions/2`.
+  Grants media permissions.
 
-  Unconditional delegation: `spec.wire_protocol` is
-  `SurfBoard.Drivers.CDP.Client` on BOTH Chrome CDP and Lightpanda (they
-  share the same CDP façade), so this must never be reached for
-  Lightpanda — `LightpandaCDP.grant_permissions/2` overrides the
-  `Generic` delegate to raise before dispatch gets here. Don't gate this
-  on `function_exported?/3`; it can't distinguish the two drivers.
+  Dispatches via `spec.grant_permissions`, not `spec.wire_protocol` —
+  Chrome CDP and Lightpanda CDP share the exact same wire_protocol
+  module, so a wire_protocol-keyed dispatch can't tell them apart. See
+  `SurfBoard.Permissions`'s moduledoc.
   """
   @spec grant_permissions(Spec.t(), Session.t(), [:camera | :microphone]) ::
           :ok | {:error, term}
   def grant_permissions(%Spec{} = spec, %Session{} = session, permissions),
-    do: spec.wire_protocol.grant_permissions(session, permissions)
+    do: spec.grant_permissions.grant_permissions(session, permissions)
 
   @doc "List cookies for the session's current origin."
   @spec cookies(Spec.t(), Session.t()) :: {:ok, list(map)} | {:error, term}

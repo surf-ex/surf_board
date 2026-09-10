@@ -16,6 +16,10 @@ defmodule SurfBoard.Driver.Spec do
     :dialogs,
     :windows,
     :frames,
+    # Not dispatched via wire_protocol — see SurfBoard.Permissions'
+    # moduledoc for why grant_permissions needs its own dimension
+    # rather than living on the shared wire_protocol client.
+    :grant_permissions,
     # Per-driver one-off: touch_scroll has three distinct implementations
     # (CDP synthesizeScrollGesture / BiDi JS scrollBy / Lightpanda no-op)
     # that don't justify their own behaviour. Function of (element, dx, dy).
@@ -31,6 +35,7 @@ defmodule SurfBoard.Driver.Spec do
           dialogs: module,
           windows: module,
           frames: module,
+          grant_permissions: module,
           touch_scroll:
             (SurfBoard.Element.t(), number, number -> {:ok, nil} | {:error, term}) | nil,
           log_check_interactions?: boolean

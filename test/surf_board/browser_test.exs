@@ -154,7 +154,10 @@ defmodule SurfBoard.BrowserTest do
     end
 
     test "raises on a driver that doesn't support it (e.g. Lightpanda)" do
-      session = %Session{driver: SurfBoard.Drivers.LightpandaCDP}
+      session = %Session{
+        driver: SurfBoard.Drivers.LightpandaCDP,
+        driver_spec: SurfBoard.Drivers.LightpandaCDP.driver_spec()
+      }
 
       assert_raise SurfBoard.DriverError, fn ->
         Browser.grant_permissions(session, [:camera])

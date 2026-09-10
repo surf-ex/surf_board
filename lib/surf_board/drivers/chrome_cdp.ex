@@ -29,6 +29,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     dialogs: Dialogs,
     windows: Windows,
     frames: Frames,
+    grant_permissions: CDPClient,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }

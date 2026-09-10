@@ -18,6 +18,7 @@ defmodule SurfBoard.Drivers.CDP.Client do
   # ref types, mouse/touch input model).
 
   @behaviour SurfBoard.WireProtocol
+  @behaviour SurfBoard.Permissions
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Drivers.CDP.{Commands, ResponseParser}

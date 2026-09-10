@@ -15,6 +15,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Frames
+  alias SurfBoard.Permissions
   alias SurfBoard.Transport
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Windows
@@ -25,6 +26,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     dialogs: Dialogs.Unsupported,
     windows: Windows.Single,
     frames: Frames.Unsupported,
+    grant_permissions: Permissions.Unsupported,
     touch_scroll: nil,
     log_check_interactions?: false
   }
@@ -388,13 +390,4 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   def send_keys(%Element{} = element, keys),
     do: SurfBoard.Driver.Generic.send_keys(element, keys)
-
-  # grant_permissions: Lightpanda has no camera/mic or getUserMedia
-  # support, and would otherwise silently dispatch through the SAME
-  # wire_protocol module Chrome CDP uses (both point at
-  # SurfBoard.Drivers.CDP.Client) — Generic's delegate can't tell the two
-  # drivers apart, so this must be overridden here rather than gated in
-  # Orchestrator.
-  def grant_permissions(%Session{}, _permissions),
-    do: raise(SurfBoard.DriverError.not_supported("grant_permissions/2", __MODULE__))
 end

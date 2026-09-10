@@ -16,6 +16,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   alias SurfBoard.Drivers.ChromeBiDi.{Dialogs, Frames, Windows}
   alias SurfBoard.Browser
   alias SurfBoard.Driver.Spec
+  alias SurfBoard.Permissions
   alias SurfBoard.Transport.BiDi
   alias SurfBoard.Transport.Protocol
 
@@ -25,6 +26,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
     dialogs: Dialogs,
     windows: Windows,
     frames: Frames,
+    grant_permissions: Permissions.Unsupported,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
@@ -196,12 +198,6 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   def send_keys(%SurfBoard.Element{} = element, keys),
     do: SurfBoard.Driver.Generic.send_keys(element, keys)
-
-  # grant_permissions: CDP-only for now — BiDiClient has no equivalent
-  # to CDP's Browser.grantPermissions wired up. See
-  # SurfBoard.Drivers.CDP.Client.grant_permissions/2.
-  def grant_permissions(%Session{}, _permissions),
-    do: raise(SurfBoard.DriverError.not_supported("grant_permissions/2", __MODULE__))
 
   defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
 end
