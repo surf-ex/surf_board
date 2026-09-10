@@ -9,29 +9,30 @@ defmodule SurfBoard.WebSocket do
   #   * inbound  = parse bytes, route to the right SessionProcess
   #
   # No find waiters, no page-ready logic, no per-session state — those
-  # all live in `SurfBoard.Transport.Session`. The split exists so the
+  # all live in `SurfBoard.Transport.Actor`. The split exists so the
   # request/response correlation flows through ONE actor (the owning
-  # Session) and async events arrive at that same actor's mailbox in
+  # session) and async events arrive at that same actor's mailbox in
   # FIFO order, eliminating the cross-process ordering races that the
   # old design papered over with a sync barrier.
   #
   # Routing:
   #
-  #   * Responses (frames carrying `"id"`) go back to the SessionProcess
+  #   * Responses (frames carrying `"id"`) go back to the Transport.Actor
   #     that issued the call — looked up by wire id.
   #   * Events (frames carrying `"method"`) are routed by the routing
   #     key (`sessionId` for CDP, `params.context` /
-  #     `params.source.context` for BiDi) to subscribed SessionProcesses.
+  #     `params.source.context` for BiDi) to subscribed Transport.Actors.
   #
-  # The Session that issued a call is identified by passing its `pid`
+  # The actor that issued a call is identified by passing its `pid`
   # in `cast_send/5`. We stash `wire_id → owner_pid` and reply via
   # `send(owner_pid, {:v2_response, wire_id, result})`.
   #
   # The actual Mint-WebSocket connect/upgrade/encode/decode plumbing
   # lives in `SurfBoard.Transport.WireSocket`, shared with
-  # `SurfBoard.Transport.PerSession.Actor` — this module supplies the
-  # "one socket, many sessions" policy on top of it: the subscriber
-  # table and the owner-pid-keyed pending map.
+  # `SurfBoard.Transport.Actor`'s `{:fused, ws_url}` mode — this module
+  # supplies the "one socket, many sessions" policy on top of it: the
+  # subscriber table and the owner-pid-keyed pending map, used by
+  # `Transport.Actor`'s `{:shared, pid}` mode.
 
   use GenServer
   require Logger

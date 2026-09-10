@@ -3,15 +3,17 @@ defmodule SurfBoard.Transport.WireSocket do
 
   # Generic Mint-WebSocket connect/upgrade/encode/decode plumbing, shared
   # by `SurfBoard.WebSocket` (one socket, many sessions multiplexed by a
-  # subscriber table) and `SurfBoard.Transport.PerSession.Actor` (one
-  # socket per session, fused into the session's own GenServer).
+  # subscriber table — used by `SurfBoard.Transport.Actor`'s
+  # `{:shared, pid}` mode) and `Transport.Actor`'s own `{:fused, ws_url}`
+  # mode (one socket per session, owned directly by the actor's own
+  # GenServer — no separate socket process).
   #
   # This is NOT a GenServer or a process of its own — both callers need
   # the connection state to live inside their OWN struct/mailbox (that's
-  # the whole point of PerSession.Actor's single-mailbox design), so this
-  # module is a plain state-threading helper: it owns a `%__MODULE__{}`
-  # sub-struct embedded in the caller's state, and the caller drives it
-  # from its own `init/1` and `handle_info/2`.
+  # the whole point of the `:fused` mode's single-mailbox design), so
+  # this module is a plain state-threading helper: it owns a
+  # `%__MODULE__{}` sub-struct embedded in the caller's state, and the
+  # caller drives it from its own `init/1` and `handle_info/2`.
   #
   # Contract: the caller supplies two callbacks at connect time —
   #

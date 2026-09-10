@@ -1,10 +1,10 @@
 defmodule SurfBoard.Drivers.ChromeBiDi.Wire do
   @moduledoc false
 
-  # BiDi wire-level event decoder used by
-  # `SurfBoard.Transport.BiDi.SessionActor`. BiDi events arrive
-  # pre-decoded as `{:bidi_event, method, event}` messages from the
-  # `BiDi.WebSocketClient`.
+  # BiDi wire-level event decoder used by `SurfBoard.Transport.Actor`
+  # (BiDi mode). BiDi events arrive pre-decoded as
+  # `{:bidi_event, method, event}` messages from the
+  # `Drivers.ChromeBiDi.WebSocketClient`.
   #
   # `handle_event/3` is a pure function over the actor's state map.
 

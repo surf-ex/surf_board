@@ -1,19 +1,13 @@
 defmodule SurfBoard.Drivers.CDP.Wire do
   @moduledoc false
 
-  # CDP wire-level event decoder shared by the two CDP transport actors:
-  #
-  #   * `SurfBoard.Transport.Session` (Chrome CDP, shared WS)
-  #   * `SurfBoard.Transport.PerSession.Actor` (Lightpanda, per-session WS)
-  #
-  # Both subscribe to the same handful of CDP events and translate them
-  # into state-machine updates handled by `SurfBoard.Transport.Common`.
-  # Decoding the events lives here so the two actors stop carrying
-  # byte-identical clauses.
+  # CDP wire-level event decoder used by `SurfBoard.Transport.Actor` for
+  # every CDP-protocol session (Chrome CDP's shared-WS mode and
+  # Lightpanda's fused per-session mode both use it — same decoder,
+  # different socket-ownership mode underneath).
   #
   # `handle_event/3` is a pure function over the actor's state map; the
-  # actor wraps the return value in `{:noreply, state}` (Session) or
-  # threads it through its WS-frame loop (PerSession.Actor).
+  # actor wraps the return value in `{:noreply, state}`.
 
   alias SurfBoard.Transport.Common
 

@@ -13,25 +13,40 @@ defmodule SurfBoard.Transport do
   #   * `SharedWS`        — Chrome CDP. One WebSocket per BEAM, held
   #                         in an Agent. Each session gets a fresh
   #                         BrowserContext + Target + sessionId on the
-  #                         shared WS.
+  #                         shared WS. Feeds `Transport.Actor` a
+  #                         `{:shared, ws_pid}` config.
   #
   #   * `PerSession`      — Lightpanda. One shared browser process per
   #                         BEAM, but one WebSocket per session
   #                         (Lightpanda accepts many WS to one binary).
-  #                         Each WS lives inside a `PerSession.Actor`
-  #                         GenServer.
+  #                         Feeds `Transport.Actor` a `{:fused, ws_url}`
+  #                         config — the actor owns its own WireSocket
+  #                         directly, no separate socket process.
   #
   #   * `IsolatedProcess` — One browser process AND one WebSocket
   #                         per session. Slower but isolated. Used as
   #                         a fallback / for browsers we can't share.
+  #                         Also feeds `Transport.Actor` a
+  #                         `{:shared, ws_pid}` config (the WS just
+  #                         isn't actually shared with any other
+  #                         session in practice).
   #
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
   # This is documented convention, not a `@behaviour` — a driver picks
   # its transport strategy by module name once, at author time; nothing
   # dispatches across strategies at runtime.
+  #
+  # `Transport.BiDi.start_session/1` is a fourth bootstrap path, outside
+  # this acquire/1 dispatch entirely — it starts its own
+  # `Drivers.ChromeBiDi.WebSocketClient` and feeds `Transport.Actor` a
+  # `{:shared, ws_pid}` config with `send: :spawn_link` (BiDi's
+  # WebSocketClient.send_command/4 blocks synchronously, unlike CDP's
+  # WireSocket/WebSocket, so a slow call can't be allowed to stall the
+  # actor's mailbox — see `Transport.Actor`'s moduledoc).
 
-  alias SurfBoard.Transport.Session, as: V2Session
+  alias SurfBoard.Transport.Actor
+  alias SurfBoard.Drivers.CDP.Wire
   alias SurfBoard.WebSocket
 
   @typedoc """
@@ -136,8 +151,16 @@ defmodule SurfBoard.Transport do
   def start_session_from(%{ws_pid: ws_pid, teardown_fun: teardown}, session_struct, opts) do
     caller = Keyword.get(opts, :owner, self())
 
-    case V2Session.start_link(
-           ws_pid: ws_pid,
+    config = %Actor.Config{
+      socket: {:shared, ws_pid},
+      send: :inline,
+      load: :buffer,
+      subscribe: :passive,
+      wire: Wire
+    }
+
+    case Actor.start_link(
+           config: config,
            init_fun: fn -> {:ok, session_struct} end,
            teardown_fun: teardown,
            owner: caller

@@ -1,22 +1,20 @@
-defmodule SurfBoard.V2.SessionTest do
+defmodule SurfBoard.Transport.ActorTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.Transport.Session, as: Session
+  alias SurfBoard.Transport.Actor
 
   describe "module shape" do
     test "exports the expected functions" do
-      funs = Session.__info__(:functions)
+      funs = Actor.__info__(:functions)
       assert {:start_link, 1} in funs
-      assert {:cdp_send, 3} in funs
-      assert {:cdp_send, 4} in funs
-      assert {:stop, 1} in funs
     end
 
     test "has expected default state fields" do
-      state = %Session{}
+      state = %Actor{}
       assert state.pending_calls == %{}
       assert state.session == nil
-      assert state.ws_pid == nil
+      assert state.config == nil
+      assert state.wire_socket == nil
     end
   end
 
@@ -27,24 +25,24 @@ defmodule SurfBoard.V2.SessionTest do
     test "preserves an already-resolved waiter when timer fires" do
       payload = %{"ok" => true, "elements" => []}
 
-      state = %Session{
+      state = %Actor{
         find_waiters: %{"q1" => {:resolved, payload}}
       }
 
-      assert {:noreply, new_state} = Session.handle_info({:find_timeout, "q1"}, state)
+      assert {:noreply, new_state} = Actor.handle_info({:find_timeout, "q1"}, state)
 
       assert Map.get(new_state.find_waiters, "q1") == {:resolved, payload}
     end
 
     test "drops an unknown waiter" do
-      state = %Session{find_waiters: %{}}
-      assert {:noreply, new_state} = Session.handle_info({:find_timeout, "q1"}, state)
+      state = %Actor{find_waiters: %{}}
+      assert {:noreply, new_state} = Actor.handle_info({:find_timeout, "q1"}, state)
       assert new_state.find_waiters == %{}
     end
 
     test "drops a pending unblocked waiter" do
-      state = %Session{find_waiters: %{"q1" => {:pending, make_ref(), nil}}}
-      assert {:noreply, new_state} = Session.handle_info({:find_timeout, "q1"}, state)
+      state = %Actor{find_waiters: %{"q1" => {:pending, make_ref(), nil}}}
+      assert {:noreply, new_state} = Actor.handle_info({:find_timeout, "q1"}, state)
       assert new_state.find_waiters == %{}
     end
   end

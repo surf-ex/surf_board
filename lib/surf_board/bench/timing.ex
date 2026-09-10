@@ -7,8 +7,9 @@ defmodule SurfBoard.Bench.Timing do
   #
   # Usage:
   #   1. Call `setup/0` once at app boot.
-  #   2. PerSession.Actor calls `mark_now/0` on send and passes the
-  #      timestamp to `record/1` once the matching response arrives.
+  #   2. Transport.Actor / SurfBoard.WebSocket call `mark_now/0` on
+  #      send and pass the timestamp to `record/1` once the matching
+  #      response arrives.
   #   3. At end of run, call `report/0` to print totals.
 
   @table :surf_board_bench_timing

@@ -4,12 +4,14 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   #
   # The Mint connect/upgrade/encode/decode plumbing lives in
   # `SurfBoard.Transport.WireSocket`, shared with `SurfBoard.WebSocket`
-  # (Chrome CDP's shared-connection actor) and
-  # `SurfBoard.Transport.PerSession.Actor` (Lightpanda's per-session
-  # actor) — this module supplies the BiDi-specific policy on top: the
-  # subscriber table, the pending-calls-keyed-by-caller map, and the
-  # `send_command_flat`/`cast_command_flat` variants CDP's flat-session
-  # protocol needs when driven over a BiDi socket.
+  # (used by `SurfBoard.Transport.Actor`'s `{:shared, pid}` mode for
+  # Chrome CDP) and `Transport.Actor`'s own `{:fused, ws_url}` mode
+  # (Lightpanda) — this module supplies the BiDi-specific policy on
+  # top: the subscriber table, the pending-calls-keyed-by-caller map,
+  # and the `send_command_flat`/`cast_command_flat` variants CDP's
+  # flat-session protocol needs when driven over a BiDi socket. A
+  # `Transport.Actor` (BiDi mode: `send: :spawn_link`) is the sole
+  # caller in practice.
 
   use GenServer
   require Logger

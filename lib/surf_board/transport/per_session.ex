@@ -17,7 +17,8 @@ defmodule SurfBoard.Transport.PerSession do
   # handles everything for that session.
 
   alias SurfBoard.Drivers.CDP.Client, as: CDPClient
-  alias SurfBoard.Transport.PerSession.Actor
+  alias SurfBoard.Drivers.CDP.Wire
+  alias SurfBoard.Transport.Actor
   alias SurfBoard.Session
 
   @doc """
@@ -40,9 +41,17 @@ defmodule SurfBoard.Transport.PerSession do
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())
 
+    config = %Actor.Config{
+      socket: {:fused, ws_url},
+      send: :inline,
+      load: :buffer,
+      subscribe: :passive,
+      wire: Wire
+    }
+
     with {:ok, session} <-
            Actor.start_link(
-             ws_url: ws_url,
+             config: config,
              init_fun: fn -> {:ok, session_struct} end,
              teardown_fun: teardown_fun,
              owner: owner

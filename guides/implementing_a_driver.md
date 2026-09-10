@@ -107,37 +107,65 @@ strategy for an existing vendor).
    behaviour; nothing dispatches on it today, but it's how a session records
    which vendor it's driving.
 
-3. **Own your connection.** Every driver ends up with a process that owns a
-   `SurfBoard.Transport.WireSocket` and speaks `SurfBoard.Transport.Protocol`
-   (the message contract `SurfBoard.Drivers.CDP.Client` /
-   `SurfBoard.Drivers.ChromeBiDi.Client` call into — `cdp_send`, `subscribe`,
-   `await_page_load`, `register_find`, `push_frame`, ...; see
-   `lib/surf_board/transport/protocol.ex` for the full message list). There
-   are three existing shapes to copy from, and the deciding factor is purely
-   how many sessions share one socket:
+3. **Own your connection via `SurfBoard.Transport.Actor`.** Every driver's
+   session runs on the same actor — one generic GenServer speaking
+   `SurfBoard.Transport.Protocol` (the message contract
+   `SurfBoard.Drivers.CDP.Client` / `SurfBoard.Drivers.ChromeBiDi.Client`
+   call into — `cdp_send`, `subscribe`, `await_page_load`, `register_find`,
+   `push_frame`, ...; see `lib/surf_board/transport/protocol.ex` for the
+   full message list). You don't write a new actor module; you build a
+   `%SurfBoard.Transport.Actor.Config{}` describing your driver's connection
+   strategy and pass it to `Transport.Actor.start_link/1`:
 
-   * **One socket shared by many sessions** (Chrome CDP's model) — use
-     `SurfBoard.WebSocket` + `SurfBoard.Transport.Session` +
-     `SurfBoard.Transport.SharedWS.acquire/1` as the template. This is the
-     only case where the socket-owner and the domain-state-owner *must* be
-     separate processes.
-   * **One socket per session, but you'd rather not pay a bespoke process**
-     — use `SurfBoard.WebSocket` + `SurfBoard.Transport.Session` +
-     `SurfBoard.Transport.IsolatedProcess.acquire/1` as the template
-     (a fresh WS per session, still split across two processes).
-   * **One socket per session, and you want to remove the extra hop** — use
-     `SurfBoard.Transport.PerSession.Actor` as the template: one GenServer
-     holds both the `WireSocket` and all the domain state (`loads`,
-     `find_waiters`, `frame_stack`, ...) in one mailbox. Worth it only if
-     your driver is latency-sensitive per-call; it costs you a bigger,
-     less-reusable actor module.
+   ```elixir
+   %Transport.Actor.Config{
+     socket: {:fused, ws_url} | {:shared, socket_pid},
+     send: :inline | :spawn_link,
+     load: :buffer | :wake_once,
+     subscribe: :passive | :active,
+     wire: YourProtocolWireModule
+   }
+   ```
 
-   Whichever shape you pick, your domain-state struct needs the fields
-   `SurfBoard.Transport.Common` operates on (`loads`, `load_waiters`,
-   `find_waiters`, `frame_stack`, `frame_contexts`, `page_ready_waiter`,
-   `last_page_id`, `nav_pending`, `responses`, `last_loader_id`) — `Common`
-   is the shared state machine for load/find/page-ready/frame tracking, used
-   by all three existing actors so they don't drift from each other.
+   * **`socket`** — `{:fused, ws_url}` if this session gets its own socket
+     and you want the actor to own the `WireSocket` connection directly, no
+     separate process, no extra hop (Lightpanda's model — see
+     `Transport.PerSession.start_session/1`). `{:shared, socket_pid}` if
+     the socket is (or might be) shared with other sessions, or already
+     started by something else — pass the pid of a `SurfBoard.WebSocket` or
+     your protocol's equivalent (Chrome CDP's `SharedWS`/`IsolatedProcess`
+     both use this; see `Transport.start_session_from/3`). `{:shared, _}`
+     is the only option when a socket genuinely serves more than one
+     session, since a fused actor's mailbox belongs to exactly one session.
+   * **`send`** — `:inline` if your protocol client replies asynchronously
+     without blocking on the wire round-trip (true of both `WireSocket` and
+     `SurfBoard.WebSocket` — this is what CDP uses). `:spawn_link` if your
+     client's send function is itself a blocking `GenServer.call` (BiDi's
+     `WebSocketClient.send_command/4` is) — otherwise a slow call would
+     stall the actor's mailbox and delay every concurrent event it needs to
+     process. See `Transport.BiDi.start_session/1` for the template.
+   * **`load`** — `:buffer` if your protocol's load-milestone event can
+     fire more than once and should persist until consumed (CDP's
+     `Page.lifecycleEvent`); `:wake_once` if it fires exactly once per
+     navigation and a buffered hit must be dropped after use (BiDi's
+     `browsingContext.load`). This selects between
+     `SurfBoard.Transport.Common`'s `record_load_milestone/3` and
+     `record_load_or_wake_once/3` on the write side, and controls
+     `await_page_load/6`'s `drop_on_consume?` on the read side.
+   * **`subscribe`** — `:passive` if your protocol emits events for
+     whatever domains/methods you've already enabled, with no separate
+     wire-level subscribe step (CDP). `:active` if the server needs to be
+     told which events to emit at all (BiDi's `session.subscribe`).
+   * **`wire`** — your protocol's `Wire.handle_event/3`-shaped event
+     decoder module (`SurfBoard.Drivers.CDP.Wire` or
+     `SurfBoard.Drivers.ChromeBiDi.Wire` today).
+
+   If your vendor speaks an existing protocol (CDP or BiDi) over a
+   connection shape that matches one of the three existing configs exactly,
+   you don't need to design a new config at all — reuse the matching one.
+   `Transport.Common` (the shared find/load/page-ready/frame-stack state
+   machine `Transport.Actor` runs on) needs no changes either way; it
+   operates purely on the actor's state fields, not on your config.
 
 4. **Reuse `Dialogs`/`Windows`/`Frames`/`touch_scroll` where your vendor's
    behavior genuinely matches an existing one.** These are `%Spec{}`

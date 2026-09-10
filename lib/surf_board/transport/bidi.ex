@@ -19,8 +19,10 @@ defmodule SurfBoard.Transport.BiDi do
   # Phase B will install lifecycle subscriptions; phase C the
   # bootstrap preload script + script.message routing.
 
-  alias SurfBoard.Transport.BiDi.{Handshake, SessionActor}
+  alias SurfBoard.Transport.BiDi.Handshake
+  alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
+  alias SurfBoard.Drivers.ChromeBiDi.{Wire, WebSocketClient}
   alias SurfBoard.Session
 
   @doc """
@@ -60,13 +62,9 @@ defmodule SurfBoard.Transport.BiDi do
 
   defp start_with_retry(base_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
     with {:ok, ws_url} <- Handshake.post_session(base_url, handshake_opts),
-         {:ok, session} <-
-           SessionActor.start_link(
-             ws_url: ws_url,
-             init_fun: fn -> {:ok, session_struct} end,
-             teardown_fun: teardown_fun,
-             owner: owner
-           ),
+         {:ok, socket_pid} <- WebSocketClient.start_link(ws_url),
+         {:ok, session} <- start_actor(socket_pid, session_struct, teardown_fun, owner),
+         :ok <- subscribe_load_events(socket_pid, session.pid),
          {:ok, context_id} <- find_or_create_initial_context(session),
          :ok <- install_bootstrap(session) do
       session = %{session | browsing_context: context_id}
@@ -103,6 +101,76 @@ defmodule SurfBoard.Transport.BiDi do
 
       other ->
         other
+    end
+  end
+
+  defp start_actor(socket_pid, session_struct, teardown_fun, owner) do
+    config = %Actor.Config{
+      socket: {:shared, socket_pid},
+      send: :spawn_link,
+      load: :wake_once,
+      subscribe: :active,
+      wire: Wire
+    }
+
+    case Actor.start_link(
+           config: config,
+           init_fun: fn -> {:ok, session_struct} end,
+           teardown_fun: teardown_fun,
+           owner: owner
+         ) do
+      {:ok, session} ->
+        {:ok, session}
+
+      {:error, reason} ->
+        # The actor never came up to own socket_pid's lifecycle —
+        # nothing else will close it, so do it here rather than leak
+        # a WebSocketClient/chromium-bidi connection per failed retry.
+        try do
+          WebSocketClient.close(socket_pid)
+        catch
+          :exit, _ -> :ok
+        end
+
+        {:error, reason}
+    end
+  end
+
+  # Subscribe load milestones + bootstrap channel + log entries in a
+  # single server-side session.subscribe call. WSC-side forward-to-
+  # this-pid is set up for the events the actor needs to consume
+  # (loads + script.message); log.entryAdded is forwarded to other
+  # subscribers (e.g. the test process for LogChecker).
+  defp subscribe_load_events(socket_pid, actor_pid) do
+    events = [
+      "browsingContext.load",
+      "browsingContext.domContentLoaded",
+      "script.message",
+      "log.entryAdded",
+      # Supplies the document's HTTP status for `Browser.status/1`.
+      "network.responseCompleted"
+    ]
+
+    Enum.each(events, fn ev ->
+      WebSocketClient.subscribe(socket_pid, ev, actor_pid, :global)
+    end)
+
+    # The first session.subscribe after browser launch can take a
+    # while on slow runners (GHA Linux) because chromium-bidi's Mapper
+    # is still settling. 12s lets us retry up to 4× (start_with_retry)
+    # and still fit inside ExUnit's default 60s test timeout.
+    # Subsequent subscribes are fast (<200ms) so the actual cap rarely
+    # fires.
+    timeout = Application.get_env(:surf_board, :bidi_subscribe_timeout_ms, 12_000)
+
+    case WebSocketClient.send_command(
+           socket_pid,
+           "session.subscribe",
+           %{"events" => events},
+           timeout
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, {:subscribe_failed, reason}}
     end
   end
 

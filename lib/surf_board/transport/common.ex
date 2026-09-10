@@ -1,17 +1,15 @@
 defmodule SurfBoard.Transport.Common do
   @moduledoc false
 
-  # Shared per-session state-machine helpers used by all three Transport
-  # actors:
-  #
-  #   * `SurfBoard.Transport.Session` (Chrome CDP, shared WS)
-  #   * `SurfBoard.Transport.PerSession.Actor` (Lightpanda, per-session WS)
-  #   * `SurfBoard.Transport.BiDi.SessionActor` (Chrome BiDi, per-session WS)
-  #
-  # Each actor owns its own wire protocol (CDP/BiDi) and connection model
-  # (shared vs per-session WS), but they all maintain the same waiter
-  # state machine for find / page-load / page-ready / frame tracking.
-  # Centralising that here keeps the three implementations from drifting.
+  # Shared per-session state-machine helpers used by
+  # `SurfBoard.Transport.Actor` — the one generic actor implementation
+  # that now covers every driver (Chrome CDP shared-WS, Lightpanda
+  # fused per-session, Chrome BiDi). Every driver's config varies wire
+  # protocol (CDP/BiDi) and connection model (shared/fused socket,
+  # inline/spawn_link send), but they all drive the same waiter state
+  # machine for find / page-load / page-ready / frame tracking.
+  # Centralising that here is what let the three original hand-written
+  # actor modules collapse into one.
 
   # ----- Find waiters -----
 
