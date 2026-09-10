@@ -1,4 +1,4 @@
-defmodule SurfBoard.Transport.SharedWS do
+defmodule SurfBoard.Transport.Strategy.SharedWS do
   @moduledoc false
 
   # Transport: ONE WebSocket per BEAM, shared across all sessions

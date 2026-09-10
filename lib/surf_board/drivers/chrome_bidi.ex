@@ -18,7 +18,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   alias SurfBoard.Browser
   alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Permissions
-  alias SurfBoard.Transport.BiDi
+  alias SurfBoard.Transport.Strategy.BiDi
   alias SurfBoard.Transport.Protocol
 
   @driver_spec %Spec{

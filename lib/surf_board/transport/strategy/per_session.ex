@@ -1,4 +1,4 @@
-defmodule SurfBoard.Transport.PerSession do
+defmodule SurfBoard.Transport.Strategy.PerSession do
   @moduledoc false
 
   # Transport: ONE actor per session. The actor owns its own raw Mint

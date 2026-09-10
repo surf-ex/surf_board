@@ -6,27 +6,29 @@ defmodule SurfBoard.Transport do
   # The stack already has a shape for talking to a CDP-speaking
   # browser: a `WebSocket` pid + a routing key (the CDP `sessionId`,
   # used for flat-session multiplexing). The thing that varies across
-  # browsers is *how a session acquires that pid* at start_session time.
+  # browsers is *how a session acquires that pid* at start_session time
+  # — each way of doing that lives under `Transport.Strategy.*`.
   #
   # Three concrete shapes today:
   #
-  #   * `SharedWS`        — Chrome CDP. One WebSocket per BEAM, held
-  #                         in an Agent. Each session gets a fresh
+  #   * `Strategy.SharedWS`        — Chrome CDP. One WebSocket per BEAM,
+  #                         held in an Agent. Each session gets a fresh
   #                         BrowserContext + Target + sessionId on the
   #                         shared WS. Feeds `Transport.Actor` a
   #                         `{:shared, ws_pid}` config.
   #
-  #   * `PerSession`      — Lightpanda. One shared browser process per
-  #                         BEAM, but one WebSocket per session
-  #                         (Lightpanda accepts many WS to one binary).
-  #                         Feeds `Transport.Actor` a `{:fused, ws_url}`
-  #                         config — the actor owns its own WireSocket
-  #                         directly, no separate socket process.
+  #   * `Strategy.PerSession`      — Lightpanda. One shared browser
+  #                         process per BEAM, but one WebSocket per
+  #                         session (Lightpanda accepts many WS to one
+  #                         binary). Feeds `Transport.Actor` a
+  #                         `{:fused, ws_url}` config — the actor owns
+  #                         its own WireSocket directly, no separate
+  #                         socket process.
   #
-  #   * `IsolatedProcess` — One browser process AND one WebSocket
-  #                         per session. Slower but isolated. Used as
-  #                         a fallback / for browsers we can't share.
-  #                         Also feeds `Transport.Actor` a
+  #   * `Strategy.IsolatedProcess` — One browser process AND one
+  #                         WebSocket per session. Slower but isolated.
+  #                         Used as a fallback / for browsers we can't
+  #                         share. Also feeds `Transport.Actor` a
   #                         `{:shared, ws_pid}` config (the WS just
   #                         isn't actually shared with any other
   #                         session in practice).
@@ -37,7 +39,7 @@ defmodule SurfBoard.Transport do
   # its transport strategy by module name once, at author time; nothing
   # dispatches across strategies at runtime.
   #
-  # `Transport.BiDi.start_session/1` is a fourth bootstrap path, outside
+  # `Strategy.BiDi.start_session/1` is a fourth bootstrap path, outside
   # this acquire/1 dispatch entirely — it starts its own
   # `Drivers.ChromeBiDi.WebSocketClient` and feeds `Transport.Actor` a
   # `{:shared, ws_pid}` config with `send: :spawn_link` (BiDi's
@@ -74,13 +76,13 @@ defmodule SurfBoard.Transport do
           capabilities: map
         }
 
-  # `acquire/1` is a plain function on each implementer (SharedWS,
-  # IsolatedProcess) with this shape, not a `@behaviour` callback: each
-  # driver calls its own chosen strategy by name (ChromeCDP always
-  # calls SharedWS.acquire/1; Lightpanda's IsolatedProcess fallback
-  # calls IsolatedProcess.acquire/1 directly) rather than dispatching
-  # through a shared interface, so there's no polymorphic call site for
-  # a callback to serve.
+  # `acquire/1` is a plain function on each implementer (Strategy.SharedWS,
+  # Strategy.IsolatedProcess) with this shape, not a `@behaviour` callback:
+  # each driver calls its own chosen strategy by name (ChromeCDP always
+  # calls Strategy.SharedWS.acquire/1; Lightpanda's IsolatedProcess
+  # fallback calls Strategy.IsolatedProcess.acquire/1 directly) rather
+  # than dispatching through a shared interface, so there's no
+  # polymorphic call site for a callback to serve.
   #
   #   @spec acquire(opts :: keyword) :: {:ok, acquired} | {:error, term}
 
@@ -89,7 +91,7 @@ defmodule SurfBoard.Transport do
 
   @doc """
   Teardown that closes the WebSocket. Use when the session OWNS
-  its WS (PerSession, IsolatedProcess).
+  its WS (Strategy.PerSession, Strategy.IsolatedProcess).
   """
   @spec close_ws(pid) :: :ok
   def close_ws(ws_pid) when is_pid(ws_pid) do
@@ -104,7 +106,7 @@ defmodule SurfBoard.Transport do
 
   @doc """
   Teardown that disposes a Chrome BrowserContext on the shared WS.
-  Use with `SharedWS`.
+  Use with `Strategy.SharedWS`.
   """
   @spec dispose_browser_context(pid, String.t()) :: :ok
   def dispose_browser_context(ws_pid, ctx_id)
@@ -122,8 +124,8 @@ defmodule SurfBoard.Transport do
 
   @doc """
   Convenience that calls `attachToTarget(targetId, flatten: true)` on
-  `ws_pid` and returns `{:ok, sessionId}`. Used by SharedWS and
-  PerSession impls.
+  `ws_pid` and returns `{:ok, sessionId}`. Used by Strategy.SharedWS and
+  Strategy.PerSession impls.
   """
   @spec attach_to_target(pid, String.t()) :: {:ok, String.t()} | {:error, term}
   def attach_to_target(ws_pid, target_id) do

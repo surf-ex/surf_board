@@ -1,4 +1,4 @@
-defmodule SurfBoard.Transport.BiDi do
+defmodule SurfBoard.Transport.Strategy.BiDi do
   @moduledoc false
 
   # transport for chromium-bidi: one POST → one WS → one Chrome.
@@ -19,7 +19,7 @@ defmodule SurfBoard.Transport.BiDi do
   # Phase B will install lifecycle subscriptions; phase C the
   # bootstrap preload script + script.message routing.
 
-  alias SurfBoard.Transport.BiDi.Handshake
+  alias SurfBoard.Transport.Strategy.BiDi.Handshake
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Clients.BiDi.Wire

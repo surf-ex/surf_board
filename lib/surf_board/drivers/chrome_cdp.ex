@@ -123,7 +123,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     caller = Keyword.get(opts, :owner, self())
 
     with {:ok, acquired} <-
-           Transport.SharedWS.acquire(connection: SharedConnection, driver: __MODULE__) do
+           Transport.Strategy.SharedWS.acquire(connection: SharedConnection, driver: __MODULE__) do
       user_caps = Keyword.get(opts, :capabilities, %{})
 
       session_struct = %Session{

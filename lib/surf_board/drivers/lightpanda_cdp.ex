@@ -49,9 +49,9 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   #
   # Starts a single shared Lightpanda binary if the package is on the
   # load path. Sessions multiplex over this binary by opening their
-  # own WebSocket against its URL (Transport.PerSession). Falls back
-  # to per-session binary spawn (Transport.IsolatedProcess) if no
-  # shared server is running.
+  # own WebSocket against its URL (Transport.Strategy.PerSession). Falls
+  # back to per-session binary spawn (Transport.Strategy.IsolatedProcess)
+  # if no shared server is running.
 
   def child_spec(opts) do
     %{
@@ -245,7 +245,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         extra_capabilities: base_caps
       ]
 
-      {:ok, &start_via_acquire(&1, Transport.IsolatedProcess, transport_opts)}
+      {:ok, &start_via_acquire(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
     else
       {:error, :lightpanda_package_not_loaded}
     end
@@ -256,7 +256,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       url when is_binary(url) ->
         base_caps = %{needs_xpath_polyfill: true}
         transport_opts = [ws_url: url, extra_capabilities: base_caps]
-        {:ok, &start_via_acquire(&1, Transport.IsolatedProcess, transport_opts)}
+        {:ok, &start_via_acquire(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
 
       _ ->
         {:error, :ws_url_required}
@@ -281,7 +281,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     }
 
     with {:ok, session} <-
-           Transport.PerSession.start_session(
+           Transport.Strategy.PerSession.start_session(
              ws_url: ws_url,
              session_struct: session_struct,
              owner: Keyword.get(opts, :owner, self())

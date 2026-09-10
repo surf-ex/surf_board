@@ -1,4 +1,4 @@
-defmodule SurfBoard.Transport.BiDi.Handshake do
+defmodule SurfBoard.Transport.Strategy.BiDi.Handshake do
   @moduledoc false
 
   # WebDriver-BiDi HTTP `POST /session` step.

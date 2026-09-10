@@ -1,4 +1,4 @@
-defmodule SurfBoard.Transport.IsolatedProcess do
+defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
   @moduledoc false
 
   # Transport: a fresh browser process AND a fresh WebSocket per

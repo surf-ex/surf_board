@@ -1,9 +1,9 @@
-defmodule SurfBoard.Transport.BiDiTest do
+defmodule SurfBoard.Transport.Strategy.BiDiTest do
   use ExUnit.Case, async: false
 
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
   alias SurfBoard.Session
-  alias SurfBoard.Transport.BiDi
+  alias SurfBoard.Transport.Strategy.BiDi
   alias SurfBoard.Transport.Protocol
 
   @moduletag :browser

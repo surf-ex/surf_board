@@ -148,20 +148,21 @@ strategy for an existing vendor).
    * **`socket`** — `{:fused, ws_url}` if this session gets its own socket
      and you want the actor to own the `WireSocket` connection directly, no
      separate process, no extra hop (Lightpanda's model — see
-     `Transport.PerSession.start_session/1`). `{:shared, socket_pid}` if
-     the socket is (or might be) shared with other sessions, or already
+     `Transport.Strategy.PerSession.start_session/1`). `{:shared, socket_pid}`
+     if the socket is (or might be) shared with other sessions, or already
      started by something else — pass the pid of a `SurfBoard.WebSocket` or
-     your protocol's equivalent (Chrome CDP's `SharedWS`/`IsolatedProcess`
-     both use this; see `Transport.start_session_from/3`). `{:shared, _}`
-     is the only option when a socket genuinely serves more than one
-     session, since a fused actor's mailbox belongs to exactly one session.
+     your protocol's equivalent (Chrome CDP's `Strategy.SharedWS`/
+     `Strategy.IsolatedProcess` both use this; see
+     `Transport.start_session_from/3`). `{:shared, _}` is the only option
+     when a socket genuinely serves more than one session, since a fused
+     actor's mailbox belongs to exactly one session.
    * **`send`** — `:inline` if your protocol client replies asynchronously
      without blocking on the wire round-trip (true of both `WireSocket` and
      `SurfBoard.WebSocket` — this is what CDP uses). `:spawn_link` if your
      client's send function is itself a blocking `GenServer.call` (BiDi's
      `WebSocketClient.send_command/4` is) — otherwise a slow call would
      stall the actor's mailbox and delay every concurrent event it needs to
-     process. See `Transport.BiDi.start_session/1` for the template.
+     process. See `Transport.Strategy.BiDi.start_session/1` for the template.
    * **`load`** — `:buffer` if your protocol's load-milestone event can
      fire more than once and should persist until consumed (CDP's
      `Page.lifecycleEvent`); `:wake_once` if it fires exactly once per
