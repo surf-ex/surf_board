@@ -240,7 +240,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         extra_capabilities: base_caps
       ]
 
-      {:ok, &start_legacy(&1, Transport.IsolatedProcess, transport_opts)}
+      {:ok, &start_via_acquire(&1, Transport.IsolatedProcess, transport_opts)}
     else
       {:error, :lightpanda_package_not_loaded}
     end
@@ -251,7 +251,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       url when is_binary(url) ->
         base_caps = %{needs_xpath_polyfill: true}
         transport_opts = [ws_url: url, extra_capabilities: base_caps]
-        {:ok, &start_legacy(&1, Transport.IsolatedProcess, transport_opts)}
+        {:ok, &start_via_acquire(&1, Transport.IsolatedProcess, transport_opts)}
 
       _ ->
         {:error, :ws_url_required}
@@ -286,7 +286,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     end
   end
 
-  defp start_legacy(opts, transport_mod, transport_opts) do
+  defp start_via_acquire(opts, transport_mod, transport_opts) do
     with {:ok, acquired} <- transport_mod.acquire(transport_opts) do
       session_struct = %Session{
         id: "v2drv-#{System.unique_integer([:positive])}",
