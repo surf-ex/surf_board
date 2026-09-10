@@ -19,7 +19,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Drivers.ChromeCDP.SharedConnection
   alias SurfBoard.Drivers.ChromeCDP.{Dialogs, Frames, Windows}
-  alias SurfBoard.Driver.Spec
+  alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Transport.Protocol
 
   @driver_spec %Spec{

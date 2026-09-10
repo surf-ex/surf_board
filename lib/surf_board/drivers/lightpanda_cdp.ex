@@ -14,7 +14,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   alias SurfBoard.Browser
   alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
-  alias SurfBoard.Driver.Spec
+  alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Frames
   alias SurfBoard.Permissions
   alias SurfBoard.SendKeysSession

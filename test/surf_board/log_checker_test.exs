@@ -1,7 +1,7 @@
-defmodule SurfBoard.Driver.LogCheckerTest do
+defmodule SurfBoard.LogCheckerTest do
   use ExUnit.Case, async: false
 
-  alias SurfBoard.Driver.LogChecker
+  alias SurfBoard.LogChecker
 
   # async: false — parse_log reads app config (:js_errors, :js_logger)
   # directly, same as before this test moved from asserting on a fake

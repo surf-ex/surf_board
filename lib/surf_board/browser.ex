@@ -1570,7 +1570,7 @@ defmodule SurfBoard.Browser do
       result
     end
 
-    SurfBoard.Driver.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
+    SurfBoard.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
   end
 
   def cookies(%Session{} = session) do

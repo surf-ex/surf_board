@@ -1,4 +1,4 @@
-defmodule SurfBoard.Driver.Spec do
+defmodule SurfBoard.DriverSpec do
   @moduledoc false
 
   # A driver-as-data: dimension modules plus per-driver cross-cutting

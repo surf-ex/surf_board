@@ -1,4 +1,4 @@
-defmodule SurfBoard.Driver.LogChecker do
+defmodule SurfBoard.LogChecker do
   @moduledoc false
 
   # Drains buffered CDP/BiDi log events from the process mailbox and

@@ -16,7 +16,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Drivers.ChromeBiDi.{Dialogs, Frames, Windows}
   alias SurfBoard.Browser
-  alias SurfBoard.Driver.Spec
+  alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Permissions
   alias SurfBoard.Transport.BiDi
   alias SurfBoard.Transport.Protocol

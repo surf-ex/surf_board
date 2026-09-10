@@ -36,13 +36,13 @@ neither the protocol nor the driver, and you generally don't need to touch it.
 `end_session/1`. That's the whole job — a driver module is lifecycle only.
 Every browser capability (`visit/2`, `click/1`, `find_elements/2`, `cookies/1`,
 `focus_frame/2`, ...) is dispatched by `SurfBoard.Browser`/`SurfBoard.Element`
-calling `session.driver_spec` — your `%SurfBoard.Driver.Spec{}` — directly.
+calling `session.driver_spec` — your `%SurfBoard.DriverSpec{}` — directly.
 There's no per-driver module standing between them and your Spec; `Browser`/
 `Element` never call `session.driver.<capability>`. All you write is:
 
 * `start_session/1` and `end_session/1` — vendor-specific connection setup and
   teardown.
-* A `%SurfBoard.Driver.Spec{}` naming which existing (or new) protocol/dialogs/
+* A `%SurfBoard.DriverSpec{}` naming which existing (or new) protocol/dialogs/
   windows/frames/grant_permissions/send_keys_session/touch_scroll
   implementations this driver uses. Each field is a module (or, for
   `touch_scroll`, a function) that `Browser`/`Element` call directly — see
@@ -66,7 +66,7 @@ strategy for an existing vendor).
 
      @behaviour SurfBoard.Driver
 
-     alias SurfBoard.Driver.Spec
+     alias SurfBoard.DriverSpec, as: Spec
 
      @driver_spec %Spec{
        browser: Browser.YourVendor,
