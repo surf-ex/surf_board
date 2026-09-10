@@ -245,7 +245,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         extra_capabilities: base_caps
       ]
 
-      {:ok, &start_via_acquire(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
+      {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
     else
       {:error, :lightpanda_package_not_loaded}
     end
@@ -256,7 +256,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       url when is_binary(url) ->
         base_caps = %{needs_xpath_polyfill: true}
         transport_opts = [ws_url: url, extra_capabilities: base_caps]
-        {:ok, &start_via_acquire(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
+        {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, transport_opts)}
 
       _ ->
         {:error, :ws_url_required}
@@ -291,24 +291,24 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     end
   end
 
-  defp start_via_acquire(opts, transport_mod, transport_opts) do
-    with {:ok, acquired} <- transport_mod.acquire(transport_opts) do
-      session_struct = %Session{
-        id: "v2drv-#{System.unique_integer([:positive])}",
-        url: "about:blank",
-        session_url: "about:blank",
-        driver: __MODULE__,
-        driver_spec: @driver_spec,
-        live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-        bidi_pid: acquired.ws_pid,
-        browsing_context: acquired.session_id,
-        capabilities: acquired.capabilities
-      }
+  defp start_via_strategy(opts, transport_mod, transport_opts) do
+    session_struct = %Session{
+      id: "v2drv-#{System.unique_integer([:positive])}",
+      url: "about:blank",
+      session_url: "about:blank",
+      driver: __MODULE__,
+      driver_spec: @driver_spec,
+      live_view_aware?: Keyword.get(opts, :live_view_aware, false),
+      capabilities: %{}
+    }
 
-      with {:ok, session} <- Transport.start_session_from(acquired, session_struct, opts) do
-        apply_session_opts(session, opts)
-        {:ok, session}
-      end
+    strategy_opts =
+      transport_opts ++
+        [session_struct: session_struct, owner: Keyword.get(opts, :owner, self())]
+
+    with {:ok, session} <- transport_mod.start_session(strategy_opts) do
+      apply_session_opts(session, opts)
+      {:ok, session}
     end
   end
 

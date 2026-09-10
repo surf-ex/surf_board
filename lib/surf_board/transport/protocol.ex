@@ -65,10 +65,10 @@ defmodule SurfBoard.Transport.Protocol do
   #
   # Lifecycle:
   #
-  #   * The actor is started by a driver-specific bootstrap function —
-  #     `Transport.start_session_from/3` (fed by `Transport.Strategy.
-  #     SharedWS.acquire/1` or `Transport.Strategy.IsolatedProcess.
-  #     acquire/1`), `Transport.Strategy.PerSession.start_session/1`, or
+  #   * The actor is started by whichever `SurfBoard.Transport.Strategy`
+  #     the driver picked — `Transport.Strategy.SharedWS.start_session/1`,
+  #     `Transport.Strategy.IsolatedProcess.start_session/1`,
+  #     `Transport.Strategy.PerSession.start_session/1`, or
   #     `Transport.Strategy.BiDi.start_session/1` — depending on which
   #     driver is starting the session. Each ends with an actor pid
   #     honoring this contract.

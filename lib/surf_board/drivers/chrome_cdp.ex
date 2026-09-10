@@ -121,58 +121,57 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
     caller = Keyword.get(opts, :owner, self())
+    user_caps = Keyword.get(opts, :capabilities, %{})
 
-    with {:ok, acquired} <-
-           Transport.Strategy.SharedWS.acquire(connection: SharedConnection, driver: __MODULE__) do
-      user_caps = Keyword.get(opts, :capabilities, %{})
+    session_struct = %Session{
+      id: "v2-chrome-#{System.unique_integer([:positive])}",
+      url: "about:blank",
+      session_url: "about:blank",
+      driver: __MODULE__,
+      driver_spec: @driver_spec,
+      live_view_aware?: Keyword.get(opts, :live_view_aware, false),
+      capabilities: user_caps
+    }
 
-      session_struct = %Session{
-        id: "v2-chrome-#{System.unique_integer([:positive])}",
-        url: "about:blank",
-        session_url: "about:blank",
-        driver: __MODULE__,
-        driver_spec: @driver_spec,
-        live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-        bidi_pid: acquired.ws_pid,
-        browsing_context: acquired.session_id,
-        capabilities: Map.merge(user_caps, acquired.capabilities)
-      }
+    with {:ok, session} <-
+           Transport.Strategy.SharedWS.start_session(
+             connection: SharedConnection,
+             driver: __MODULE__,
+             session_struct: session_struct,
+             owner: caller
+           ) do
+      # Forward console + exception events to the test caller's mailbox
+      # so LogChecker.check_logs! can drain them after each operation.
+      _ =
+        WebSocket.subscribe(
+          session.bidi_pid,
+          "Runtime.consoleAPICalled",
+          session.browsing_context,
+          caller
+        )
 
-      with {:ok, session} <-
-             Transport.start_session_from(acquired, session_struct, owner: caller) do
-        # Forward console + exception events to the test caller's mailbox
-        # so LogChecker.check_logs! can drain them after each operation.
-        _ =
-          WebSocket.subscribe(
-            acquired.ws_pid,
-            "Runtime.consoleAPICalled",
-            acquired.session_id,
-            caller
-          )
+      _ =
+        WebSocket.subscribe(
+          session.bidi_pid,
+          "Runtime.exceptionThrown",
+          session.browsing_context,
+          caller
+        )
 
-        _ =
-          WebSocket.subscribe(
-            acquired.ws_pid,
-            "Runtime.exceptionThrown",
-            acquired.session_id,
-            caller
-          )
+      if UserAgent.override?(opts) do
+        ua =
+          opts
+          |> UserAgent.resolve(@base_user_agent)
+          |> Metadata.append(Keyword.get(opts, :metadata))
 
-        if UserAgent.override?(opts) do
-          ua =
-            opts
-            |> UserAgent.resolve(@base_user_agent)
-            |> Metadata.append(Keyword.get(opts, :metadata))
-
-          _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
-        end
-
-        if window_size = Keyword.get(opts, :window_size) do
-          _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
-        end
-
-        {:ok, session}
+        _ = CDPClient.cdp_send(session, "Network.setUserAgentOverride", %{userAgent: ua})
       end
+
+      if window_size = Keyword.get(opts, :window_size) do
+        _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
+      end
+
+      {:ok, session}
     end
   end
 

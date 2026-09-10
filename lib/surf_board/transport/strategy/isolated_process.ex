@@ -10,11 +10,15 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
   # one connection (or has bugs that surface under concurrent load).
   # Currently the default Lightpanda transport.
 
+  @behaviour SurfBoard.Transport.Strategy
+
   alias SurfBoard.Transport
   alias SurfBoard.WebSocket
 
-  @spec acquire(keyword) :: {:ok, Transport.acquired()} | {:error, term}
-  def acquire(opts) do
+  @impl true
+  @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
+  def start_session(opts) do
+    template = Keyword.fetch!(opts, :session_struct)
     {:ok, ws_url, server_pid} = ensure_server(opts)
 
     with {:ok, ws_pid} <- WebSocket.start_link(ws_url),
@@ -29,20 +33,21 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
         :ok
       end
 
-      {:ok,
-       %{
-         ws_pid: ws_pid,
-         target_id: target_id,
-         session_id: session_id,
-         browser_context_id: nil,
-         teardown_fun: teardown,
-         capabilities:
-           Map.merge(caps, %{
-             target_id: target_id,
-             flat_session_id: true,
-             server_pid: server_pid
-           })
-       }}
+      acquired = %{
+        ws_pid: ws_pid,
+        target_id: target_id,
+        session_id: session_id,
+        browser_context_id: nil,
+        teardown_fun: teardown,
+        capabilities:
+          Map.merge(caps, %{
+            target_id: target_id,
+            flat_session_id: true,
+            server_pid: server_pid
+          })
+      }
+
+      Transport.start_session_from(acquired, template, opts)
     else
       err ->
         # Failed mid-bring-up: kill the spawned binary so we don't leak

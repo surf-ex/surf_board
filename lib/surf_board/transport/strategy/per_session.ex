@@ -16,6 +16,8 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   # Target + attachToTarget on that WS, and the resulting actor
   # handles everything for that session.
 
+  @behaviour SurfBoard.Transport.Strategy
+
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.Wire
   alias SurfBoard.Transport.Actor
@@ -34,6 +36,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
     * `:teardown_fun` — 1-arity called from `terminate/2` after the
       session ends. Defaults to a no-op.
   """
+  @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
     ws_url = Keyword.fetch!(opts, :ws_url)

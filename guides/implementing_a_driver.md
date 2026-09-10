@@ -107,9 +107,22 @@ strategy for an existing vendor).
      # ----- Session lifecycle -----
      @impl SurfBoard.Driver
      def start_session(opts \\ []) do
-       # Acquire your WebSocket / connection (see "Owning your connection"
-       # below), build a %SurfBoard.Session{driver: __MODULE__, driver_spec:
-       # @driver_spec, ...}, and return {:ok, session}.
+       # Build a template %SurfBoard.Session{driver: __MODULE__, driver_spec:
+       # @driver_spec, capabilities: ..., ...} — leave bidi_pid/browsing_context
+       # unset, your chosen Transport.Strategy fills those in — and hand it
+       # to your strategy's start_session/1 as :session_struct:
+       #
+       #   Transport.Strategy.SharedWS.start_session(
+       #     connection: YourSharedConnection,
+       #     driver: __MODULE__,
+       #     session_struct: template,
+       #     owner: Keyword.get(opts, :owner, self())
+       #   )
+       #
+       # Every SurfBoard.Transport.Strategy implementation shares this
+       # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
+       # contract (see "Own your connection" below), so reusing one is
+       # just picking the module and supplying its required opts.
      end
 
      @impl SurfBoard.Driver
@@ -125,8 +138,11 @@ strategy for an existing vendor).
    behaviour; nothing dispatches on it today, but it's how a session records
    which vendor it's driving.
 
-3. **Own your connection via `SurfBoard.Transport.Actor`.** Every driver's
-   session runs on the same actor — one generic GenServer speaking
+3. **If no existing `Transport.Strategy` fits, write a new one, owning your
+   connection via `SurfBoard.Transport.Actor`.** (If one of the existing
+   strategies fits — the common case — skip straight to step 4; you don't
+   need anything in this step.) Every driver's session runs on the same
+   actor — one generic GenServer speaking
    `SurfBoard.Transport.Protocol` (the message contract
    `SurfBoard.Clients.CDP.Client` / `SurfBoard.Clients.BiDi.Client`
    call into — `cdp_send`, `subscribe`, `await_page_load`, `register_find`,

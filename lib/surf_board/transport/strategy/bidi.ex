@@ -19,6 +19,8 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   # Phase B will install lifecycle subscriptions; phase C the
   # bootstrap preload script + script.message routing.
 
+  @behaviour SurfBoard.Transport.Strategy
+
   alias SurfBoard.Transport.Strategy.BiDi.Handshake
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
@@ -41,6 +43,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
     * `:teardown_fun` — 1-arity, called from terminate/2
     * `:capabilities` — capabilities map for the POST body
   """
+  @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
     base_url = Keyword.fetch!(opts, :base_url)

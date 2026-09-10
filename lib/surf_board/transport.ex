@@ -7,9 +7,16 @@ defmodule SurfBoard.Transport do
   # browser: a `WebSocket` pid + a routing key (the CDP `sessionId`,
   # used for flat-session multiplexing). The thing that varies across
   # browsers is *how a session acquires that pid* at start_session time
-  # — each way of doing that lives under `Transport.Strategy.*`.
+  # — each way of doing that lives under `Transport.Strategy.*`, and
+  # implements the `SurfBoard.Transport.Strategy` behaviour: one
+  # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
+  # callback, driver-agnostic — the caller supplies a `:session_struct`
+  # template (id/driver/driver_spec/live_view_aware?/base capabilities
+  # already filled in) and the strategy returns it with `bidi_pid`,
+  # `browsing_context`, and `capabilities` populated and the session
+  # GenServer already up.
   #
-  # Three concrete shapes today:
+  # Four concrete strategies today:
   #
   #   * `Strategy.SharedWS`        — Chrome CDP. One WebSocket per BEAM,
   #                         held in an Agent. Each session gets a fresh
@@ -33,28 +40,33 @@ defmodule SurfBoard.Transport do
   #                         isn't actually shared with any other
   #                         session in practice).
   #
+  #   * `Strategy.BiDi`            — chromium-bidi. One POST /session +
+  #                         one WS per session. Feeds `Transport.Actor`
+  #                         a `{:shared, ws_pid}` config with
+  #                         `send: :spawn_link` (BiDi's
+  #                         WebSocketClient.send_command/4 blocks
+  #                         synchronously, unlike CDP's
+  #                         WireSocket/WebSocket, so a slow call can't
+  #                         be allowed to stall the actor's mailbox —
+  #                         see `Transport.Actor`'s moduledoc).
+  #
   # Each impl returns the same shape so the surrounding driver code
   # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
-  # This is documented convention, not a `@behaviour` — a driver picks
-  # its transport strategy by module name once, at author time; nothing
-  # dispatches across strategies at runtime.
-  #
-  # `Strategy.BiDi.start_session/1` is a fourth bootstrap path, outside
-  # this acquire/1 dispatch entirely — it starts its own
-  # `Drivers.ChromeBiDi.WebSocketClient` and feeds `Transport.Actor` a
-  # `{:shared, ws_pid}` config with `send: :spawn_link` (BiDi's
-  # WebSocketClient.send_command/4 blocks synchronously, unlike CDP's
-  # WireSocket/WebSocket, so a slow call can't be allowed to stall the
-  # actor's mailbox — see `Transport.Actor`'s moduledoc).
+  # A driver picks its strategy by module name once, at author time
+  # (ChromeCDP always calls Strategy.SharedWS.start_session/1); the one
+  # exception is Lightpanda's isolated/external fallback, which calls
+  # `transport_mod.start_session/1` polymorphically because it can
+  # resolve to either Strategy.IsolatedProcess or (in principle) any
+  # other module honoring the same behaviour.
 
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Clients.CDP.Wire
   alias SurfBoard.WebSocket
 
   @typedoc """
-  What `acquire/1` returns. The driver builds a `SurfBoard.Session`
-  from these fields and hands `teardown_fun` to Session as its
-  on-terminate callback.
+  What a `Strategy.SharedWS`/`Strategy.IsolatedProcess` connection
+  acquisition step returns internally, before being folded into the
+  caller's `:session_struct` template by `start_session_from/3`.
 
     * `:ws_pid`       — the WebSocket the session sends through
     * `:target_id`    — Chrome target id (CDP) for window-handle
@@ -75,16 +87,6 @@ defmodule SurfBoard.Transport do
           teardown_fun: (SurfBoard.Session.t() -> any),
           capabilities: map
         }
-
-  # `acquire/1` is a plain function on each implementer (Strategy.SharedWS,
-  # Strategy.IsolatedProcess) with this shape, not a `@behaviour` callback:
-  # each driver calls its own chosen strategy by name (ChromeCDP always
-  # calls Strategy.SharedWS.acquire/1; Lightpanda's IsolatedProcess
-  # fallback calls Strategy.IsolatedProcess.acquire/1 directly) rather
-  # than dispatching through a shared interface, so there's no
-  # polymorphic call site for a callback to serve.
-  #
-  #   @spec acquire(opts :: keyword) :: {:ok, acquired} | {:error, term}
 
   # ----- Default implementations of common teardown shapes -----
   # Drivers can use these directly or build their own.
@@ -141,17 +143,31 @@ defmodule SurfBoard.Transport do
   # ----- Shared session bring-up -----
 
   @doc """
-  Builds the Session struct + hands it to Session.start_link with
-  the supplied teardown_fun. Then runs the standard init sequence
-  (page lifecycle, bootstrap, frame tracking, optional metadata UA,
-  optional window_size).
+  Shared second half of `Strategy.SharedWS.start_session/1` and
+  `Strategy.IsolatedProcess.start_session/1`: folds an `acquired` map
+  (from their own connection-acquisition step) into the caller's
+  `:session_struct` template, brings up the actor, and runs the
+  standard CDP init sequence (page lifecycle, bootstrap, frame
+  tracking).
+
+  `template.capabilities` is treated as the driver's base capabilities
+  (e.g. user-supplied ones); `acquired.capabilities` is merged on top,
+  winning on conflicts — mirroring what each of those strategies needs
+  from its own acquisition step (target id, flat-session routing, …).
 
   Returns `{:ok, %SurfBoard.Session{}}` ready for callers to use.
   """
   @spec start_session_from(acquired, SurfBoard.Session.t(), keyword) ::
           {:ok, SurfBoard.Session.t()} | {:error, term}
-  def start_session_from(%{ws_pid: ws_pid, teardown_fun: teardown}, session_struct, opts) do
+  def start_session_from(%{ws_pid: ws_pid, teardown_fun: teardown} = acquired, template, opts) do
     caller = Keyword.get(opts, :owner, self())
+
+    session_struct = %{
+      template
+      | bidi_pid: ws_pid,
+        browsing_context: acquired.session_id,
+        capabilities: Map.merge(template.capabilities || %{}, acquired.capabilities)
+    }
 
     config = %Actor.Config{
       socket: {:shared, ws_pid},
