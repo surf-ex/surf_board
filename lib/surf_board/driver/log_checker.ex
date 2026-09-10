@@ -23,6 +23,15 @@ defmodule SurfBoard.Driver.LogChecker do
     return_value
   end
 
+  @doc """
+  Runs `fun` wrapped in `check_logs!/2` when `enabled?` is true (i.e.
+  `spec.log_check_interactions?`), otherwise runs it bare. Both Chrome
+  drivers opt in; Lightpanda doesn't emit these events reliably enough
+  to trust, so it opts out and pays no log-drain cost per interaction.
+  """
+  def maybe_check_logs(true, session, fun), do: check_logs!(session, fun)
+  def maybe_check_logs(false, _session, fun), do: fun.()
+
   defp parse_log(%{"level" => "SEVERE", "source" => "javascript", "message" => msg}) do
     if SurfBoard.js_errors?() do
       raise SurfBoard.JSError, msg
