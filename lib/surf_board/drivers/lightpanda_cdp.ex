@@ -2,12 +2,13 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   @moduledoc false
 
   # Lightpanda driver speaking CDP over the surf_board transport stack.
-  # All callback behaviour comes from `SurfBoard.Driver.Generic`;
-  # only session lifecycle and the Supervisor surface live here.
+  # Only owns lifecycle (start/end_session, the Supervisor surface) and
+  # its @driver_spec. Every capability is dispatched by Browser.ex/
+  # Element.ex calling session.driver_spec's dimension modules directly.
 
   use Supervisor
 
-  use SurfBoard.Driver.Generic
+  @behaviour SurfBoard.Driver
 
   alias SurfBoard.{Metadata, Session, UserAgent}
   alias SurfBoard.Browser

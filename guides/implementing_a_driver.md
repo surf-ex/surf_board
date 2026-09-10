@@ -30,20 +30,24 @@ Underneath both, `SurfBoard.Transport.WireSocket` is shared low-level Mint
 WebSocket plumbing (connect, upgrade, encode/decode, frame dispatch) — it knows
 neither the protocol nor the driver, and you generally don't need to touch it.
 
-## What you get for free: `Driver.Generic`
+## What a driver module actually does
 
-`SurfBoard.Driver` is a ~40-callback behaviour (`visit/2`, `click/1`, `find_elements/2`,
-`cookies/1`, `focus_frame/2`, ...). You do not implement all of them. `use SurfBoard.Driver.Generic`
-delegates every one of them to dispatch code that reads `session.driver_spec` — a
-`%SurfBoard.Driver.Spec{}` struct — and calls the right dimension module. You
-only write:
+`SurfBoard.Driver` is a 2-callback behaviour: `start_session/1` and
+`end_session/1`. That's the whole job — a driver module is lifecycle only.
+Every browser capability (`visit/2`, `click/1`, `find_elements/2`, `cookies/1`,
+`focus_frame/2`, ...) is dispatched by `SurfBoard.Browser`/`SurfBoard.Element`
+calling `session.driver_spec` — your `%SurfBoard.Driver.Spec{}` — directly.
+There's no per-driver module standing between them and your Spec; `Browser`/
+`Element` never call `session.driver.<capability>`. All you write is:
 
-* `start_session/1` and `end_session/1` — the two lifecycle callbacks Generic
-  doesn't provide, because they're exactly the vendor-specific part.
+* `start_session/1` and `end_session/1` — vendor-specific connection setup and
+  teardown.
 * A `%SurfBoard.Driver.Spec{}` naming which existing (or new) protocol/dialogs/
-  windows/frames/touch_scroll implementations this driver uses.
-* Any per-driver override where the generic delegate isn't right for your vendor
-  (see [Per-driver overrides](#per-driver-overrides)).
+  windows/frames/grant_permissions/send_keys_session/touch_scroll
+  implementations this driver uses. Each field is a module (or, for
+  `touch_scroll`, a function) that `Browser`/`Element` call directly — see
+  [Capability dimensions](#capability-dimensions) for when to reuse an
+  existing one vs. write a new one.
 
 ## Adding a driver for a vendor that already has a protocol client
 
@@ -59,7 +63,8 @@ strategy for an existing vendor).
    ```elixir
    defmodule SurfBoard.Drivers.YourDriver do
      use Supervisor
-     use SurfBoard.Driver.Generic
+
+     @behaviour SurfBoard.Driver
 
      alias SurfBoard.Driver.Spec
 
@@ -69,6 +74,8 @@ strategy for an existing vendor).
        dialogs: Dialogs.ChromeCDP,      # reuse, or write your own — see below
        windows: Windows.ChromeCDP,      # reuse, or write your own
        frames: Frames.ChromeCDP,        # reuse, or write your own
+       grant_permissions: SurfBoard.Drivers.CDP.Client, # reuse, or Permissions.Unsupported
+       send_keys_session: SurfBoard.Drivers.CDP.Client, # reuse, or SendKeysSession.Unsupported
        touch_scroll: &__MODULE__.touch_scroll_impl/3,
        log_check_interactions?: true
      }
@@ -167,61 +174,68 @@ strategy for an existing vendor).
    machine `Transport.Actor` runs on) needs no changes either way; it
    operates purely on the actor's state fields, not on your config.
 
-4. **Reuse `Dialogs`/`Windows`/`Frames`/`touch_scroll` where your vendor's
-   behavior genuinely matches an existing one.** These are `%Spec{}`
-   dimension modules — each implements a small behaviour
-   (`SurfBoard.Dialogs`, `SurfBoard.Windows`, `SurfBoard.Frames`) for one
-   protocol. If your vendor speaks CDP the same way Chrome does, point at
-   `SurfBoard.Drivers.ChromeCDP.{Dialogs,Windows,Frames}` directly — don't
-   copy them. If your vendor can't support one of these (no iframe support,
-   no window management), point at the shared fallbacks:
-   `SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
-   `SurfBoard.Frames.Unsupported`. Only write a new implementation when your
-   vendor's actual protocol behavior differs from every existing one.
+4. **Reuse capability dimension modules where your vendor's behavior genuinely
+   matches an existing one — see [Capability dimensions](#capability-dimensions).**
 
 5. **Register the driver.** Add your driver to `driver_module_for/1` in
    `lib/surf_board.ex` so `SurfBoard.start_session(driver: :your_driver)`
    resolves to your module.
 
-## Per-driver overrides
+## Capability dimensions
 
-`Driver.Generic`'s delegation is a default, not a contract every driver must
-accept as-is. Existing drivers override individual callbacks when the generic
-dispatch through `Spec` isn't right:
+Every `%Spec{}` field beyond `wire_protocol` exists because at least two
+drivers need genuinely different behavior for that capability. When your
+vendor's behavior matches an existing driver's exactly, point at the same
+module — don't copy it. When it doesn't, write a new implementation and
+point your Spec at that instead. There is no per-driver override mechanism
+any more (there used to be — see below); every capability lives in exactly
+one place: the module your Spec names.
 
-* **Session-scoped `send_keys`** — `ChromeCDP`/`ChromeBiDi` both override
-  `send_keys/2` for a `%Session{}` (real keystrokes via the wire protocol);
-  the `%Element{}` clause still falls through to Generic. `LightpandaCDP`
-  overrides it to return `{:error, :not_implemented}` since Lightpanda has
-  no session-level input synthesis.
-* **Unsupported capabilities** — when your vendor genuinely can't do
-  something (`LightpandaCDP.grant_permissions/2`, `ChromeBiDi.grant_permissions/2`),
-  override the callback to `raise(SurfBoard.DriverError.not_supported(name, __MODULE__))`
-  rather than let a shared dispatch silently no-op. This matters most when
-  your driver shares a `wire_protocol` module with another driver (see next
-  point) — a shared module can't tell which driver is calling it, so an
-  unsupported-capability check has to live in the driver, not the protocol
-  client.
-* **`touch_scroll`** — there's no shared `Windows`/`Frames`-style behaviour
-  for this; it's a bare 3-arity function on `%Spec{}` because the three
-  existing implementations (CDP's `Input.synthesizeScrollGesture`, BiDi's JS
-  `scrollBy` workaround, Lightpanda's `nil`/no-op) don't share enough to
-  justify one. Write your own `touch_scroll_impl/3` unless an existing one's
-  approach genuinely fits your vendor.
+* **`dialogs` / `windows` / `frames`** — each implements a small behaviour
+  (`SurfBoard.Dialogs`, `SurfBoard.Windows`, `SurfBoard.Frames`) for one
+  protocol+vendor combination. If your vendor speaks CDP the same way Chrome
+  does, point at `SurfBoard.Drivers.ChromeCDP.{Dialogs,Windows,Frames}`
+  directly. If your vendor can't support one of these (no iframe support, no
+  window management), point at the shared fallbacks:
+  `SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
+  `SurfBoard.Frames.Unsupported`.
+* **`grant_permissions`** — implements `SurfBoard.Permissions`. Point at your
+  `wire_protocol` module directly if it has a real implementation (e.g.
+  `SurfBoard.Drivers.CDP.Client`, which both `ChromeCDP` and `LightpandaCDP`
+  could point at — but only `ChromeCDP` does, because Lightpanda's browser
+  engine doesn't actually support it). Otherwise point at
+  `SurfBoard.Permissions.Unsupported`, which raises
+  `SurfBoard.DriverError.not_supported/2` rather than silently no-opping — a
+  caller granting camera/mic access needs to know it didn't happen.
+* **`send_keys_session`** — implements `SurfBoard.SendKeysSession` (session-
+  scoped key dispatch; element-scoped `send_keys` is a plain `wire_protocol`
+  call and needs no separate dimension). Same reuse-or-`Unsupported` choice
+  as `grant_permissions`.
+* **`touch_scroll`** — there's no shared behaviour for this; it's a bare
+  3-arity function on `%Spec{}` because the three existing implementations
+  (CDP's `Input.synthesizeScrollGesture`, BiDi's JS `scrollBy` workaround,
+  Lightpanda's `nil`/no-op) don't share enough to justify one. Write your
+  own `touch_scroll_impl/3` unless an existing one's approach genuinely fits
+  your vendor.
 
-## A note on sharing a protocol client across drivers
+### Why `grant_permissions`/`send_keys_session` are separate dimensions,
+### not just `wire_protocol` calls
 
 `SurfBoard.Drivers.CDP.Client` is the **same module**, not a copy, for both
-`ChromeCDP` and `LightpandaCDP` — both point `wire_protocol:` at it. This is
-correct and intentional: they're the same protocol, so there's one
-implementation. The cost is that `function_exported?`/dispatch tricks keyed
-off `spec.wire_protocol` can't distinguish the two drivers, because it's
-the same module either way — this bit `grant_permissions/2` and (in an
-earlier, since-reverted feature) `open_stream/1`. If you're reusing an
-existing protocol client and your vendor can't support something the other
-sharer(s) can, override it directly on your driver module (see
-[Per-driver overrides](#per-driver-overrides)) rather than trying to gate it
-inside the shared client.
+`ChromeCDP` and `LightpandaCDP` — both point `wire_protocol:` at it, because
+they're the same protocol. That sharing means a capability check keyed off
+`spec.wire_protocol` (e.g. `function_exported?/3`, or just calling it
+unconditionally) can't distinguish the two drivers — it's the same module
+either way. `grant_permissions` and `send_keys_session` both hit this for
+real: `Drivers.CDP.Client` has working implementations of both, but
+Lightpanda's browser engine doesn't actually support either one. The fix
+isn't a per-driver override (that used to exist, via a `Driver.Generic`
+dispatch layer that's since been removed) — it's giving the capability its
+own `%Spec{}` field, so each driver's Spec states directly whether it
+supports the capability, independent of which `wire_protocol` it shares.
+If you add a new capability that might have this same shared-client problem,
+give it its own Spec field from the start rather than dispatching through
+`wire_protocol`.
 
 ## Adding a new protocol (or a second BiDi vendor)
 
@@ -242,7 +256,7 @@ Adding a genuinely new wire protocol (neither CDP nor BiDi) is a much bigger
 undertaking — you'd be writing the `Drivers.<Protocol>.*` analogue of
 everything under `Drivers.CDP.*`, including a new `SurfBoard.WireProtocol`
 implementation (`lib/surf_board/wire_protocol.ex` documents the full
-callback contract `Browser`/`Element`/`Orchestrator` dispatch through) and
+callback contract `Browser`/`Element` dispatch through directly) and
 likely a new `Wire.<Protocol>` event decoder alongside the existing
 `Drivers.CDP.Wire`/`Drivers.ChromeBiDi.Wire`. There's no shortcut for this
 one — read both existing protocol implementations in full before starting.

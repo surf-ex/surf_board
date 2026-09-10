@@ -2,13 +2,14 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   @moduledoc false
 
   # Chrome driver speaking WebDriver-BiDi against a chromium-bidi
-  # Node sidecar. All callback behaviour comes from
-  # `SurfBoard.Driver.Generic`; only session lifecycle and the
-  # Supervisor surface live here.
+  # Node sidecar. Only owns lifecycle (start/end_session, the
+  # Supervisor surface) and its @driver_spec. Every capability is
+  # dispatched by Browser.ex/Element.ex calling session.driver_spec's
+  # dimension modules directly.
 
   use Supervisor
 
-  use SurfBoard.Driver.Generic
+  @behaviour SurfBoard.Driver
 
   alias SurfBoard.{Metadata, Session, UserAgent}
   alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient

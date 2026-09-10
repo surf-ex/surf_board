@@ -1,9 +1,10 @@
 defmodule SurfBoard.Driver.Spec do
   @moduledoc false
 
-  # A driver-as-data: five orthogonal dimension modules plus per-driver
-  # cross-cutting flags. `Driver.Generic` and the `Orchestrator` read
-  # from this struct to dispatch each Driver callback to the right places.
+  # A driver-as-data: dimension modules plus per-driver cross-cutting
+  # flags. `Browser`/`Element` read from this struct directly to
+  # dispatch each capability to the right client module — there's no
+  # intermediary module between them and this Spec.
   #
   # Stamped onto `Session.driver_spec` at start_session time; from then
   # on, the session is fully described by its Spec.

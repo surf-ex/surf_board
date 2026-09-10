@@ -5,14 +5,13 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   # (held by `Chrome.SharedConnection`), per-session BrowserContext +
   # Target + sessionId for routing.
   #
-  # All callback behaviour comes from `SurfBoard.Driver.Generic`,
-  # which dispatches via `session.driver_spec` (stamped by start_session).
-  # Only the lifecycle (start/end_session) and the Supervisor surface
-  # live here.
+  # Only owns lifecycle (start/end_session, the Supervisor surface) and
+  # its @driver_spec. Every capability is dispatched by Browser.ex/
+  # Element.ex calling session.driver_spec's dimension modules directly.
 
   use Supervisor
 
-  use SurfBoard.Driver.Generic
+  @behaviour SurfBoard.Driver
 
   alias SurfBoard.{DependencyError, Metadata, Session, UserAgent}
   alias SurfBoard.{Browser, Transport, WebSocket}

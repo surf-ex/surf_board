@@ -283,10 +283,8 @@ defmodule SurfBoard.Browser do
   @type take_screenshot_opt :: {:name, String.t()} | {:log, boolean}
   @spec take_screenshot(parent, [take_screenshot_opt]) :: parent
 
-  def take_screenshot(%{driver: driver} = screenshotable, opts \\ []) do
-    image_data =
-      screenshotable
-      |> driver.take_screenshot
+  def take_screenshot(screenshotable, opts \\ []) do
+    image_data = raw_screenshot(get_session(screenshotable), screenshotable)
 
     name =
       opts
@@ -314,6 +312,17 @@ defmodule SurfBoard.Browser do
 
   defp remove_illegal_characters(string), do: String.replace(string, ~r{<>:"/\\\?\*}, "")
 
+  # Take a full-page screenshot. Returns the raw binary (the Driver
+  # contract callers expect), "" on error rather than raising.
+  defp raw_screenshot(%Session{} = session, %Session{}) do
+    case spec(session).wire_protocol.take_screenshot(session) do
+      {:ok, binary} -> binary
+      _ -> ""
+    end
+  end
+
+  defp raw_screenshot(%Session{} = session, %Element{}), do: raw_screenshot(session, session)
+
   @doc """
   Grants media permissions (`:camera`, `:microphone`) for `session`, so a
   page's `getUserMedia`/`getDisplayMedia` calls succeed without a real
@@ -333,8 +342,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec grant_permissions(session, [:camera | :microphone]) :: :ok | {:error, term}
-  def grant_permissions(%{driver: driver} = session, permissions) when is_list(permissions),
-    do: driver.grant_permissions(session, permissions)
+  def grant_permissions(%Session{} = session, permissions) when is_list(permissions),
+    do: spec(session).grant_permissions.grant_permissions(session, permissions)
 
   @doc """
   Gets the window handle of the current window.
@@ -364,8 +373,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec window_handle(session :: Session.t()) :: String.t()
-  def window_handle(%{driver: driver} = session) do
-    {:ok, handle} = driver.window_handle(session)
+  def window_handle(%Session{} = session) do
+    {:ok, handle} = spec(session).windows.window_handle(session)
 
     handle
   end
@@ -391,8 +400,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec window_handles(session :: Session.t()) :: [String.t()]
-  def window_handles(%{driver: driver} = session) do
-    {:ok, handles} = driver.window_handles(session)
+  def window_handles(%Session{} = session) do
+    {:ok, handles} = spec(session).windows.window_handles(session)
 
     handles
   end
@@ -423,8 +432,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec focus_window(session :: Session.t(), window_handle :: String.t()) :: parent
-  def focus_window(%{driver: driver} = session, window_handle) do
-    {:ok, _} = driver.focus_window(session, window_handle)
+  def focus_window(%Session{} = session, window_handle) do
+    {:ok, _} = spec(session).windows.focus_window(session, window_handle)
 
     session
   end
@@ -455,8 +464,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec close_window(session :: Session.t()) :: Session.t()
-  def close_window(%{driver: driver} = session) do
-    {:ok, _} = driver.close_window(session)
+  def close_window(%Session{} = session) do
+    {:ok, _} = spec(session).windows.close_window(session)
 
     session
   end
@@ -486,10 +495,10 @@ defmodule SurfBoard.Browser do
           String.t() => pos_integer,
           String.t() => pos_integer
         }
-  def window_size(%{driver: driver} = session) do
-    {:ok, size} = driver.get_window_size(session)
-
-    size
+  def window_size(%Session{} = session) do
+    case spec(session).wire_protocol.get_window_size(session) do
+      {:ok, %{width: w, height: h}} -> %{"width" => w, "height" => h}
+    end
   end
 
   @doc """
@@ -514,8 +523,8 @@ defmodule SurfBoard.Browser do
   """
   @spec resize_window(session :: Session.t(), width :: pos_integer(), height :: pos_integer()) ::
           Session.t()
-  def resize_window(%{driver: driver} = session, width, height) do
-    {:ok, _} = driver.set_window_size(session, width, height)
+  def resize_window(%Session{} = session, width, height) do
+    {:ok, _} = spec(session).wire_protocol.set_window_size(session, width, height)
 
     session
   end
@@ -543,11 +552,7 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec maximize_window(session :: Session.t()) :: Session.t()
-  def maximize_window(%{driver: driver} = session) do
-    {:ok, _} = driver.maximize_window(session)
-
-    session
-  end
+  def maximize_window(%Session{} = session), do: session
 
   @doc """
   Gets the position of the current window.
@@ -572,11 +577,7 @@ defmodule SurfBoard.Browser do
           String.t() => pos_integer,
           String.t() => pos_integer
         }
-  def window_position(%{driver: driver} = session) do
-    {:ok, position} = driver.get_window_position(session)
-
-    position
-  end
+  def window_position(%Session{}), do: %{"x" => 0, "y" => 0}
 
   @doc """
   Sets the position of the current window.
@@ -599,19 +600,15 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec move_window(session :: Session.t(), x :: pos_integer(), y :: pos_integer()) :: Session.t()
-  def move_window(%{driver: driver} = session, x, y) do
-    {:ok, _} = driver.set_window_position(session, x, y)
-
-    session
-  end
+  def move_window(%Session{} = session, _x, _y), do: session
 
   @doc """
   Changes the driver focus to the frame found by query.
   """
   @spec focus_frame(parent, Query.t()) :: parent
-  def focus_frame(%{driver: driver} = session, %Query{} = query) do
+  def focus_frame(%Session{} = session, %Query{} = query) do
     session
-    |> find(query, &driver.focus_frame(session, &1))
+    |> find(query, &spec(session).frames.focus_frame(session, &1))
   end
 
   @doc """
@@ -619,8 +616,8 @@ defmodule SurfBoard.Browser do
   """
   @spec focus_parent_frame(parent) :: parent
 
-  def focus_parent_frame(%{driver: driver} = session) do
-    {:ok, _} = driver.focus_parent_frame(session)
+  def focus_parent_frame(%Session{} = session) do
+    {:ok, _} = spec(session).frames.focus_parent_frame(session)
     session
   end
 
@@ -629,8 +626,8 @@ defmodule SurfBoard.Browser do
   """
   @spec focus_default_frame(parent) :: parent
 
-  def focus_default_frame(%{driver: driver} = session) do
-    {:ok, _} = driver.focus_frame(session, nil)
+  def focus_default_frame(%Session{} = session) do
+    {:ok, _} = spec(session).frames.focus_frame(session, nil)
     session
   end
 
@@ -639,8 +636,8 @@ defmodule SurfBoard.Browser do
   """
   @spec current_url(parent) :: String.t()
 
-  def current_url(%Session{driver: driver} = session) do
-    {:ok, url} = driver.current_url(session)
+  def current_url(%Session{} = session) do
+    {:ok, url} = spec(session).wire_protocol.current_url(session)
     url
   end
 
@@ -649,8 +646,8 @@ defmodule SurfBoard.Browser do
   """
   @spec current_path(parent) :: String.t()
 
-  def current_path(%Session{driver: driver} = session) do
-    {:ok, path} = driver.current_path(session)
+  def current_path(%Session{} = session) do
+    {:ok, path} = spec(session).wire_protocol.current_path(session)
     path
   end
 
@@ -659,8 +656,8 @@ defmodule SurfBoard.Browser do
   """
   @spec page_title(parent) :: String.t()
 
-  def page_title(%Session{driver: driver} = session) do
-    {:ok, title} = driver.page_title(session)
+  def page_title(%Session{} = session) do
+    {:ok, title} = spec(session).wire_protocol.page_title(session)
     title
   end
 
@@ -686,10 +683,10 @@ defmodule SurfBoard.Browser do
     execute_script(session, script, [], callback)
   end
 
-  def execute_script(%{driver: driver} = parent, script, arguments, callback)
+  def execute_script(%Session{} = parent, script, arguments, callback)
       when is_list(arguments) and is_function(callback) do
     parent = maybe_snapshot_page_id(parent)
-    {:ok, value} = driver.execute_script(parent, script, arguments)
+    {:ok, value} = spec(parent).wire_protocol.evaluate(parent, script, arguments)
     callback.(value)
     parent
   end
@@ -716,9 +713,9 @@ defmodule SurfBoard.Browser do
     execute_script_async(session, script, [], callback)
   end
 
-  def execute_script_async(%{driver: driver} = parent, script, arguments, callback)
+  def execute_script_async(%Session{} = parent, script, arguments, callback)
       when is_list(arguments) and is_function(callback) do
-    {:ok, value} = driver.execute_script_async(parent, script, arguments)
+    {:ok, value} = spec(parent).wire_protocol.evaluate_async(parent, script, arguments)
     callback.(value)
     parent
   end
@@ -763,8 +760,8 @@ defmodule SurfBoard.Browser do
     send_keys(parent, [keys])
   end
 
-  def send_keys(%{driver: driver} = parent, keys) when is_list(keys) do
-    {:ok, _} = driver.send_keys(parent, keys)
+  def send_keys(%Session{} = parent, keys) when is_list(keys) do
+    {:ok, _} = spec(parent).send_keys_session.send_keys_to_session(parent, keys)
     parent
   end
 
@@ -773,8 +770,8 @@ defmodule SurfBoard.Browser do
   """
   @spec page_source(parent) :: String.t()
 
-  def page_source(%Session{driver: driver} = session) do
-    {:ok, source} = driver.page_source(session)
+  def page_source(%Session{} = session) do
+    {:ok, source} = spec(session).wire_protocol.page_source(session)
     source
   end
 
@@ -896,7 +893,7 @@ defmodule SurfBoard.Browser do
   @spec click(parent, Query.t()) :: parent
   @spec click(parent, Query.t(), keyword) :: parent
   def click(parent, button) when button in [:left, :middle, :right] do
-    case parent.driver.click(parent, button) do
+    case spec(parent).wire_protocol.click_at_cursor(parent, button) do
       {:ok, _} ->
         parent
     end
@@ -921,8 +918,8 @@ defmodule SurfBoard.Browser do
     # as do_post_click but in one native call. Avoids the post-click
     # `find` polling fallback that cost LP ~3s per submit-form click.
     #
-    # Chrome CDP / BiDi: Element.click → driver.click → click_aware
-    # already handles classify + patch-await + navigation/page-ready.
+    # Chrome CDP / BiDi: Element.click's own classify + patch-await +
+    # navigation/page-ready logic already handles this.
     # No outer with_patch_await needed — wrapping it would double-wait.
     if session && session.driver == SurfBoard.Drivers.LightpandaCDP &&
          not in_frame?(session) && not in_switched_window?(session) do
@@ -948,11 +945,9 @@ defmodule SurfBoard.Browser do
     if is_nil(session) or is_nil(session.driver_spec) do
       click_auto(parent, query)
     else
-      orchestrator = SurfBoard.Driver.Orchestrator
-
       case find_lazy(parent, query) do
         %Element{} = element ->
-          case orchestrator.click_deferred(session.driver_spec, element) do
+          case do_click_deferred(session, element) do
             {:ok, pre_page_id} ->
               %{session | pending_await: {:page_ready_after, pre_page_id}}
 
@@ -965,6 +960,54 @@ defmodule SurfBoard.Browser do
 
         other ->
           other
+      end
+    end
+  end
+
+  # Fires the click and returns immediately after dispatching, without
+  # awaiting the bootstrap's page_ready signal. Returns {:ok,
+  # pre_page_id} so the caller can stash it on the session and drain
+  # the wait later via SurfBoard.LiveView.await_patch/2. Falls back to
+  # a plain click (no classify, no wait) when the session isn't
+  # live_view_aware? — there's no awaiting machinery to skip, so
+  # :defer collapses to the normal path.
+  defp do_click_deferred(%Session{} = session, %Element{} = element) do
+    wire = spec(session).wire_protocol
+
+    if session.live_view_aware? do
+      # Stash pre_page_id via a closure-capture sink — the underlying
+      # call returns {:ok, classification, :deferred}, and we want the
+      # pre_page_id back. A 1-arity sink keeps the call signature
+      # explicit without leaking a tuple shape change.
+      ref = make_ref()
+      parent_pid = self()
+
+      sink = fn pre_page_id ->
+        send(parent_pid, {ref, :pre_page_id, pre_page_id})
+      end
+
+      result =
+        wire.click_aware_with_classification(session, element,
+          await: false,
+          pre_page_id_sink: sink
+        )
+
+      pre_page_id =
+        receive do
+          {^ref, :pre_page_id, id} -> id
+        after
+          0 -> nil
+        end
+
+      case result do
+        {:ok, _classification, :deferred} -> {:ok, pre_page_id}
+        {:ok, _classification, :ready} -> {:ok, pre_page_id}
+        {:error, _} = err -> err
+      end
+    else
+      case wire.click(session, element) do
+        {:ok, _} -> {:ok, nil}
+        err -> err
       end
     end
   end
@@ -1017,7 +1060,7 @@ defmodule SurfBoard.Browser do
   """
   @spec double_click(parent) :: parent
   def double_click(parent) do
-    case parent.driver.double_click(parent) do
+    case spec(parent).wire_protocol.double_click(parent) do
       {:ok, _} ->
         parent
     end
@@ -1028,7 +1071,7 @@ defmodule SurfBoard.Browser do
   """
   @spec button_down(parent, atom) :: parent
   def button_down(parent, button \\ :left) when button in [:left, :middle, :right] do
-    case parent.driver.button_down(parent, button) do
+    case spec(parent).wire_protocol.button_down(parent, button) do
       {:ok, _} ->
         parent
     end
@@ -1039,7 +1082,7 @@ defmodule SurfBoard.Browser do
   """
   @spec button_up(parent, atom) :: parent
   def button_up(parent, button \\ :left) when button in [:left, :middle, :right] do
-    case parent.driver.button_up(parent, button) do
+    case spec(parent).wire_protocol.button_up(parent, button) do
       {:ok, _} ->
         parent
     end
@@ -1059,7 +1102,7 @@ defmodule SurfBoard.Browser do
   """
   @spec move_mouse_by(parent, integer, integer) :: parent
   def move_mouse_by(parent, x_offset, y_offset) do
-    case parent.driver.move_mouse_by(parent, x_offset, y_offset) do
+    case spec(parent).wire_protocol.move_mouse_by(parent, x_offset, y_offset) do
       {:ok, _} ->
         parent
     end
@@ -1071,7 +1114,7 @@ defmodule SurfBoard.Browser do
   @spec touch_down(parent, integer, integer) :: session
 
   def touch_down(parent, x, y) when is_integer(x) and is_integer(y) do
-    case parent.driver.touch_down(parent, nil, x, y) do
+    case spec(parent).wire_protocol.touch_down(Element.root_session(parent), nil, x, y) do
       {:ok, _} ->
         parent
     end
@@ -1093,7 +1136,7 @@ defmodule SurfBoard.Browser do
   @spec touch_up(parent) :: parent
 
   def touch_up(parent) do
-    case parent.driver.touch_up(parent) do
+    case spec(parent).wire_protocol.touch_up(parent) do
       {:ok, _} ->
         parent
     end
@@ -1115,7 +1158,7 @@ defmodule SurfBoard.Browser do
   @spec touch_move(parent, non_neg_integer, non_neg_integer) :: parent
 
   def touch_move(parent, x, y) do
-    case parent.driver.touch_move(parent, x, y) do
+    case spec(parent).wire_protocol.touch_move(parent, x, y) do
       {:ok, _} ->
         parent
     end
@@ -1474,7 +1517,7 @@ defmodule SurfBoard.Browser do
   successfully and raises nothing.
   """
   @spec visit(session, String.t()) :: session
-  def visit(%Session{driver: driver} = session, path) do
+  def visit(%Session{} = session, path) do
     uri = URI.parse(path)
 
     result =
@@ -1483,10 +1526,10 @@ defmodule SurfBoard.Browser do
           raise NoBaseUrlError, path
 
         uri.host ->
-          driver.visit(session, path)
+          do_visit(session, path)
 
         true ->
-          driver.visit(session, request_url(session, path))
+          do_visit(session, request_url(session, path))
       end
 
     case result do
@@ -1509,18 +1552,39 @@ defmodule SurfBoard.Browser do
     session
   end
 
-  def cookies(%Session{driver: driver} = session) do
-    {:ok, cookies_list} = driver.cookies(session)
+  # Navigate + log-check wrap (spec.log_check_interactions?) +
+  # LiveView-connect await when live_view_aware? — the same await as
+  # visit/2's own outer one above (gated on live_view_aware? alone here
+  # vs. live_view_aware? and remote_session? there). Both run; this
+  # mirrors the pre-existing Orchestrator.visit/3 behavior exactly
+  # rather than removing what looks like a redundant second await.
+  defp do_visit(%Session{} = session, url) do
+    spec = spec(session)
+
+    flow = fn ->
+      result = spec.wire_protocol.visit(session, url)
+
+      if session.live_view_aware?,
+        do: _ = SurfBoard.LiveViewAware.await_liveview_connected(session)
+
+      result
+    end
+
+    SurfBoard.Driver.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
+  end
+
+  def cookies(%Session{} = session) do
+    {:ok, cookies_list} = spec(session).wire_protocol.cookies(session)
 
     cookies_list
   end
 
-  def set_cookie(%Session{driver: driver} = session, key, value, attributes \\ []) do
+  def set_cookie(%Session{} = session, key, value, attributes \\ []) do
     if blank_page?(session) do
       raise CookieError
     end
 
-    case driver.set_cookie(session, key, value, attributes) do
+    case spec(session).wire_protocol.set_cookie(session, key, value, Map.new(attributes)) do
       {:ok, _list} ->
         session
 
@@ -1529,8 +1593,8 @@ defmodule SurfBoard.Browser do
     end
   end
 
-  defp blank_page?(%Session{driver: driver} = session) do
-    driver.blank_page?(session)
+  defp blank_page?(%Session{} = session) do
+    spec(session).wire_protocol.blank_page?(session)
   end
 
   @doc """
@@ -1543,8 +1607,8 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def accept_alert(%Session{driver: driver} = session, fun) do
-    driver.accept_alert(session, fun)
+  def accept_alert(%Session{} = session, fun) do
+    spec(session).dialogs.accept_alert(session, fun)
   end
 
   @doc """
@@ -1557,8 +1621,8 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def accept_confirm(%Session{driver: driver} = session, fun) do
-    driver.accept_confirm(session, fun)
+  def accept_confirm(%Session{} = session, fun) do
+    spec(session).dialogs.accept_confirm(session, fun)
   end
 
   @doc """
@@ -1572,8 +1636,8 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def dismiss_confirm(%Session{driver: driver} = session, fun) do
-    driver.dismiss_confirm(session, fun)
+  def dismiss_confirm(%Session{} = session, fun) do
+    spec(session).dialogs.dismiss_confirm(session, fun)
   end
 
   @doc """
@@ -1605,8 +1669,8 @@ defmodule SurfBoard.Browser do
     do_accept_prompt(session, input_value, fun)
   end
 
-  defp do_accept_prompt(%Session{driver: driver} = session, input_value, fun) do
-    driver.accept_prompt(session, input_value, fun)
+  defp do_accept_prompt(%Session{} = session, input_value, fun) do
+    spec(session).dialogs.accept_prompt(session, input_value, fun)
   end
 
   @doc """
@@ -1619,8 +1683,8 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def dismiss_prompt(%Session{driver: driver} = session, fun) do
-    driver.dismiss_prompt(session, fun)
+  def dismiss_prompt(%Session{} = session, fun) do
+    spec(session).dialogs.dismiss_prompt(session, fun)
   end
 
   defp validate_html(parent, %{html_validation: :button_type} = query) do
@@ -1717,8 +1781,8 @@ defmodule SurfBoard.Browser do
     end
   end
 
-  defp matching_text?(%Element{driver: driver} = element, text) do
-    case driver.text(element) do
+  defp matching_text?(%Element{} = element, text) do
+    case spec(element).wire_protocol.text(Element.root_session(element), element) do
       {:ok, element_text} ->
         element_text =~ ~r/#{Regex.escape(text)}/
 
@@ -1729,7 +1793,7 @@ defmodule SurfBoard.Browser do
 
   def execute_query(parent, query, opts \\ [])
 
-  def execute_query(%{driver: driver} = parent, query, opts) do
+  def execute_query(parent, query, opts) do
     session = get_session(parent)
 
     # CDP and BiDi both use the ops pipeline for find+filter in one
@@ -1739,9 +1803,9 @@ defmodule SurfBoard.Browser do
     # about frame scoping.
     if session && remote_session?(session) &&
          not in_frame?(session) && not in_switched_window?(session) do
-      execute_query_pipeline(parent, driver, query, opts)
+      execute_query_pipeline(parent, query, opts)
     else
-      execute_query_legacy(parent, driver, query)
+      execute_query_legacy(parent, query)
     end
   end
 
@@ -1749,7 +1813,7 @@ defmodule SurfBoard.Browser do
   # JS evaluation. Both CDP and BiDi use push-based find:
   # CDP: Runtime.addBinding → Runtime.bindingCalled
   # BiDi: script.addPreloadScript channel → script.message
-  defp execute_query_pipeline(parent, _driver, query, opts) do
+  defp execute_query_pipeline(parent, query, opts) do
     alias SurfBoard.Drivers.CDP.Ops
 
     session = get_session(parent)
@@ -1797,12 +1861,12 @@ defmodule SurfBoard.Browser do
     end
   end
 
-  defp execute_query_legacy(parent, driver, query) do
+  defp execute_query_legacy(parent, query) do
     retry(fn ->
       try do
         with {:ok, query} <- Query.validate(query),
              compiled_query <- Query.compile(query),
-             {:ok, elements} <- driver.find_elements(parent, compiled_query),
+             {:ok, elements} <- spec(parent).wire_protocol.find_elements(parent, compiled_query),
              {:ok, elements} <- validate_visibility(query, elements),
              {:ok, elements} <- validate_text(query, elements),
              {:ok, elements} <- validate_selected(query, elements),
@@ -1820,6 +1884,9 @@ defmodule SurfBoard.Browser do
   defp get_session(%Session{} = s), do: s
   defp get_session(%Element{parent: p}), do: get_session(p)
   defp get_session(_), do: nil
+
+  defp spec(%Session{driver_spec: spec}), do: spec
+  defp spec(%Element{} = element), do: spec(Element.root_session(element))
 
   defp in_frame?(%Session{} = session) do
     Process.get({:cdp_frame_stack, session.id}, []) != [] or

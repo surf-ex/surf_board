@@ -39,6 +39,14 @@ defmodule SurfBoard.BrowserTest do
     end
 
     def grant_permissions(%Session{}, permissions), do: {:ok, permissions}
+
+    def driver_spec do
+      %SurfBoard.Driver.Spec{
+        wire_protocol: __MODULE__,
+        grant_permissions: __MODULE__,
+        log_check_interactions?: false
+      }
+    end
   end
 
   describe "visit/2" do
@@ -166,6 +174,6 @@ defmodule SurfBoard.BrowserTest do
   end
 
   defp session_for_driver(driver) do
-    %Session{driver: driver}
+    %Session{driver: driver, driver_spec: driver.driver_spec()}
   end
 end
