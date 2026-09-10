@@ -1,9 +1,12 @@
-defmodule SurfBoard.Drivers.ChromeCDP.Windows do
+defmodule SurfBoard.Drivers.CDP.Windows do
   @moduledoc false
 
-  # Window/tab management for Chrome over CDP — uses Target.*
-  # commands against the shared WS to enumerate / attach / close tabs
-  # in this session's browser context.
+  # CDP window/tab management — uses Target.* commands against the
+  # shared WS to enumerate / attach / close tabs in this session's
+  # browser context. Currently only ChromeCDP points at this; Lightpanda
+  # uses Windows.Single instead because its CDP support doesn't cover
+  # Target.* multi-window handling, not because this logic is
+  # Chrome-specific.
 
   @behaviour SurfBoard.Windows
 

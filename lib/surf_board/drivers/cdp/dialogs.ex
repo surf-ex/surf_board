@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeCDP.Dialogs do
+defmodule SurfBoard.Drivers.CDP.Dialogs do
   @moduledoc false
 
   # CDP dialog handling. Uses `Page.javascriptDialogOpening` events

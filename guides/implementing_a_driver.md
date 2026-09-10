@@ -71,9 +71,9 @@ strategy for an existing vendor).
      @driver_spec %Spec{
        browser: Browser.YourVendor,
        wire_protocol: SurfBoard.Drivers.CDP.Client, # or ChromeBiDi.Client
-       dialogs: Dialogs.ChromeCDP,      # reuse, or write your own — see below
-       windows: Windows.ChromeCDP,      # reuse, or write your own
-       frames: Frames.ChromeCDP,        # reuse, or write your own
+       dialogs: SurfBoard.Drivers.CDP.Dialogs,  # reuse, or write your own — see below
+       windows: SurfBoard.Drivers.CDP.Windows,  # reuse, or write your own
+       frames: SurfBoard.Drivers.CDP.Frames,    # reuse, or write your own
        grant_permissions: SurfBoard.Drivers.CDP.Client, # reuse, or Permissions.Unsupported
        send_keys_session: SurfBoard.Drivers.CDP.Client, # reuse, or SendKeysSession.Unsupported
        touch_scroll: &__MODULE__.touch_scroll_impl/3,
@@ -193,12 +193,21 @@ one place: the module your Spec names.
 
 * **`dialogs` / `windows` / `frames`** — each implements a small behaviour
   (`SurfBoard.Dialogs`, `SurfBoard.Windows`, `SurfBoard.Frames`) for one
-  protocol+vendor combination. If your vendor speaks CDP the same way Chrome
-  does, point at `SurfBoard.Drivers.ChromeCDP.{Dialogs,Windows,Frames}`
-  directly. If your vendor can't support one of these (no iframe support, no
-  window management), point at the shared fallbacks:
-  `SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
-  `SurfBoard.Frames.Unsupported`.
+  *protocol*, not one vendor: `SurfBoard.Drivers.CDP.{Dialogs,Windows,Frames}`
+  is CDP's dialog/window/frame handling, full stop — it lives under
+  `Drivers.CDP`, not `Drivers.ChromeCDP`, even though today only `ChromeCDP`
+  points at it. Lightpanda also speaks CDP, but its engine doesn't implement
+  the `Page.javascriptDialogOpening`/`Target.*`/frame-focus surface these
+  modules use, so it points `dialogs`/`windows`/`frames` at the shared
+  fallbacks instead (`SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
+  `SurfBoard.Frames.Unsupported`) — that's a vendor's *coverage* of the
+  protocol falling short, not a different protocol. If your driver speaks
+  CDP and actually implements this part of it, point at
+  `SurfBoard.Drivers.CDP.{Dialogs,Windows,Frames}` directly rather than
+  writing a new implementation; only write your own if your vendor's
+  protocol genuinely differs here (e.g. a real BiDi vendor needs
+  `Drivers.ChromeBiDi.{Dialogs,Windows,Frames}`'s BiDi equivalents, not
+  these CDP ones).
 * **`grant_permissions`** — implements `SurfBoard.Permissions`. Point at your
   `wire_protocol` module directly if it has a real implementation (e.g.
   `SurfBoard.Drivers.CDP.Client`, which both `ChromeCDP` and `LightpandaCDP`

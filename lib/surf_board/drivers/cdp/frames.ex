@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeCDP.Frames do
+defmodule SurfBoard.Drivers.CDP.Frames do
   @moduledoc false
 
   @behaviour SurfBoard.Frames
@@ -24,8 +24,8 @@ defmodule SurfBoard.Drivers.ChromeCDP.Frames do
     end
   end
 
-  # Browser.focus_default_frame/1 calls driver.focus_frame(session, nil)
-  # to escape all the way out. Reset the frame stack.
+  # Browser.focus_default_frame/1 calls this with nil to escape all
+  # the way out. Reset the frame stack.
   def focus_frame(%Session{pid: pid}, nil) when is_pid(pid) do
     GenServer.call(pid, :reset_frame_stack)
     {:ok, nil}
