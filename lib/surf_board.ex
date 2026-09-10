@@ -19,6 +19,7 @@ defmodule SurfBoard do
   use Application
 
   alias SurfBoard.Session
+  alias SurfBoard.Transport.Protocol
 
   @doc false
   def start(_type, _args) do
@@ -39,32 +40,37 @@ defmodule SurfBoard do
 
   # Starts `mod`'s supervisor under `SurfBoard.DriverSupervisor` on first
   # use, idempotently — a second call for an already-running driver is a
-  # no-op. Runs `mod.cleanup_stale_sessions/0` once, right after a fresh
-  # start.
+  # no-op. Runs `mod.validate/0` first so a missing dependency (Chrome/
+  # Lightpanda not installed, no remote_url configured, ...) surfaces
+  # its own clear DependencyError instead of spinning up a Supervisor
+  # tree that's just going to fail lower down anyway. Runs
+  # `mod.cleanup_stale_sessions/0` once, right after a fresh start.
   defp ensure_driver_started(mod) do
-    case DynamicSupervisor.start_child(
-           SurfBoard.DriverSupervisor,
-           {mod, [name: Module.concat(mod, Supervisor)]}
-         ) do
-      {:ok, _pid} ->
-        mod.cleanup_stale_sessions()
-        :ok
+    with :ok <- mod.validate() do
+      case DynamicSupervisor.start_child(
+             SurfBoard.DriverSupervisor,
+             {mod, [name: Module.concat(mod, Supervisor)]}
+           ) do
+        {:ok, _pid} ->
+          mod.cleanup_stale_sessions()
+          :ok
 
-      {:error, {:already_started, _pid}} ->
-        :ok
+        {:error, {:already_started, _pid}} ->
+          :ok
 
-      # A driver whose supervisor starts a fixed-named child (e.g.
-      # ChromeBiDi's ChromiumBiDi.Server) reports a second concurrent
-      # start attempt this way rather than as a flat :already_started —
-      # the DynamicSupervisor call for the driver itself succeeds far
-      # enough to spawn the child before the child's own name clash
-      # unwinds the start. Treat it the same as :already_started: some
-      # other call already has (or is bringing up) this driver.
-      {:error, {:shutdown, {:failed_to_start_child, _child, {:already_started, _pid}}}} ->
-        :ok
+        # A driver whose supervisor starts a fixed-named child (e.g.
+        # ChromeBiDi's ChromiumBiDi.Server) reports a second concurrent
+        # start attempt this way rather than as a flat :already_started —
+        # the DynamicSupervisor call for the driver itself succeeds far
+        # enough to spawn the child before the child's own name clash
+        # unwinds the start. Treat it the same as :already_started: some
+        # other call already has (or is bringing up) this driver.
+        {:error, {:shutdown, {:failed_to_start_child, _child, {:already_started, _pid}}}} ->
+          :ok
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -190,8 +196,12 @@ defmodule SurfBoard do
   Ends a browser session.
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
-  def end_session(%Session{driver: driver} = session) do
-    result = driver.end_session(session)
+  def end_session(%Session{} = session) do
+    # Every driver's end_session/1 was identical (Protocol.stop/1, no
+    # driver-specific teardown) — call it directly so ending a session
+    # never needs to look up a driver module, symmetric with
+    # Launcher.start_session/2 not needing one either.
+    result = Protocol.stop(session)
 
     # Drain any in-flight WebSocket events that arrived after session
     # teardown. Without this, :bidi_event messages linger in the test

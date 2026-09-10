@@ -27,8 +27,8 @@ namespaces are split along that line:
   `SurfBoard.Drivers.LightpandaCDP` each hardcode their own transport
   strategy rather than selecting one through a generic interface, because
   nothing actually needs to swap strategies under one driver at runtime. A
-  driver module owns lifecycle (`start_session/1`/`end_session/1`) and
-  whatever process supervision its connection strategy needs — e.g.
+  driver module owns starting a session (`start_session/1`) and whatever
+  process supervision its connection strategy needs — e.g.
   `Drivers.ChromeBiDi.Server` (the chromium-bidi Node sidecar) and
   `Drivers.ChromeBiDi.WebSocketClient` (the per-session WS connection
   GenServer) — but never protocol semantics: method names, param shapes,
@@ -123,16 +123,29 @@ stays the entry point when you don't already have a launcher in hand
 
 ## What a driver module actually does
 
-`SurfBoard.Driver` is a 2-callback behaviour: `start_session/1` and
-`end_session/1`. That's the whole job — a driver module is lifecycle only.
-Every browser capability (`visit/2`, `click/1`, `find_elements/2`, `cookies/1`,
-`focus_frame/2`, ...) is dispatched by `SurfBoard.Browser`/`SurfBoard.Element`
-calling `session.driver_spec` — your `%SurfBoard.DriverSpec{}` — directly.
-There's no per-driver module standing between them and your Spec; `Browser`/
-`Element` never call `session.driver.<capability>`. All you write is:
+`SurfBoard.Driver` is a 1-callback behaviour: `start_session/1`. That's the
+whole job — a driver module doesn't even own teardown; every driver's
+`end_session/1` was identical (`Transport.Protocol.stop/1`, no
+driver-specific work), so `SurfBoard.end_session/1` calls that directly and
+no `end_session` callback exists at all. Every browser capability (`visit/2`,
+`click/1`, `find_elements/2`, `cookies/1`, `focus_frame/2`, ...) is dispatched
+by `SurfBoard.Browser`/`SurfBoard.Element` calling `session.driver_spec` —
+your `%SurfBoard.DriverSpec{}` — directly. There's no per-driver module
+standing between them and your Spec; `Browser`/`Element` never call
+`session.driver.<capability>`. All you write is:
 
-* `start_session/1` and `end_session/1` — vendor-specific connection setup and
-  teardown.
+* `start_session/1` — vendor-specific connection setup, typically just
+  resolving which `Launcher` to use and delegating to
+  `Launcher.start_session/2` (see
+  [Launchers](#launchers-started-instances-of-a-strategy)).
+* `validate/0` — a pre-flight dependency check, called once before your
+  driver's Supervisor starts (see `ensure_driver_started/1` in
+  `lib/surf_board.ex`). Return `:ok`, or `{:error, %SurfBoard.DependencyError{}}`
+  with a clear message (e.g. "Chrome not found. Run `mix surf_board.install`")
+  — this is what turns a missing binary/config into a clean error instead of
+  a confusing crash deep inside session startup.
+* `cleanup_stale_sessions/0` — called once, right after your driver's
+  Supervisor first starts. Most drivers no-op (`:ok`).
 * A `%SurfBoard.DriverSpec{}` naming which existing (or new) protocol/dialogs/
   windows/frames/grant_permissions/send_keys_session/touch_scroll
   implementations this driver uses. Each field is a module (or, for
@@ -199,6 +212,18 @@ strategy for an existing vendor).
        Supervisor.init(children, strategy: :one_for_one)
      end
 
+     @doc false
+     def validate do
+       if your_dependency_available?() do
+         :ok
+       else
+         {:error, SurfBoard.DependencyError.exception("YourVendor not found. ...")}
+       end
+     end
+
+     @doc false
+     def cleanup_stale_sessions, do: :ok
+
      # ----- Session lifecycle -----
      @impl SurfBoard.Driver
      def start_session(opts \\ []) do
@@ -225,11 +250,8 @@ strategy for an existing vendor).
        {:ok, session}
      end
 
-     @impl SurfBoard.Driver
-     def end_session(%SurfBoard.Session{} = session) do
-       SurfBoard.Transport.Protocol.stop(session)
-       :ok
-     end
+     # No end_session/1 to write — every driver's was identical, so
+     # SurfBoard.end_session/1 calls Transport.Protocol.stop/1 directly.
    end
    ```
 

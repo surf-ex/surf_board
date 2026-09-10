@@ -18,7 +18,6 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   alias SurfBoard.Frames
   alias SurfBoard.Permissions
   alias SurfBoard.SendKeysSession
-  alias SurfBoard.Transport.Protocol
   alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
   alias SurfBoard.Windows
 
@@ -361,12 +360,6 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
       """)
     end
 
-    :ok
-  end
-
-  @impl SurfBoard.Driver
-  def end_session(%Session{} = session) do
-    Protocol.stop(session)
     :ok
   end
 

@@ -30,7 +30,6 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   alias SurfBoard.Clients.CDP.{Dialogs, Frames, Windows}
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.DriverSpec, as: Spec
-  alias SurfBoard.Transport.Protocol
   alias SurfBoard.Transport.Strategy.SharedWS
 
   @driver_spec %Spec{
@@ -208,12 +207,6 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     end
 
     {:ok, session}
-  end
-
-  @impl SurfBoard.Driver
-  def end_session(%Session{} = session) do
-    Protocol.stop(session)
-    :ok
   end
 
   # ----- Per-driver overrides -----

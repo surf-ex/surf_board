@@ -200,12 +200,6 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       bidi_ws_url_with_retry(retries_left - 1)
   end
 
-  @impl SurfBoard.Driver
-  def end_session(%Session{} = session) do
-    Protocol.stop(session)
-    :ok
-  end
-
   # ----- Per-driver overrides -----
 
   # touch_scroll uses BiDi's JS scrollBy workaround (touch pointer
