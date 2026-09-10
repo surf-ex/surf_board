@@ -467,31 +467,11 @@ defmodule SurfBoard.Transport.Session do
   end
 
   def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
-    if get_in(state.loads, [loader_id, name]) do
-      {:reply, :ok, state}
-    else
-      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
-      waiter = {from, loader_id, name, timer_ref}
-      {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
-    end
+    Common.await_page_load(state, loader_id, name, timeout_ms, from)
   end
 
   def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
-    # `:any` wildcard loader_id — wake on the first matching milestone
-    # regardless of which navigation produced it. Consume any buffered
-    # loads first.
-    already_loaded =
-      Enum.any?(state.loads, fn {_loader_id, milestones} ->
-        Map.get(milestones, name, false)
-      end)
-
-    if already_loaded do
-      {:reply, :ok, %{state | loads: %{}}}
-    else
-      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
-      waiter = {from, :any, name, timer_ref}
-      {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
-    end
+    Common.await_next_page_load(state, name, timeout_ms, from)
   end
 
   def handle_call(:sync_barrier, _from, state) do
@@ -579,15 +559,8 @@ defmodule SurfBoard.Transport.Session do
     {:noreply, Wire.handle_event(state, method, event)}
   end
 
-  def handle_info({:load_timeout, from}, state) do
-    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
-      {[], _} ->
-        {:noreply, state}
-
-      {[{^from, _l, _n, _ref} | _], rest} ->
-        GenServer.reply(from, :timeout)
-        {:noreply, %{state | load_waiters: rest}}
-    end
+  def handle_info({:common_load_timeout, from}, state) do
+    {:noreply, Common.handle_load_timeout(state, from)}
   end
 
   def handle_info({:page_ready_timeout, from}, state) do

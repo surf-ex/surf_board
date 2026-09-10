@@ -250,6 +250,107 @@ defmodule SurfBoard.Transport.Common do
     end
   end
 
+  # A single internal timer-message tag for both CDP and BiDi actors —
+  # there's no reason for callers to distinguish "which protocol's load
+  # timer fired," only that a load wait timed out. Exposed as the return
+  # value from `await_page_load/6`/`await_next_page_load/5` so callers
+  # arm `Process.send_after/3` with a name only `Common` needs to know.
+  @load_timeout_tag :common_load_timeout
+
+  @doc "Message tag `await_page_load/6`/`await_next_page_load/5` arm their timers with."
+  @spec load_timeout_tag() :: atom()
+  def load_timeout_tag, do: @load_timeout_tag
+
+  @doc """
+  `handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state)`
+  body, shared by all three transport actors.
+
+  `drop_on_consume?` selects which write-side semantics this actor's
+  wire decoder uses: `true` for BiDi's one-shot `record_load_or_wake_once/3`
+  (a buffered hit must be dropped so it can't be consumed twice — BiDi
+  only fires each milestone once per navigation); `false` (default) for
+  CDP's persist-until-loader-changes `record_load_milestone/3` (a
+  buffered hit stays buffered — CDP's `Page.lifecycleEvent` can fire
+  more than once and a later caller for the same loader_id/name should
+  still see it).
+  """
+  @spec await_page_load(map(), term(), String.t(), timeout(), GenServer.from(), keyword()) ::
+          {:reply, :ok, map()} | {:noreply, map()}
+  def await_page_load(state, loader_id, name, timeout_ms, from, opts \\ []) do
+    drop_on_consume? = Keyword.get(opts, :drop_on_consume?, false)
+
+    case get_in(state.loads, [loader_id, name]) do
+      true when drop_on_consume? ->
+        {:reply, :ok, drop_load(state, loader_id, name)}
+
+      true ->
+        {:reply, :ok, state}
+
+      _ ->
+        timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
+        waiter = {from, loader_id, name, timer_ref}
+        {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
+  @doc """
+  `handle_call({:await_next_page_load, name, timeout_ms}, from, state)`
+  body, shared by all three transport actors. Wakes on the first
+  matching milestone regardless of which navigation produced it
+  (`:any` wildcard loader_id) — consumes any already-buffered loads
+  first, same as `await_page_load/6` but without pinning a loader_id.
+  """
+  @spec await_next_page_load(map(), String.t(), timeout(), GenServer.from(), keyword()) ::
+          {:reply, :ok, map()} | {:noreply, map()}
+  def await_next_page_load(state, name, timeout_ms, from, _opts \\ []) do
+    already_loaded =
+      Enum.any?(state.loads, fn {_loader_id, milestones} -> Map.get(milestones, name, false) end)
+
+    if already_loaded do
+      {:reply, :ok, %{state | loads: %{}}}
+    else
+      timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
+      waiter = {from, :any, name, timer_ref}
+      {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
+    end
+  end
+
+  @doc """
+  `handle_info({load_timeout_tag(), from}, state)` body, shared by all
+  three transport actors. No-ops if the waiter already resolved (the
+  timeout raced a reply).
+  """
+  @spec handle_load_timeout(map(), GenServer.from()) :: map()
+  def handle_load_timeout(state, from) do
+    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
+      {[], _} ->
+        state
+
+      {[{^from, _l, _n, _ref} | _], rest} ->
+        GenServer.reply(from, :timeout)
+        %{state | load_waiters: rest}
+    end
+  end
+
+  # After consuming a buffered (loader_id, milestone) under BiDi's
+  # one-shot semantics, drop it so a future caller for the same pair
+  # has to wait for a fresh event rather than replaying a stale hit.
+  defp drop_load(state, loader_id, name) do
+    case Map.get(state.loads, loader_id) do
+      nil ->
+        state
+
+      inner ->
+        case Map.delete(inner, name) do
+          empty when map_size(empty) == 0 ->
+            %{state | loads: Map.delete(state.loads, loader_id)}
+
+          remaining ->
+            %{state | loads: Map.put(state.loads, loader_id, remaining)}
+        end
+    end
+  end
+
   # ----- Bootstrap channel payload routing -----
 
   @doc """

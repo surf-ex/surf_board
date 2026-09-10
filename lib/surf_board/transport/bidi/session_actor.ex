@@ -240,30 +240,11 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
   # ----- Page-load awaits (Phase B) -----
 
   def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
-    case get_in(state.loads, [loader_id, name]) do
-      true ->
-        {:reply, :ok, drop_load(state, loader_id, name)}
-
-      _ ->
-        timer_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
-        waiters = [{from, loader_id, name, timer_ref} | state.load_waiters]
-        {:noreply, %{state | load_waiters: waiters}}
-    end
+    Common.await_page_load(state, loader_id, name, timeout_ms, from, drop_on_consume?: true)
   end
 
   def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
-    already =
-      Enum.any?(state.loads, fn {_nav, milestones} ->
-        Map.get(milestones, name, false)
-      end)
-
-    if already do
-      {:reply, :ok, %{state | loads: %{}}}
-    else
-      timer_ref = Process.send_after(self(), {:page_load_timeout, from}, timeout_ms)
-      waiters = [{from, :any, name, timer_ref} | state.load_waiters]
-      {:noreply, %{state | loads: %{}, load_waiters: waiters}}
-    end
+    Common.await_next_page_load(state, name, timeout_ms, from)
   end
 
   # ----- Bootstrap channel (Phase C) -----
@@ -303,16 +284,8 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
     {:noreply, Common.handle_page_ready_timeout(state, from)}
   end
 
-  def handle_info({:page_load_timeout, from}, state) do
-    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
-      {[{from, _, _, _}], rest} ->
-        GenServer.reply(from, :timeout)
-        {:noreply, %{state | load_waiters: rest}}
-
-      _ ->
-        # Already resolved — the timeout was racing the reply.
-        {:noreply, state}
-    end
+  def handle_info({:common_load_timeout, from}, state) do
+    {:noreply, Common.handle_load_timeout(state, from)}
   end
 
   def handle_info({:done_send, _pid}, state), do: {:noreply, state}
@@ -375,22 +348,4 @@ defmodule SurfBoard.Transport.BiDi.SessionActor do
   end
 
   defp normalize_params(other), do: other
-
-  # After consuming a buffered (nav, milestone), drop it so a future
-  # caller for the same pair has to wait for a fresh event.
-  defp drop_load(state, nav, name) do
-    case Map.get(state.loads, nav) do
-      nil ->
-        state
-
-      inner ->
-        case Map.delete(inner, name) do
-          empty when map_size(empty) == 0 ->
-            %{state | loads: Map.delete(state.loads, nav)}
-
-          remaining ->
-            %{state | loads: Map.put(state.loads, nav, remaining)}
-        end
-    end
-  end
 end

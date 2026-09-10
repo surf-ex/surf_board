@@ -161,28 +161,11 @@ defmodule SurfBoard.Transport.PerSession.Actor do
   end
 
   def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
-    if get_in(state.loads, [loader_id, name]) do
-      {:reply, :ok, state}
-    else
-      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
-      waiter = {from, loader_id, name, timer_ref}
-      {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
-    end
+    Common.await_page_load(state, loader_id, name, timeout_ms, from)
   end
 
   def handle_call({:await_next_page_load, name, timeout_ms}, from, state) do
-    already_loaded =
-      Enum.any?(state.loads, fn {_loader_id, milestones} ->
-        Map.get(milestones, name, false)
-      end)
-
-    if already_loaded do
-      {:reply, :ok, %{state | loads: %{}}}
-    else
-      timer_ref = Process.send_after(self(), {:load_timeout, from}, timeout_ms)
-      waiter = {from, :any, name, timer_ref}
-      {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
-    end
+    Common.await_next_page_load(state, name, timeout_ms, from)
   end
 
   def handle_call(:sync_barrier, _from, state) do
@@ -267,15 +250,8 @@ defmodule SurfBoard.Transport.PerSession.Actor do
 
   # ----- Internal (non-Mint) messages -----
 
-  defp handle_internal_message({:load_timeout, from}, state) do
-    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
-      {[], _} ->
-        {:noreply, state}
-
-      {[{^from, _l, _n, _ref} | _], rest} ->
-        GenServer.reply(from, :timeout)
-        {:noreply, %{state | load_waiters: rest}}
-    end
+  defp handle_internal_message({:common_load_timeout, from}, state) do
+    {:noreply, Common.handle_load_timeout(state, from)}
   end
 
   defp handle_internal_message({:page_ready_timeout, from}, state) do
