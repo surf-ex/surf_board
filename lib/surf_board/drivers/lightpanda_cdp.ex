@@ -9,13 +9,14 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   use SurfBoard.Driver.Generic
 
-  alias SurfBoard.{Element, Metadata, Session, UserAgent}
+  alias SurfBoard.{Metadata, Session, UserAgent}
   alias SurfBoard.Browser
   alias SurfBoard.Drivers.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Frames
   alias SurfBoard.Permissions
+  alias SurfBoard.SendKeysSession
   alias SurfBoard.Transport
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Windows
@@ -27,6 +28,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     windows: Windows.Single,
     frames: Frames.Unsupported,
     grant_permissions: Permissions.Unsupported,
+    send_keys_session: SendKeysSession.Unsupported,
     touch_scroll: nil,
     log_check_interactions?: false
   }
@@ -381,13 +383,4 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   defp wrapper_script do
     Path.absname("priv/run_command.sh", Application.app_dir(:surf_board))
   end
-
-  # ----- Per-driver overrides -----
-
-  # Session-scoped send_keys: not supported by Lightpanda's input
-  # synthesis. Element-scoped works via the Generic delegate.
-  def send_keys(%Session{}, _keys), do: {:error, :not_implemented}
-
-  def send_keys(%Element{} = element, keys),
-    do: SurfBoard.Driver.Generic.send_keys(element, keys)
 end

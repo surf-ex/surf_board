@@ -18,6 +18,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Client do
   # ref types, mouse/touch input model).
 
   @behaviour SurfBoard.WireProtocol
+  @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.Element
   alias SurfBoard.Drivers.ChromeBiDi.{Commands, ResponseParser}

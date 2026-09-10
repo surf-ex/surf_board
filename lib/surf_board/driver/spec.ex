@@ -20,6 +20,10 @@ defmodule SurfBoard.Driver.Spec do
     # moduledoc for why grant_permissions needs its own dimension
     # rather than living on the shared wire_protocol client.
     :grant_permissions,
+    # Same reason as grant_permissions — see SurfBoard.SendKeysSession's
+    # moduledoc. Session-scoped send_keys, not element-scoped (which
+    # stays a plain wire_protocol.send_keys/3 dispatch).
+    :send_keys_session,
     # Per-driver one-off: touch_scroll has three distinct implementations
     # (CDP synthesizeScrollGesture / BiDi JS scrollBy / Lightpanda no-op)
     # that don't justify their own behaviour. Function of (element, dx, dy).
@@ -36,6 +40,7 @@ defmodule SurfBoard.Driver.Spec do
           windows: module,
           frames: module,
           grant_permissions: module,
+          send_keys_session: module,
           touch_scroll:
             (SurfBoard.Element.t(), number, number -> {:ok, nil} | {:error, term}) | nil,
           log_check_interactions?: boolean

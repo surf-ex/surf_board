@@ -30,6 +30,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     windows: Windows,
     frames: Frames,
     grant_permissions: CDPClient,
+    send_keys_session: CDPClient,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
@@ -183,20 +184,6 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   end
 
   # ----- Per-driver overrides -----
-
-  # Session-scoped send_keys (Chrome sends real keystrokes via CDP).
-  # Element-scoped send_keys comes from `use Generic`.
-  def send_keys(%Session{} = session, keys) when is_list(keys),
-    do: CDPClient.send_keys_to_session(session, keys)
-
-  def send_keys(%Session{} = session, key) when is_binary(key) or is_atom(key),
-    do: CDPClient.send_keys_to_session(session, [key])
-
-  # The Generic-injected send_keys/2 for Element is shadowed by the
-  # clauses above when the first arg is a Session; for Element we keep
-  # the generic delegate.
-  def send_keys(%SurfBoard.Element{} = element, keys),
-    do: SurfBoard.Driver.Generic.send_keys(element, keys)
 
   # touch_scroll uses CDP's Input.synthesizeScrollGesture — referenced
   # via @driver_spec.touch_scroll.

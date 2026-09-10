@@ -19,6 +19,7 @@ defmodule SurfBoard.Drivers.CDP.Client do
 
   @behaviour SurfBoard.WireProtocol
   @behaviour SurfBoard.Permissions
+  @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Drivers.CDP.{Commands, ResponseParser}

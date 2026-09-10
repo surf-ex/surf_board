@@ -27,6 +27,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
     windows: Windows,
     frames: Frames,
     grant_permissions: Permissions.Unsupported,
+    send_keys_session: BiDiClient,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
@@ -191,13 +192,6 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       err -> err
     end
   end
-
-  # Session-scoped send_keys for BiDi uses BiDiClient.send_keys_to_session.
-  def send_keys(%Session{} = session, keys) when is_list(keys),
-    do: BiDiClient.send_keys_to_session(session, keys)
-
-  def send_keys(%SurfBoard.Element{} = element, keys),
-    do: SurfBoard.Driver.Generic.send_keys(element, keys)
 
   defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
 end

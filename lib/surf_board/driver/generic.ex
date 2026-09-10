@@ -186,18 +186,7 @@ defmodule SurfBoard.Driver.Generic do
     do: Orchestrator.execute_script_async(spec(session), session, script, args)
 
   def send_keys(%Session{} = session, keys) when is_list(keys) do
-    # Session-scoped send_keys: each driver has its own behaviour
-    # (Chrome sends real keystrokes; Lightpanda returns :not_implemented).
-    # Route through the wire_protocol's send_keys_to_session if it has
-    # one, else through the spec's send_keys_session_unsupported flag.
-    case spec(session).wire_protocol do
-      mod when mod != nil ->
-        if function_exported?(mod, :send_keys_to_session, 2) do
-          mod.send_keys_to_session(session, keys)
-        else
-          {:error, :not_implemented}
-        end
-    end
+    spec(session).send_keys_session.send_keys_to_session(session, keys)
   end
 
   def send_keys(%Session{} = session, key) when is_binary(key) or is_atom(key) do
