@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.ResponseParser do
+defmodule SurfBoard.Clients.CDP.ResponseParser do
   @moduledoc false
 
   def check_error({:ok, result}), do: {:ok, result}

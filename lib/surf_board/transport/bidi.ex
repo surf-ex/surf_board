@@ -22,7 +22,8 @@ defmodule SurfBoard.Transport.BiDi do
   alias SurfBoard.Transport.BiDi.Handshake
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
-  alias SurfBoard.Drivers.ChromeBiDi.{Wire, WebSocketClient}
+  alias SurfBoard.Clients.BiDi.Wire
+  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Session
 
   @doc """

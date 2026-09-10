@@ -46,7 +46,7 @@ defmodule SurfBoard.Transport do
   # actor's mailbox — see `Transport.Actor`'s moduledoc).
 
   alias SurfBoard.Transport.Actor
-  alias SurfBoard.Drivers.CDP.Wire
+  alias SurfBoard.Clients.CDP.Wire
   alias SurfBoard.WebSocket
 
   @typedoc """
@@ -166,9 +166,9 @@ defmodule SurfBoard.Transport do
            owner: caller
          ) do
       {:ok, session} ->
-        :ok = SurfBoard.Drivers.CDP.Client.enable_page_lifecycle_events(session)
-        :ok = SurfBoard.Drivers.CDP.Client.install_bootstrap(session)
-        :ok = SurfBoard.Drivers.CDP.Client.enable_frame_tracking(session)
+        :ok = SurfBoard.Clients.CDP.Client.enable_page_lifecycle_events(session)
+        :ok = SurfBoard.Clients.CDP.Client.install_bootstrap(session)
+        :ok = SurfBoard.Clients.CDP.Client.enable_frame_tracking(session)
         {:ok, session}
 
       err ->

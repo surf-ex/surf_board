@@ -3,7 +3,7 @@ defmodule SurfBoard.V2.BiDiClientTest do
 
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
   alias SurfBoard.Session
-  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
+  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Transport.BiDi
 
   @moduletag :browser

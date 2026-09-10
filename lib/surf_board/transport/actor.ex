@@ -83,8 +83,8 @@ defmodule SurfBoard.Transport.Actor do
             load: :buffer | :wake_once,
             subscribe: :passive | :active,
             # The Wire.handle_event/3-shaped module for this actor's
-            # protocol — SurfBoard.Drivers.CDP.Wire or
-            # SurfBoard.Drivers.ChromeBiDi.Wire.
+            # protocol — SurfBoard.Clients.CDP.Wire or
+            # SurfBoard.Clients.BiDi.Wire.
             wire: module()
           }
   end

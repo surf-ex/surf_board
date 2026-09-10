@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.Dialogs do
+defmodule SurfBoard.Clients.BiDi.Dialogs do
   @moduledoc false
 
   # BiDi dialog handling. Uses `browsingContext.userPromptOpened`
@@ -8,7 +8,8 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Dialogs do
 
   @behaviour SurfBoard.Dialogs
 
-  alias SurfBoard.Drivers.ChromeBiDi.{Commands, ResponseParser, WebSocketClient}
+  alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
+  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Dialogs.Flow
   alias SurfBoard.Session
 

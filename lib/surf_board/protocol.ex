@@ -18,10 +18,10 @@ defmodule SurfBoard.Protocol do
   @spec eval(Session.t(), String.t()) :: result
   def eval(%Session{driver: driver} = session, js)
       when driver in [SurfBoard.Drivers.LightpandaCDP, SurfBoard.Drivers.ChromeCDP],
-      do: SurfBoard.Drivers.CDP.Client.evaluate(session, js)
+      do: SurfBoard.Clients.CDP.Client.evaluate(session, js)
 
   def eval(%Session{driver: SurfBoard.Drivers.ChromeBiDi} = session, js),
-    do: SurfBoard.Drivers.ChromeBiDi.Client.evaluate(session, js)
+    do: SurfBoard.Clients.BiDi.Client.evaluate(session, js)
 
   @doc """
   Evaluates a JS expression that returns a Promise, awaits it, and
@@ -32,17 +32,17 @@ defmodule SurfBoard.Protocol do
 
   def eval_async(%Session{driver: driver} = session, js, _timeout)
       when driver in [SurfBoard.Drivers.LightpandaCDP, SurfBoard.Drivers.ChromeCDP],
-      do: SurfBoard.Drivers.CDP.Client.evaluate_async(session, js)
+      do: SurfBoard.Clients.CDP.Client.evaluate_async(session, js)
 
   def eval_async(%Session{driver: SurfBoard.Drivers.ChromeBiDi} = session, js, _timeout),
-    do: SurfBoard.Drivers.ChromeBiDi.Client.evaluate_async(session, js)
+    do: SurfBoard.Clients.BiDi.Client.evaluate_async(session, js)
 
   @doc "Returns the current page URL as a string."
   @spec current_url(Session.t()) :: result
   def current_url(%Session{driver: driver} = session)
       when driver in [SurfBoard.Drivers.LightpandaCDP, SurfBoard.Drivers.ChromeCDP],
-      do: SurfBoard.Drivers.CDP.Client.current_url(session)
+      do: SurfBoard.Clients.CDP.Client.current_url(session)
 
   def current_url(%Session{driver: SurfBoard.Drivers.ChromeBiDi} = session),
-    do: SurfBoard.Drivers.ChromeBiDi.Client.current_url(session)
+    do: SurfBoard.Clients.BiDi.Client.current_url(session)
 end

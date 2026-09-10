@@ -237,9 +237,9 @@ defmodule SurfBoard.Browser do
   defp maybe_snapshot_page_id(parent), do: parent
 
   defp remote_client(%Session{driver: SurfBoard.Drivers.ChromeBiDi}),
-    do: SurfBoard.Drivers.ChromeBiDi.Client
+    do: SurfBoard.Clients.BiDi.Client
 
-  defp remote_client(_), do: SurfBoard.Drivers.CDP.Client
+  defp remote_client(_), do: SurfBoard.Clients.CDP.Client
 
   # @doc """
   # Clears an input field. Input elements are looked up by id, label text, or name.
@@ -1064,9 +1064,9 @@ defmodule SurfBoard.Browser do
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
   defp v2_click_module(%SurfBoard.Session{driver: SurfBoard.Drivers.ChromeBiDi}),
-    do: SurfBoard.Drivers.ChromeBiDi.Client
+    do: SurfBoard.Clients.BiDi.Client
 
-  defp v2_click_module(_), do: SurfBoard.Drivers.CDP.Client
+  defp v2_click_module(_), do: SurfBoard.Clients.CDP.Client
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.
@@ -1827,7 +1827,7 @@ defmodule SurfBoard.Browser do
   # CDP: Runtime.addBinding → Runtime.bindingCalled
   # BiDi: script.addPreloadScript channel → script.message
   defp execute_query_pipeline(parent, query, opts) do
-    alias SurfBoard.Drivers.CDP.Ops
+    alias SurfBoard.Clients.CDP.Ops
 
     session = get_session(parent)
     lazy? = Keyword.get(opts, :lazy, false)
@@ -1838,27 +1838,25 @@ defmodule SurfBoard.Browser do
       result =
         cond do
           session.driver == SurfBoard.Drivers.ChromeBiDi and lazy? ->
-            SurfBoard.Drivers.ChromeBiDi.Client.find_elements_lazy(parent, validated,
-              timeout: timeout
-            )
+            SurfBoard.Clients.BiDi.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
           session.driver == SurfBoard.Drivers.ChromeBiDi ->
             # BiDi: push-based bootstrap pipeline speaking BiDi.
-            SurfBoard.Drivers.ChromeBiDi.Client.find_elements(parent, validated, timeout: timeout)
+            SurfBoard.Clients.BiDi.Client.find_elements(parent, validated, timeout: timeout)
 
           session.driver in [
             SurfBoard.Drivers.LightpandaCDP,
             SurfBoard.Drivers.ChromeCDP
           ] and
               lazy? ->
-            SurfBoard.Drivers.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
+            SurfBoard.Clients.CDP.Client.find_elements_lazy(parent, validated, timeout: timeout)
 
           session.driver in [
             SurfBoard.Drivers.LightpandaCDP,
             SurfBoard.Drivers.ChromeCDP
           ] ->
             # CDP: same push pipeline routed through Session.
-            SurfBoard.Drivers.CDP.Client.find_elements(parent, validated, timeout: timeout)
+            SurfBoard.Clients.CDP.Client.find_elements(parent, validated, timeout: timeout)
         end
 
       case result do

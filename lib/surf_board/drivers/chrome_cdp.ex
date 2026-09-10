@@ -15,8 +15,8 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
   alias SurfBoard.{DependencyError, Metadata, Session, UserAgent}
   alias SurfBoard.{Browser, Transport, WebSocket}
-  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
-  alias SurfBoard.Drivers.CDP.{Dialogs, Frames, Windows}
+  alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.{Dialogs, Frames, Windows}
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Drivers.ChromeCDP.SharedConnection
   alias SurfBoard.DriverSpec, as: Spec

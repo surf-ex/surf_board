@@ -1,7 +1,7 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.ResponseParserTest do
+defmodule SurfBoard.Clients.BiDi.ResponseParserTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.Drivers.ChromeBiDi.ResponseParser
+  alias SurfBoard.Clients.BiDi.ResponseParser
 
   describe "extract_value/1" do
     test "extracts string" do

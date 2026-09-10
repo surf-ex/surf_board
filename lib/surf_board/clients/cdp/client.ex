@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.Client do
+defmodule SurfBoard.Clients.CDP.Client do
   @moduledoc false
 
   # CDP-shaped façade over `SurfBoard.Transport.Protocol` —
@@ -8,10 +8,10 @@ defmodule SurfBoard.Drivers.CDP.Client do
   # the per-method CDP param schemas.
   #
   # Implements `SurfBoard.WireProtocol` directly — driver Specs
-  # point `wire_protocol: CDPClient` and the Orchestrator dispatches
+  # point `wire_protocol: CDPClient` and Browser.ex/Element.ex dispatch
   # straight to these functions, no adapter wrapper in between.
   #
-  # The BiDi counterpart at `SurfBoard.Drivers.ChromeBiDi.Client` exposes the
+  # The BiDi counterpart at `SurfBoard.Clients.BiDi.Client` exposes the
   # same surface area in the same section layout — diff them to see
   # which differences are genuine (mostly: wire method names + param
   # shapes) versus which are protocol-mandated (frame focus, element
@@ -22,7 +22,7 @@ defmodule SurfBoard.Drivers.CDP.Client do
   @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.Drivers.CDP.{Commands, ResponseParser}
+  alias SurfBoard.Clients.CDP.{Commands, ResponseParser}
   alias SurfBoard.OpsShared
   alias SurfBoard.Transport.Protocol
 
@@ -1424,6 +1424,6 @@ defmodule SurfBoard.Drivers.CDP.Client do
 
   # ----- Dialog handling -----
   #
-  # Dialog flow lives in SurfBoard.Drivers.CDP.Dialogs (which uses
+  # Dialog flow lives in SurfBoard.Clients.CDP.Dialogs (which uses
   # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
 end

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.Windows do
+defmodule SurfBoard.Clients.BiDi.Windows do
   @moduledoc false
 
   # Window/tab management for Chrome over BiDi. Uses
@@ -8,7 +8,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Windows do
 
   @behaviour SurfBoard.Windows
 
-  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
+  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Session
 
   @impl true

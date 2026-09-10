@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.Dialogs do
+defmodule SurfBoard.Clients.CDP.Dialogs do
   @moduledoc false
 
   # CDP dialog handling. Uses `Page.javascriptDialogOpening` events
@@ -8,7 +8,7 @@ defmodule SurfBoard.Drivers.CDP.Dialogs do
 
   @behaviour SurfBoard.Dialogs
 
-  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs.Flow
   alias SurfBoard.WebSocket
   alias SurfBoard.Session

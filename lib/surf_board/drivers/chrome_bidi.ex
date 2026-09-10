@@ -12,9 +12,9 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   @behaviour SurfBoard.Driver
 
   alias SurfBoard.{Metadata, Session, UserAgent}
-  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
+  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
-  alias SurfBoard.Drivers.ChromeBiDi.{Dialogs, Frames, Windows}
+  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
   alias SurfBoard.Browser
   alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Permissions

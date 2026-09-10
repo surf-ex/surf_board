@@ -7,24 +7,35 @@ an existing vendor.
 
 ## The two dimensions
 
-Everything in `lib/surf_board/drivers/` varies along exactly two independent axes:
+This code varies along exactly two independent axes, and the two top-level
+namespaces are split along that line:
 
-* **Protocol** — the wire format and command surface: CDP or WebDriver BiDi today.
-  Lives under `SurfBoard.Drivers.CDP.*` / `SurfBoard.Drivers.ChromeBiDi.*` (the
-  BiDi namespace is Chrome-named today because chromium-bidi's Node sidecar is
-  currently fused into it — see [Adding a new protocol](#adding-a-new-protocol-or-a-second-bidi-vendor)
-  if you're bringing a second BiDi vendor).
-* **Driver** — one vendor's whole strategy for getting and holding a live
-  connection: which browser process, how many sessions share one socket, whether
-  the socket and the session's domain state live in the same process or two. This
-  is *one* decision made once by the driver's author, not three independently
-  pluggable things — `SurfBoard.Drivers.ChromeCDP`, `SurfBoard.Drivers.ChromeBiDi`,
-  and `SurfBoard.Drivers.LightpandaCDP` each hardcode their own transport strategy
-  rather than selecting one through a generic interface, because nothing actually
-  needs to swap strategies under one driver at runtime.
+* **Protocol** (`lib/surf_board/clients/`) — the wire format and command
+  surface: CDP or WebDriver BiDi today. Lives under `SurfBoard.Clients.CDP.*` /
+  `SurfBoard.Clients.BiDi.*`. This is vendor-neutral protocol code — command
+  building, response parsing, dialog/window/frame handling, event decoding —
+  with no launcher, process, or connection-ownership logic in it (the BiDi
+  namespace being Chrome-free today is somewhat aspirational still — see
+  [Adding a new protocol](#adding-a-new-protocol-or-a-second-bidi-vendor)
+  if you're bringing a second BiDi vendor and need to confirm it).
+* **Driver** (`lib/surf_board/drivers/`) — one vendor's whole strategy for
+  getting and holding a live connection: which browser process, how many
+  sessions share one socket, whether the socket and the session's domain
+  state live in the same process or two. This is *one* decision made once by
+  the driver's author, not three independently pluggable things —
+  `SurfBoard.Drivers.ChromeCDP`, `SurfBoard.Drivers.ChromeBiDi`, and
+  `SurfBoard.Drivers.LightpandaCDP` each hardcode their own transport
+  strategy rather than selecting one through a generic interface, because
+  nothing actually needs to swap strategies under one driver at runtime. A
+  driver module owns lifecycle (`start_session/1`/`end_session/1`) and
+  whatever process supervision its connection strategy needs — e.g.
+  `Drivers.ChromeBiDi.Server` (the chromium-bidi Node sidecar) and
+  `Drivers.ChromeBiDi.WebSocketClient` (the per-session WS connection
+  GenServer) — but never protocol semantics: method names, param shapes,
+  response parsing all live in `Clients`, not here.
 
-A driver picks one protocol and supplies its own connection strategy. That's the
-whole shape: `driver = protocol + strategy`.
+A driver picks one protocol client and supplies its own connection strategy.
+That's the whole shape: `driver = client + strategy`.
 
 Underneath both, `SurfBoard.Transport.WireSocket` is shared low-level Mint
 WebSocket plumbing (connect, upgrade, encode/decode, frame dispatch) — it knows
@@ -70,12 +81,12 @@ strategy for an existing vendor).
 
      @driver_spec %Spec{
        browser: Browser.YourVendor,
-       wire_protocol: SurfBoard.Drivers.CDP.Client, # or ChromeBiDi.Client
-       dialogs: SurfBoard.Drivers.CDP.Dialogs,  # reuse, or write your own — see below
-       windows: SurfBoard.Drivers.CDP.Windows,  # reuse, or write your own
-       frames: SurfBoard.Drivers.CDP.Frames,    # reuse, or write your own
-       grant_permissions: SurfBoard.Drivers.CDP.Client, # reuse, or Permissions.Unsupported
-       send_keys_session: SurfBoard.Drivers.CDP.Client, # reuse, or SendKeysSession.Unsupported
+       wire_protocol: SurfBoard.Clients.CDP.Client, # or Clients.BiDi.Client
+       dialogs: SurfBoard.Clients.CDP.Dialogs,  # reuse, or write your own — see below
+       windows: SurfBoard.Clients.CDP.Windows,  # reuse, or write your own
+       frames: SurfBoard.Clients.CDP.Frames,    # reuse, or write your own
+       grant_permissions: SurfBoard.Clients.CDP.Client, # reuse, or Permissions.Unsupported
+       send_keys_session: SurfBoard.Clients.CDP.Client, # reuse, or SendKeysSession.Unsupported
        touch_scroll: &__MODULE__.touch_scroll_impl/3,
        log_check_interactions?: true
      }
@@ -117,7 +128,7 @@ strategy for an existing vendor).
 3. **Own your connection via `SurfBoard.Transport.Actor`.** Every driver's
    session runs on the same actor — one generic GenServer speaking
    `SurfBoard.Transport.Protocol` (the message contract
-   `SurfBoard.Drivers.CDP.Client` / `SurfBoard.Drivers.ChromeBiDi.Client`
+   `SurfBoard.Clients.CDP.Client` / `SurfBoard.Clients.BiDi.Client`
    call into — `cdp_send`, `subscribe`, `await_page_load`, `register_find`,
    `push_frame`, ...; see `lib/surf_board/transport/protocol.ex` for the
    full message list). You don't write a new actor module; you build a
@@ -164,8 +175,8 @@ strategy for an existing vendor).
      wire-level subscribe step (CDP). `:active` if the server needs to be
      told which events to emit at all (BiDi's `session.subscribe`).
    * **`wire`** — your protocol's `Wire.handle_event/3`-shaped event
-     decoder module (`SurfBoard.Drivers.CDP.Wire` or
-     `SurfBoard.Drivers.ChromeBiDi.Wire` today).
+     decoder module (`SurfBoard.Clients.CDP.Wire` or
+     `SurfBoard.Clients.BiDi.Wire` today).
 
    If your vendor speaks an existing protocol (CDP or BiDi) over a
    connection shape that matches one of the three existing configs exactly,
@@ -193,24 +204,24 @@ one place: the module your Spec names.
 
 * **`dialogs` / `windows` / `frames`** — each implements a small behaviour
   (`SurfBoard.Dialogs`, `SurfBoard.Windows`, `SurfBoard.Frames`) for one
-  *protocol*, not one vendor: `SurfBoard.Drivers.CDP.{Dialogs,Windows,Frames}`
+  *protocol*, not one vendor: `SurfBoard.Clients.CDP.{Dialogs,Windows,Frames}`
   is CDP's dialog/window/frame handling, full stop — it lives under
-  `Drivers.CDP`, not `Drivers.ChromeCDP`, even though today only `ChromeCDP`
-  points at it. Lightpanda also speaks CDP, but its engine doesn't implement
-  the `Page.javascriptDialogOpening`/`Target.*`/frame-focus surface these
+  `Clients.CDP`, vendor-neutral, even though today only `ChromeCDP` points at
+  it. Lightpanda also speaks CDP, but its engine doesn't implement the
+  `Page.javascriptDialogOpening`/`Target.*`/frame-focus surface these
   modules use, so it points `dialogs`/`windows`/`frames` at the shared
   fallbacks instead (`SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
   `SurfBoard.Frames.Unsupported`) — that's a vendor's *coverage* of the
   protocol falling short, not a different protocol. If your driver speaks
   CDP and actually implements this part of it, point at
-  `SurfBoard.Drivers.CDP.{Dialogs,Windows,Frames}` directly rather than
+  `SurfBoard.Clients.CDP.{Dialogs,Windows,Frames}` directly rather than
   writing a new implementation; only write your own if your vendor's
   protocol genuinely differs here (e.g. a real BiDi vendor needs
-  `Drivers.ChromeBiDi.{Dialogs,Windows,Frames}`'s BiDi equivalents, not
+  `Clients.BiDi.{Dialogs,Windows,Frames}`'s BiDi equivalents, not
   these CDP ones).
 * **`grant_permissions`** — implements `SurfBoard.Permissions`. Point at your
   `wire_protocol` module directly if it has a real implementation (e.g.
-  `SurfBoard.Drivers.CDP.Client`, which both `ChromeCDP` and `LightpandaCDP`
+  `SurfBoard.Clients.CDP.Client`, which both `ChromeCDP` and `LightpandaCDP`
   could point at — but only `ChromeCDP` does, because Lightpanda's browser
   engine doesn't actually support it). Otherwise point at
   `SurfBoard.Permissions.Unsupported`, which raises
@@ -230,13 +241,13 @@ one place: the module your Spec names.
 ### Why `grant_permissions`/`send_keys_session` are separate dimensions,
 ### not just `wire_protocol` calls
 
-`SurfBoard.Drivers.CDP.Client` is the **same module**, not a copy, for both
+`SurfBoard.Clients.CDP.Client` is the **same module**, not a copy, for both
 `ChromeCDP` and `LightpandaCDP` — both point `wire_protocol:` at it, because
 they're the same protocol. That sharing means a capability check keyed off
 `spec.wire_protocol` (e.g. `function_exported?/3`, or just calling it
 unconditionally) can't distinguish the two drivers — it's the same module
 either way. `grant_permissions` and `send_keys_session` both hit this for
-real: `Drivers.CDP.Client` has working implementations of both, but
+real: `Clients.CDP.Client` has working implementations of both, but
 Lightpanda's browser engine doesn't actually support either one. The fix
 isn't a per-driver override (that used to exist, via a `Driver.Generic`
 dispatch layer that's since been removed) — it's giving the capability its
@@ -249,25 +260,25 @@ give it its own Spec field from the start rather than dispatching through
 ## Adding a new protocol (or a second BiDi vendor)
 
 If you're bringing a vendor that speaks BiDi natively — Firefox, for
-instance — check first whether `SurfBoard.Drivers.ChromeBiDi.{Client,Wire,
+instance — check first whether `SurfBoard.Clients.BiDi.{Client,Wire,
 Commands,ResponseParser}` is actually protocol-generic already (BiDi is a
-W3C spec; Chrome's implementation shouldn't need special-casing in the
-command/event layer) versus whether `chromium-bidi` — the Node sidecar
+W3C spec; it lives under the vendor-neutral `Clients.BiDi` namespace on the
+assumption that it is) versus whether `chromium-bidi` — the Node sidecar
 `SurfBoard.Drivers.ChromeBiDi.Server` spawns to get Chrome speaking BiDi at
-all — has leaked into the client code. A vendor with *native* BiDi support
-doesn't need that sidecar; it needs a `Server`-equivalent that launches the
-vendor's browser directly and hands back its WebSocket URL. If the protocol
-client itself turns out to be Chrome-clean, the right move is extracting it
-to a vendor-neutral `Drivers.BiDi.*` namespace shared by both
-`Drivers.ChromeBiDi` and your new driver, rather than duplicating it.
+all — has leaked into the client code despite that. A vendor with *native*
+BiDi support doesn't need that sidecar; it needs a `Server`-equivalent that
+launches the vendor's browser directly and hands back its WebSocket URL. If
+the protocol client turns out to have Chrome-specific assumptions baked in
+after all, fix those in place — `Clients.BiDi` is meant to be shared by
+`Drivers.ChromeBiDi` and your new driver, not duplicated per vendor.
 
 Adding a genuinely new wire protocol (neither CDP nor BiDi) is a much bigger
-undertaking — you'd be writing the `Drivers.<Protocol>.*` analogue of
-everything under `Drivers.CDP.*`, including a new `SurfBoard.WireProtocol`
+undertaking — you'd be writing the `Clients.<Protocol>.*` analogue of
+everything under `Clients.CDP.*`, including a new `SurfBoard.WireProtocol`
 implementation (`lib/surf_board/wire_protocol.ex` documents the full
 callback contract `Browser`/`Element` dispatch through directly) and
 likely a new `Wire.<Protocol>` event decoder alongside the existing
-`Drivers.CDP.Wire`/`Drivers.ChromeBiDi.Wire`. There's no shortcut for this
+`Clients.CDP.Wire`/`Clients.BiDi.Wire`. There's no shortcut for this
 one — read both existing protocol implementations in full before starting.
 
 ## Verifying a new driver

@@ -3,12 +3,12 @@ defmodule SurfBoard.Driver.PermissionsDispatchTest do
 
   # Regression coverage for the same class of bug caught while building
   # open_stream/1: Chrome CDP and Lightpanda share the exact same
-  # `wire_protocol` module (`SurfBoard.Drivers.CDP.Client`), so a CDP-only
+  # `wire_protocol` module (`SurfBoard.Clients.CDP.Client`), so a CDP-only
   # capability can't be gated by keying off `spec.wire_protocol` — it can't
   # tell the two drivers apart. grant_permissions has its own %Spec{}
   # dimension (spec.grant_permissions) specifically so Browser.ex CAN tell
   # them apart — LightpandaCDP/ChromeBiDi point it at Permissions.Unsupported,
-  # ChromeCDP points it at the real CDP.Client implementation.
+  # ChromeCDP points it at the real Clients.CDP.Client implementation.
 
   alias SurfBoard.Browser
   alias SurfBoard.Drivers.{ChromeBiDi, LightpandaCDP}

@@ -5,8 +5,8 @@ defmodule SurfBoard.WireProtocol do
   # (CDP vs BiDi). Documents the subset of CDPClient / BiDiClient that
   # the Orchestrator dispatches into.
   #
-  # The two existing client modules (`SurfBoard.Drivers.CDP.Client` and
-  # `SurfBoard.Drivers.ChromeBiDi.Client`) declare `@behaviour
+  # The two existing client modules (`SurfBoard.Clients.CDP.Client` and
+  # `SurfBoard.Clients.BiDi.Client`) declare `@behaviour
   # SurfBoard.WireProtocol` directly. There are no separate
   # adapter modules — the callback names match the client function
   # names exactly so the compiler can verify the contract on the

@@ -1,10 +1,10 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.Frames do
+defmodule SurfBoard.Clients.BiDi.Frames do
   @moduledoc false
 
   @behaviour SurfBoard.Frames
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.Drivers.ChromeBiDi.Client, as: BiDiClient
+  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
 
   @impl true
   def focus_frame(%Session{} = session, %Element{} = iframe) do

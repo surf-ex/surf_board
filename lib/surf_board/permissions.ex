@@ -4,7 +4,7 @@ defmodule SurfBoard.Permissions do
   # Media (camera/microphone) permission granting. One of the
   # vendor-specific dimensions of a driver Spec.
   #
-  #   * `Drivers.CDP.Client` — CDP `Browser.grantPermissions`. Shared
+  #   * `Clients.CDP.Client` — CDP `Browser.grantPermissions`. Shared
   #                            by ChromeCDP directly (it's also the
   #                            wire_protocol client — no separate
   #                            Permissions.ChromeCDP module needed).

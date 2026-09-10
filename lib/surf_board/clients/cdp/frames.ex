@@ -1,10 +1,10 @@
-defmodule SurfBoard.Drivers.CDP.Frames do
+defmodule SurfBoard.Clients.CDP.Frames do
   @moduledoc false
 
   @behaviour SurfBoard.Frames
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.Client, as: CDPClient
 
   @impl true
   def focus_frame(%Session{} = session, %Element{handle: object_id})

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.Client do
+defmodule SurfBoard.Clients.BiDi.Client do
   @moduledoc false
 
   # BiDi-shaped façade over `SurfBoard.Transport.Protocol` —
@@ -8,10 +8,10 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Client do
   # GenServers, or the per-method BiDi param schemas.
   #
   # Implements `SurfBoard.WireProtocol` directly — driver Specs
-  # point `wire_protocol: BiDiClient` and the Orchestrator dispatches
+  # point `wire_protocol: BiDiClient` and Browser.ex/Element.ex dispatch
   # straight to these functions, no adapter wrapper in between.
   #
-  # The CDP counterpart at `SurfBoard.Drivers.CDP.Client` exposes the
+  # The CDP counterpart at `SurfBoard.Clients.CDP.Client` exposes the
   # same surface area in the same section layout — diff them to see
   # which differences are genuine (mostly: wire method names + param
   # shapes) versus which are protocol-mandated (frame focus, element
@@ -21,7 +21,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Client do
   @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.Element
-  alias SurfBoard.Drivers.ChromeBiDi.{Commands, ResponseParser}
+  alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
   alias SurfBoard.Bootstrap
   alias SurfBoard.OpsShared
   alias SurfBoard.Transport.Protocol
@@ -1155,7 +1155,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Client do
 
   # ----- Dialog handling -----
   #
-  # Dialog flow lives in SurfBoard.Drivers.ChromeBiDi.Dialogs (which uses
+  # Dialog flow lives in SurfBoard.Clients.BiDi.Dialogs (which uses
   # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
 
   @doc """

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.Ops do
+defmodule SurfBoard.Clients.CDP.Ops do
   @moduledoc false
 
   # Builds a list of opcodes for the browser-side interpreter.

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.Windows do
+defmodule SurfBoard.Clients.CDP.Windows do
   @moduledoc false
 
   # CDP window/tab management — uses Target.* commands against the
@@ -11,7 +11,7 @@ defmodule SurfBoard.Drivers.CDP.Windows do
   @behaviour SurfBoard.Windows
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.Drivers.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.WebSocket
 
   @impl true

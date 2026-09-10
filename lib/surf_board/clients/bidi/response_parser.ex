@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.ResponseParser do
+defmodule SurfBoard.Clients.BiDi.ResponseParser do
   @moduledoc false
   # Translates BiDi response formats into the shapes SurfBoard expects.
 

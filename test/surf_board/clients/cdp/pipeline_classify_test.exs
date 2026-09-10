@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.CDP.PipelineClassifyTest do
+defmodule SurfBoard.Clients.CDP.PipelineClassifyTest do
   use ExUnit.Case, async: true
 
   # Tests `W.classify` from priv/surf_board.js — the production classifier

@@ -5,12 +5,12 @@ defmodule SurfBoard.SendKeysSession do
   # element currently has page focus, rather than a specific element).
   # One of the vendor-specific dimensions of a driver Spec.
   #
-  #   * `Drivers.CDP.Client`       — CDP `Input.dispatchKeyEvent`.
+  #   * `Clients.CDP.Client`       — CDP `Input.dispatchKeyEvent`.
   #                                  Shared by ChromeCDP directly (it's
   #                                  also the wire_protocol client — no
   #                                  separate SendKeysSession.ChromeCDP
   #                                  module needed).
-  #   * `Drivers.ChromeBiDi.Client` — BiDi `input.performActions`.
+  #   * `Clients.BiDi.Client`      — BiDi `input.performActions`.
   #                                  Same story for ChromeBiDi.
   #   * `Unsupported`              — Lightpanda. Its CDP surface
   #                                  doesn't implement
