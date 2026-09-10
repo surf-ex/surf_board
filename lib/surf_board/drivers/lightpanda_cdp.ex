@@ -152,14 +152,109 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   # ----- Session lifecycle -----
 
+  # `:connection` picks which of the three ways a session gets its
+  # Lightpanda transport — the (launch, socket, process-model)
+  # combination underneath this one (protocol, vendor) driver:
+  #
+  #   * `:shared`   — reuse the already-running shared Lightpanda
+  #                   binary (this driver's Supervisor started it once,
+  #                   at boot, iff the `lightpanda` package is loaded).
+  #                   Fresh WS per session, fused actor (no extra hop).
+  #                   Fails with `{:error, :shared_server_not_running}`
+  #                   if explicitly requested but nothing is up.
+  #   * `:isolated` — spawn a brand-new private Lightpanda binary for
+  #                   just this session. Slower (pays binary startup
+  #                   every call) but fully isolated. Requires the
+  #                   `lightpanda` package; fails with
+  #                   `{:error, :lightpanda_package_not_loaded}` if it
+  #                   isn't on the load path.
+  #   * `:external` — connect to a Lightpanda instance this driver
+  #                   never launches at all, via a caller-supplied
+  #                   `:ws_url`. Requires `:ws_url` in opts; fails with
+  #                   `{:error, :ws_url_required}` otherwise.
+  #
+  # Omitted (the default): auto-detect, in priority order — an
+  # explicit `:ws_url` wins (implies `:external`); else reuse the
+  # shared server if one is running (`:shared`); else spawn a private
+  # one if the package is available (`:isolated`); else raise, since
+  # there is no way to get a Lightpanda connection at all.
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
-    case pick_transport(opts) do
-      {:per_session, ws_url} ->
-        start_per_session(opts, ws_url)
+    case resolve_connection(opts) do
+      {:ok, fun} -> fun.(opts)
+      {:error, _reason} = err -> err
+    end
+  end
 
-      {transport_mod, transport_opts} ->
-        start_legacy(opts, transport_mod, transport_opts)
+  defp resolve_connection(opts) do
+    case Keyword.get(opts, :connection) do
+      nil -> {:ok, auto_detect_connection(opts)}
+      :shared -> shared_connection(opts)
+      :isolated -> isolated_connection(opts)
+      :external -> external_connection(opts)
+    end
+  end
+
+  defp auto_detect_connection(opts) do
+    cond do
+      Keyword.has_key?(opts, :ws_url) ->
+        {:ok, fun} = external_connection(opts)
+        fun
+
+      Process.whereis(@lightpanda_server_name) ->
+        {:ok, fun} = shared_connection(opts)
+        fun
+
+      Code.ensure_loaded?(@lightpanda_server) ->
+        {:ok, fun} = isolated_connection(opts)
+        fun
+
+      true ->
+        raise "V2Driver requires either a :ws_url opt or the `lightpanda` package on the path"
+    end
+  end
+
+  defp shared_connection(_opts) do
+    case Process.whereis(@lightpanda_server_name) do
+      nil ->
+        {:error, :shared_server_not_running}
+
+      _pid ->
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
+        ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
+        {:ok, &start_per_session(&1, ws_url)}
+    end
+  end
+
+  defp isolated_connection(_opts) do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      base_caps = %{needs_xpath_polyfill: true}
+
+      transport_opts = [
+        spawn_fun: fn ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(@lightpanda_server, :start_link, [[name: nil, wrapper_script: wrapper_script()]])
+        end,
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
+        url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
+        extra_capabilities: base_caps
+      ]
+
+      {:ok, &start_legacy(&1, Transport.IsolatedProcess, transport_opts)}
+    else
+      {:error, :lightpanda_package_not_loaded}
+    end
+  end
+
+  defp external_connection(opts) do
+    case Keyword.get(opts, :ws_url) do
+      url when is_binary(url) ->
+        base_caps = %{needs_xpath_polyfill: true}
+        transport_opts = [ws_url: url, extra_capabilities: base_caps]
+        {:ok, &start_legacy(&1, Transport.IsolatedProcess, transport_opts)}
+
+      _ ->
+        {:error, :ws_url_required}
     end
   end
 
@@ -271,37 +366,6 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     end
 
     :ok
-  end
-
-  defp pick_transport(opts) do
-    base_caps = %{needs_xpath_polyfill: true}
-
-    cond do
-      url = Keyword.get(opts, :ws_url) ->
-        {Transport.IsolatedProcess, [ws_url: url, extra_capabilities: base_caps]}
-
-      Process.whereis(@lightpanda_server_name) ->
-        # credo:disable-for-next-line Credo.Check.Refactor.Apply
-        ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
-        {:per_session, ws_url}
-
-      Code.ensure_loaded?(@lightpanda_server) ->
-        {Transport.IsolatedProcess,
-         [
-           spawn_fun: fn ->
-             # credo:disable-for-next-line Credo.Check.Refactor.Apply
-             apply(@lightpanda_server, :start_link, [
-               [name: nil, wrapper_script: wrapper_script()]
-             ])
-           end,
-           # credo:disable-for-next-line Credo.Check.Refactor.Apply
-           url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end,
-           extra_capabilities: base_caps
-         ]}
-
-      true ->
-        raise "V2Driver requires either a :ws_url opt or the `lightpanda` package on the path"
-    end
   end
 
   @impl SurfBoard.Driver

@@ -78,6 +78,16 @@ defmodule SurfBoard do
 
     * `:driver` — which driver runs this session (`:lightpanda`,
       `:chrome_cdp`, `:chrome`). Defaults to the configured driver.
+    * `:connection` — Lightpanda only: how this session gets its
+      transport. `:shared` (reuse the already-running shared Lightpanda
+      binary), `:isolated` (spawn a private binary for just this
+      session), or `:external` (connect to a Lightpanda instance this
+      driver doesn't manage — requires `:ws_url`). Omit to auto-detect
+      (prefers `:external` if `:ws_url` is given, else `:shared` if a
+      shared binary is already running, else `:isolated`). An explicit
+      value that isn't actually available returns `{:error, reason}`
+      rather than silently falling back — see
+      `SurfBoard.Drivers.LightpandaCDP.start_session/1`.
     * `:user_agent` — replace this session's User-Agent. Chrome only; see
       below.
     * `:window_size` — `[width: w, height: h]`.
