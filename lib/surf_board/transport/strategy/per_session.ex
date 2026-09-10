@@ -21,7 +21,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.Wire
   alias SurfBoard.Transport.Actor
-  alias SurfBoard.{Endpoint, Session}
+  alias SurfBoard.{Launcher, Session}
 
   defmodule Config do
     @moduledoc false
@@ -35,7 +35,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   Bring up a new session.
 
   Required opts:
-    * `:endpoint` — a started `SurfBoard.Endpoint` wrapping `%Config{ws_url: ...}`
+    * `:launcher` — a started `SurfBoard.Launcher` wrapping `%Config{ws_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` to back the session
       with (driver fills in id/url/capabilities/etc.)
 
@@ -47,8 +47,8 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
-    endpoint = Keyword.fetch!(opts, :endpoint)
-    %Config{ws_url: ws_url} = Endpoint.info(endpoint).config
+    launcher = Keyword.fetch!(opts, :launcher)
+    %Config{ws_url: ws_url} = Launcher.info(launcher).config
     session_struct = Keyword.fetch!(opts, :session_struct)
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())

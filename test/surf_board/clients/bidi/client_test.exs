@@ -33,10 +33,10 @@ defmodule SurfBoard.V2.BiDiClientTest do
   defp start(base_url) do
     session_struct = %Session{id: "bc-test", url: "", driver: :test, capabilities: %{}}
 
-    {:ok, endpoint} =
-      SurfBoard.Endpoint.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
+    {:ok, launcher} =
+      SurfBoard.Launcher.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
 
-    BiDi.start_session(endpoint: endpoint, session_struct: session_struct)
+    BiDi.start_session(launcher: launcher, session_struct: session_struct)
   end
 
   defp data_url(html), do: "data:text/html;charset=utf-8," <> URI.encode(html)

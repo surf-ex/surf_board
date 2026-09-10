@@ -1,14 +1,14 @@
 defmodule SurfBoard.Transport.Strategy.SharedWS do
   @moduledoc false
 
-  # Transport: ONE WebSocket per endpoint, shared across all sessions
+  # Transport: ONE WebSocket per launcher, shared across all sessions
   # started against it via CDP's flat-session protocol. Each
   # `start_session/1`:
   #
-  #   1. Fetches the shared ws_pid from the endpoint (lazily connecting
-  #      on first use — see `Endpoint.get_or_compute/3` — and caching
-  #      it in that endpoint's own state, so two independently-started
-  #      endpoints never share a connection).
+  #   1. Fetches the shared ws_pid from the launcher (lazily connecting
+  #      on first use — see `Launcher.get_or_compute/3` — and caching
+  #      it in that launcher's own state, so two independently-started
+  #      launchers never share a connection).
   #   2. Creates a fresh BrowserContext on that shared WS.
   #   3. Creates a Target inside that BrowserContext (about:blank).
   #   4. Attaches to the target (flat session) → gets a sessionId
@@ -21,7 +21,7 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
 
   @behaviour SurfBoard.Transport.Strategy
 
-  alias SurfBoard.{Endpoint, Transport}
+  alias SurfBoard.{Launcher, Transport}
   alias SurfBoard.WebSocket
 
   defmodule Config do
@@ -30,7 +30,7 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
     # browser's DevTools WebSocket URL. Deferred rather than a literal
     # `ws_url` because for a locally-launched Chrome, the URL isn't
     # known until the launched process emits it (which can take
-    # seconds) — the endpoint calls this lazily, on first use, and
+    # seconds) — the launcher calls this lazily, on first use, and
     # caches the resulting connection, not the URL itself.
     @enforce_keys [:resolve_ws_url]
     defstruct [:resolve_ws_url]
@@ -39,18 +39,18 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
   @impl true
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) do
-    endpoint = Keyword.fetch!(opts, :endpoint)
+    launcher = Keyword.fetch!(opts, :launcher)
     template = Keyword.fetch!(opts, :session_struct)
-    %Config{resolve_ws_url: resolve_ws_url} = Endpoint.info(endpoint).config
+    %Config{resolve_ws_url: resolve_ws_url} = Launcher.info(launcher).config
 
     ws_pid =
-      Endpoint.get_or_compute(
-        endpoint,
+      Launcher.get_or_compute(
+        launcher,
         fn ->
           # WebSocket.start_link would link to the *current caller* (the
           # session-starting process), so the shared WS would die when
           # each session's owner exits. Use `start/1` for an unlinked
-          # process whose lifetime is tied to the endpoint instead.
+          # process whose lifetime is tied to the launcher instead.
           {:ok, pid} = WebSocket.start(resolve_ws_url.())
           pid
         end,

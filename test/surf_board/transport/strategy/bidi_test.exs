@@ -167,12 +167,12 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
       capabilities: %{}
     }
 
-    {:ok, endpoint} =
-      SurfBoard.Endpoint.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
+    {:ok, launcher} =
+      SurfBoard.Launcher.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
 
     BiDi.start_session(
       Keyword.merge(
-        [endpoint: endpoint, session_struct: session_struct],
+        [launcher: launcher, session_struct: session_struct],
         extra
       )
     )

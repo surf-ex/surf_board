@@ -10,7 +10,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{Endpoint, Metadata, Session, UserAgent}
+  alias SurfBoard.{Launcher, Metadata, Session, UserAgent}
   alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
@@ -264,13 +264,13 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   # Lightpanda's :shared/:isolated/:external choice varies per call (not
   # fixed once at Supervisor.init/1 time, unlike ChromeCDP's default
-  # endpoint), so it builds and tears down its own transient, unnamed
-  # `Endpoint` per session rather than referencing a driver-owned default
+  # launcher), so it builds and tears down its own transient, unnamed
+  # `Launcher` per session rather than referencing a driver-owned default
   # one. None of PerSession/IsolatedProcess cache connection state on
-  # their endpoint (unlike SharedWS), so nothing is lost by not keeping
+  # their launcher (unlike SharedWS), so nothing is lost by not keeping
   # it around past this one session's start.
   defp start_via_strategy(opts, strategy, config) do
-    {:ok, endpoint} = Endpoint.start_link(strategy: strategy, config: config)
+    {:ok, launcher} = Launcher.start_link(strategy: strategy, config: config)
 
     session_struct = %Session{
       id: "v2drv-#{System.unique_integer([:positive])}",
@@ -288,13 +288,13 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     }
 
     strategy_opts = [
-      endpoint: endpoint,
+      launcher: launcher,
       session_struct: session_struct,
       owner: Keyword.get(opts, :owner, self())
     ]
 
     result = strategy.start_session(strategy_opts)
-    Agent.stop(endpoint)
+    Agent.stop(launcher)
 
     with {:ok, session} <- result do
       apply_session_opts(session, opts)

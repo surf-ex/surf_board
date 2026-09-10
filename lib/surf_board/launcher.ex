@@ -1,10 +1,15 @@
-defmodule SurfBoard.Endpoint do
+defmodule SurfBoard.Launcher do
   @moduledoc false
 
   # A started, independently-addressable instance of one
   # `SurfBoard.Transport.Strategy` + its `Config` — the thing sessions
-  # actually reference (`start_session(endpoint: ...)`) instead of a
+  # actually reference (`start_session(launcher: ...)`) instead of a
   # driver resolving an implicit, module-keyed global singleton.
+  #
+  # Named for what it always does regardless of strategy: every call to
+  # `start_session/1` launches a genuinely new session (a fresh
+  # BrowserContext/Target/actor), even when the underlying connection is
+  # reused (SharedWS's cached ws_pid) rather than freshly launched itself.
   #
   # Replaces the old `Drivers.ChromeCDP.SharedConnection` pattern (a
   # `:persistent_term`-keyed Agent, exactly one per BEAM, ever) with
@@ -28,7 +33,7 @@ defmodule SurfBoard.Endpoint do
   @type ref :: pid | atom
 
   @doc """
-  Starts an endpoint wrapping `strategy` + `config`. Pass `:name` to
+  Starts a launcher wrapping `strategy` + `config`. Pass `:name` to
   make it addressable by that name instead of only by the returned pid.
   """
   @spec start_link(keyword) :: Agent.on_start()
@@ -44,20 +49,20 @@ defmodule SurfBoard.Endpoint do
     %{id: Keyword.get(opts, :name, __MODULE__), start: {__MODULE__, :start_link, [opts]}}
   end
 
-  @doc "The strategy module + config this endpoint wraps."
+  @doc "The strategy module + config this launcher wraps."
   @spec info(ref) :: t
-  def info(endpoint), do: Agent.get(endpoint, & &1)
+  def info(launcher), do: Agent.get(launcher, & &1)
 
   @doc """
-  Lazily computes and caches one value in the endpoint's own state,
+  Lazily computes and caches one value in the launcher's own state,
   serialized across concurrent first-callers — a live cached value is
   returned as-is; a dead one (per `is_alive_fun`, when given) triggers
   a fresh compute. Used by strategies that need a persistent connection
   (SharedWS's ws_pid); strategies with nothing to cache never call this.
   """
   @spec get_or_compute(ref, (-> term), (term -> boolean) | nil) :: term
-  def get_or_compute(endpoint, compute_fun, is_alive_fun \\ nil) do
-    Agent.get_and_update(endpoint, fn state ->
+  def get_or_compute(launcher, compute_fun, is_alive_fun \\ nil) do
+    Agent.get_and_update(launcher, fn state ->
       if state.cached != nil and (is_nil(is_alive_fun) or is_alive_fun.(state.cached)) do
         {state.cached, state}
       else

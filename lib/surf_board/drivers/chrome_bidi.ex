@@ -11,7 +11,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{Endpoint, Metadata, Session, UserAgent}
+  alias SurfBoard.{Launcher, Metadata, Session, UserAgent}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
@@ -90,7 +90,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
-    {endpoint, cleanup} = resolve_endpoint(opts)
+    {launcher, cleanup} = resolve_launcher(opts)
 
     session_struct = %Session{
       id: "v2bidi-#{System.unique_integer([:positive])}",
@@ -105,7 +105,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
     result =
       BiDi.start_session(
-        endpoint: endpoint,
+        launcher: launcher,
         session_struct: session_struct,
         owner: Keyword.get(opts, :owner, self())
       )
@@ -139,21 +139,21 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
     end
   end
 
-  # An explicit `:endpoint` opt uses that started endpoint as-is (no
-  # cleanup — it's the caller's own, independently-started endpoint).
-  # Otherwise, since Strategy.BiDi caches nothing on its endpoint (each
+  # An explicit `:launcher` opt uses that started launcher as-is (no
+  # cleanup — it's the caller's own, independently-started launcher).
+  # Otherwise, since Strategy.BiDi caches nothing on its launcher (each
   # session does its own POST /session — see Strategy.BiDi's moduledoc),
   # build a transient, unnamed one from opts[:base_url] (or the driver's
   # own BidiServer) and tear it down again once start_session/1 returns.
-  defp resolve_endpoint(opts) do
-    case Keyword.get(opts, :endpoint) do
+  defp resolve_launcher(opts) do
+    case Keyword.get(opts, :launcher) do
       nil ->
         config = %BiDi.Config{base_url: resolve_base_url(opts)}
-        {:ok, endpoint} = Endpoint.start_link(strategy: BiDi, config: config)
-        {endpoint, fn -> Agent.stop(endpoint) end}
+        {:ok, launcher} = Launcher.start_link(strategy: BiDi, config: config)
+        {launcher, fn -> Agent.stop(launcher) end}
 
-      endpoint ->
-        {endpoint, fn -> :ok end}
+      launcher ->
+        {launcher, fn -> :ok end}
     end
   end
 

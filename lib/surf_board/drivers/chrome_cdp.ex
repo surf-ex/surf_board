@@ -2,16 +2,16 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   @moduledoc false
 
   # Chrome driver over the transport stack — a `Strategy.SharedWS`
-  # endpoint (one shared WebSocket for every session started against
+  # launcher (one shared WebSocket for every session started against
   # it), per-session BrowserContext + Target + sessionId for routing.
   #
   # Only owns lifecycle (start/end_session, the Supervisor surface) and
   # its @driver_spec. Every capability is dispatched by Browser.ex/
   # Element.ex calling session.driver_spec's dimension modules directly.
   #
-  # Starts one default `SurfBoard.Endpoint` under its own Supervisor,
-  # lazily, same as always — pass `endpoint:` to `start_session/1` to
-  # use a different, independently-started endpoint instead (e.g. an
+  # Starts one default `SurfBoard.Launcher` under its own Supervisor,
+  # lazily, same as always — pass `launcher:` to `start_session/1` to
+  # use a different, independently-started launcher instead (e.g. an
   # application connecting to a remote Chrome while its own test suite
   # launches and owns a second, local one, both alive in the same BEAM).
 
@@ -19,7 +19,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{DependencyError, Endpoint, Metadata, Session, UserAgent}
+  alias SurfBoard.{DependencyError, Launcher, Metadata, Session, UserAgent}
   alias SurfBoard.{Browser, WebSocket}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.{Dialogs, Frames, Windows}
@@ -52,22 +52,22 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
-  @default_endpoint_name __MODULE__.DefaultEndpoint
+  @default_launcher_name __MODULE__.DefaultLauncher
 
   # `connection` picks which of the two ways this driver's default
-  # `Endpoint` gets connected — unlike LightpandaCDP's `:connection` opt
+  # `Launcher` gets connected — unlike LightpandaCDP's `:connection` opt
   # (re-resolved on every `start_session/1` call), this is decided once,
   # here, at Supervisor.init/1 time: the driver's supervisor starts
   # lazily on first `start_session/1` and is never restarted per call,
   # so by the time a second call could pass a different opt, this
   # choice is already fixed. It's app config, not a session opt. A
   # caller wanting a *different* configuration entirely should start
-  # their own `SurfBoard.Endpoint` and pass it via `start_session(endpoint: ...)`.
+  # their own `SurfBoard.Launcher` and pass it via `start_session(launcher: ...)`.
   #
   #   * `:shared`   — spawn and own a local Chrome process
   #                   (`ChromeServer`), then multiplex every session
   #                   over its WebSocket.
-  #   * `:external` — never spawn anything; connect the default endpoint
+  #   * `:external` — never spawn anything; connect the default launcher
   #                   to a Chrome instance this driver doesn't manage,
   #                   via `remote_url/0`.
   #
@@ -79,14 +79,14 @@ defmodule SurfBoard.Drivers.ChromeCDP do
       case resolve_connection() do
         :external ->
           [
-            {Endpoint,
-             name: @default_endpoint_name, strategy: SharedWS, config: external_config()}
+            {Launcher,
+             name: @default_launcher_name, strategy: SharedWS, config: external_config()}
           ]
 
         :shared ->
           [
             {ChromeServer, [name: __MODULE__.Server]},
-            {Endpoint, name: @default_endpoint_name, strategy: SharedWS, config: shared_config()}
+            {Launcher, name: @default_launcher_name, strategy: SharedWS, config: shared_config()}
           ]
       end
 
@@ -148,7 +148,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   def start_session(opts \\ []) do
     caller = Keyword.get(opts, :owner, self())
     user_caps = Keyword.get(opts, :capabilities, %{})
-    endpoint = Keyword.get(opts, :endpoint, @default_endpoint_name)
+    launcher = Keyword.get(opts, :launcher, @default_launcher_name)
 
     session_struct = %Session{
       id: "v2-chrome-#{System.unique_integer([:positive])}",
@@ -162,7 +162,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
     with {:ok, session} <-
            SharedWS.start_session(
-             endpoint: endpoint,
+             launcher: launcher,
              session_struct: session_struct,
              owner: caller
            ) do
