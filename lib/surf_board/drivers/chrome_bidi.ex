@@ -192,6 +192,4 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       err -> err
     end
   end
-
-  defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
 end

@@ -207,12 +207,6 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     end
   end
 
-  # parse_log: Chrome.Logger raises SurfBoard.JSError on SEVERE entries
-  # and prints console output, which is exactly what JSErrorsTest checks
-  # for. The Generic-injected parse_log/1 routes here via session.driver,
-  # so we override the generic stub.
-  defdelegate parse_log(log), to: SurfBoard.Drivers.ChromeCDP.Logger
-
   # ----- Internal -----
 
   @doc false

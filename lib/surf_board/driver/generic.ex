@@ -88,8 +88,7 @@ defmodule SurfBoard.Driver.Generic do
     {:move_mouse_by, 3, false},
     {:element_size, 1, false},
     {:element_location, 1, false},
-    {:blank_page?, 1, false},
-    {:parse_log, 1, false}
+    {:blank_page?, 1, false}
   ]
 
   @doc false
@@ -273,17 +272,6 @@ defmodule SurfBoard.Driver.Generic do
     do: Orchestrator.element_location(spec(element), element)
 
   def blank_page?(%Session{} = session), do: Orchestrator.blank_page?(spec(session), session)
-
-  # ----- Log parsing -----
-
-  def parse_log(log) do
-    # parse_log is called per log entry; the caller (LogChecker) doesn't
-    # have a session in scope. The Spec's log_parser module is consulted
-    # via a process-dict shim set during start_session.
-    # For now, delegate to the Chrome.Logger by default since that's
-    # what both Chrome drivers used.
-    SurfBoard.Drivers.ChromeCDP.Logger.parse_log(log)
-  end
 
   # ----- Spec lookup -----
 

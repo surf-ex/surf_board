@@ -1,22 +1,38 @@
 defmodule SurfBoard.Driver.LogCheckerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias SurfBoard.Driver.LogChecker
 
-  defmodule FakeDriver do
-    def parse_log(%{"level" => "SEVERE", "source" => "javascript", "message" => msg}) do
-      send(self(), {:js_error, msg})
-    end
+  # async: false — parse_log reads app config (:js_errors, :js_logger)
+  # directly, same as before this test moved from asserting on a fake
+  # driver's parse_log/1 to asserting on the real one now inlined here.
 
-    def parse_log(%{"level" => "INFO", "source" => "console-api", "message" => msg}) do
-      send(self(), {:console_log, msg})
-    end
+  defp make_session, do: %{session_url: "test://session/1"}
 
-    def parse_log(_), do: nil
+  setup do
+    prev_errors = Application.get_env(:surf_board, :js_errors)
+    prev_logger = Application.get_env(:surf_board, :js_logger)
+
+    on_exit(fn ->
+      if prev_errors == nil,
+        do: Application.delete_env(:surf_board, :js_errors),
+        else: Application.put_env(:surf_board, :js_errors, prev_errors)
+
+      if prev_logger == nil,
+        do: Application.delete_env(:surf_board, :js_logger),
+        else: Application.put_env(:surf_board, :js_logger, prev_logger)
+    end)
+
+    {:ok, io} = StringIO.open("")
+    Application.put_env(:surf_board, :js_logger, io)
+    Application.put_env(:surf_board, :js_errors, true)
+
+    {:ok, io: io}
   end
 
-  defp make_session do
-    %{driver: FakeDriver, session_url: "test://session/1"}
+  defp printed(io) do
+    {_input, output} = StringIO.contents(io)
+    output
   end
 
   describe "check_logs!/2" do
@@ -26,10 +42,9 @@ defmodule SurfBoard.Driver.LogCheckerTest do
       assert result == {:ok, 42}
     end
 
-    test "drains log events from mailbox" do
+    test "drains log events from mailbox", %{io: io} do
       session = make_session()
 
-      # Simulate a BiDi log event arriving in the mailbox
       send(
         self(),
         {:bidi_event, "log.entryAdded",
@@ -47,10 +62,10 @@ defmodule SurfBoard.Driver.LogCheckerTest do
 
       LogChecker.check_logs!(session, fn -> :ok end)
 
-      assert_received {:console_log, "http://localhost/page.js 10:5 hello world"}
+      assert printed(io) =~ "hello world"
     end
 
-    test "translates error level to SEVERE" do
+    test "translates error level to SEVERE and raises JSError" do
       session = make_session()
 
       send(
@@ -68,12 +83,34 @@ defmodule SurfBoard.Driver.LogCheckerTest do
          }}
       )
 
-      LogChecker.check_logs!(session, fn -> :ok end)
-
-      assert_received {:js_error, "http://localhost/app.js 1:0 ReferenceError: x is not defined"}
+      assert_raise SurfBoard.JSError,
+                   ~r/http:\/\/localhost\/app\.js 1:0 ReferenceError: x is not defined/,
+                   fn ->
+                     LogChecker.check_logs!(session, fn -> :ok end)
+                   end
     end
 
-    test "filters out chromium-bidi mapper noise" do
+    test "does not raise when :js_errors is disabled" do
+      Application.put_env(:surf_board, :js_errors, false)
+      session = make_session()
+
+      send(
+        self(),
+        {:bidi_event, "log.entryAdded",
+         %{
+           "params" => %{
+             "level" => "error",
+             "type" => "javascript",
+             "text" => "ReferenceError: x is not defined",
+             "source" => %{"url" => "http://localhost/app.js"}
+           }
+         }}
+      )
+
+      assert LogChecker.check_logs!(session, fn -> :ok end) == :ok
+    end
+
+    test "filters out chromium-bidi mapper noise", %{io: io} do
       session = make_session()
 
       send(
@@ -91,10 +128,10 @@ defmodule SurfBoard.Driver.LogCheckerTest do
 
       LogChecker.check_logs!(session, fn -> :ok end)
 
-      refute_received {:console_log, _}
+      assert printed(io) == ""
     end
 
-    test "processes multiple events in order" do
+    test "processes multiple events in order", %{io: io} do
       session = make_session()
 
       for i <- 1..3 do
@@ -116,12 +153,13 @@ defmodule SurfBoard.Driver.LogCheckerTest do
 
       LogChecker.check_logs!(session, fn -> :ok end)
 
-      assert_received {:console_log, "http://localhost/test.js 1:0 msg 1"}
-      assert_received {:console_log, "http://localhost/test.js 2:0 msg 2"}
-      assert_received {:console_log, "http://localhost/test.js 3:0 msg 3"}
+      output = printed(io)
+      assert output =~ "msg 1"
+      assert output =~ "msg 2"
+      assert output =~ "msg 3"
     end
 
-    test "handles events with no URL" do
+    test "handles events with no URL", %{io: io} do
       session = make_session()
 
       send(
@@ -139,14 +177,14 @@ defmodule SurfBoard.Driver.LogCheckerTest do
 
       LogChecker.check_logs!(session, fn -> :ok end)
 
-      assert_received {:console_log, "unknown 0:0 inline log"}
+      assert printed(io) =~ "inline log"
     end
 
-    test "does nothing when no events are buffered" do
+    test "does nothing when no events are buffered", %{io: io} do
       session = make_session()
       result = LogChecker.check_logs!(session, fn -> :done end)
       assert result == :done
-      refute_received _
+      assert printed(io) == ""
     end
   end
 end
