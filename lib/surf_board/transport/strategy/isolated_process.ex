@@ -12,7 +12,7 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
 
   @behaviour SurfBoard.Transport.Strategy
 
-  alias SurfBoard.Transport
+  alias SurfBoard.{Endpoint, Transport}
   alias SurfBoard.WebSocket
 
   defmodule Config do
@@ -27,8 +27,9 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
   @impl true
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) do
+    endpoint = Keyword.fetch!(opts, :endpoint)
     template = Keyword.fetch!(opts, :session_struct)
-    config = Keyword.fetch!(opts, :config)
+    %Config{} = config = Endpoint.info(endpoint).config
     {:ok, ws_url, server_pid} = ensure_server(config)
 
     with {:ok, ws_pid} <- WebSocket.start_link(ws_url),

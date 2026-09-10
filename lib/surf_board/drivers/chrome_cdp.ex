@@ -1,26 +1,32 @@
 defmodule SurfBoard.Drivers.ChromeCDP do
   @moduledoc false
 
-  # Chrome driver over the transport stack — one shared WebSocket per BEAM
-  # (held by `Chrome.SharedConnection`), per-session BrowserContext +
-  # Target + sessionId for routing.
+  # Chrome driver over the transport stack — a `Strategy.SharedWS`
+  # endpoint (one shared WebSocket for every session started against
+  # it), per-session BrowserContext + Target + sessionId for routing.
   #
   # Only owns lifecycle (start/end_session, the Supervisor surface) and
   # its @driver_spec. Every capability is dispatched by Browser.ex/
   # Element.ex calling session.driver_spec's dimension modules directly.
+  #
+  # Starts one default `SurfBoard.Endpoint` under its own Supervisor,
+  # lazily, same as always — pass `endpoint:` to `start_session/1` to
+  # use a different, independently-started endpoint instead (e.g. an
+  # application connecting to a remote Chrome while its own test suite
+  # launches and owns a second, local one, both alive in the same BEAM).
 
   use Supervisor
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{DependencyError, Metadata, Session, UserAgent}
-  alias SurfBoard.{Browser, Transport, WebSocket}
+  alias SurfBoard.{DependencyError, Endpoint, Metadata, Session, UserAgent}
+  alias SurfBoard.{Browser, WebSocket}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.{Dialogs, Frames, Windows}
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
-  alias SurfBoard.Drivers.ChromeCDP.SharedConnection
   alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Transport.Protocol
+  alias SurfBoard.Transport.Strategy.SharedWS
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
@@ -46,19 +52,22 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     Supervisor.start_link(__MODULE__, :ok, opts)
   end
 
-  # `connection` picks which of the two ways this driver's ONE Chrome
-  # instance for the life of the BEAM gets connected — unlike
-  # LightpandaCDP's `:connection` opt (re-resolved on every
-  # `start_session/1` call), this is decided once, here, at
-  # Supervisor.init/1 time: the driver's supervisor starts lazily on
-  # first `start_session/1` and is never restarted per call, so by the
-  # time a second call could pass a different opt, this choice is
-  # already fixed. It's app config, not a session opt.
+  @default_endpoint_name __MODULE__.DefaultEndpoint
+
+  # `connection` picks which of the two ways this driver's default
+  # `Endpoint` gets connected — unlike LightpandaCDP's `:connection` opt
+  # (re-resolved on every `start_session/1` call), this is decided once,
+  # here, at Supervisor.init/1 time: the driver's supervisor starts
+  # lazily on first `start_session/1` and is never restarted per call,
+  # so by the time a second call could pass a different opt, this
+  # choice is already fixed. It's app config, not a session opt. A
+  # caller wanting a *different* configuration entirely should start
+  # their own `SurfBoard.Endpoint` and pass it via `start_session(endpoint: ...)`.
   #
   #   * `:shared`   — spawn and own a local Chrome process
   #                   (`ChromeServer`), then multiplex every session
-  #                   over one shared WebSocket (`SharedConnection`).
-  #   * `:external` — never spawn anything; connect `SharedConnection`
+  #                   over its WebSocket.
+  #   * `:external` — never spawn anything; connect the default endpoint
   #                   to a Chrome instance this driver doesn't manage,
   #                   via `remote_url/0`.
   #
@@ -68,11 +77,28 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   def init(_) do
     children =
       case resolve_connection() do
-        :external -> [SharedConnection]
-        :shared -> [{ChromeServer, [name: __MODULE__.Server]}, SharedConnection]
+        :external ->
+          [
+            {Endpoint,
+             name: @default_endpoint_name, strategy: SharedWS, config: external_config()}
+          ]
+
+        :shared ->
+          [
+            {ChromeServer, [name: __MODULE__.Server]},
+            {Endpoint, name: @default_endpoint_name, strategy: SharedWS, config: shared_config()}
+          ]
       end
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  defp shared_config do
+    %SharedWS.Config{resolve_ws_url: fn -> ChromeServer.ws_url(__MODULE__.Server) end}
+  end
+
+  defp external_config do
+    %SharedWS.Config{resolve_ws_url: fn -> resolve_remote_ws_url(remote_url()) end}
   end
 
   defp resolve_connection do
@@ -122,6 +148,7 @@ defmodule SurfBoard.Drivers.ChromeCDP do
   def start_session(opts \\ []) do
     caller = Keyword.get(opts, :owner, self())
     user_caps = Keyword.get(opts, :capabilities, %{})
+    endpoint = Keyword.get(opts, :endpoint, @default_endpoint_name)
 
     session_struct = %Session{
       id: "v2-chrome-#{System.unique_integer([:positive])}",
@@ -134,11 +161,8 @@ defmodule SurfBoard.Drivers.ChromeCDP do
     }
 
     with {:ok, session} <-
-           Transport.Strategy.SharedWS.start_session(
-             config: %Transport.Strategy.SharedWS.Config{
-               connection: SharedConnection,
-               driver: __MODULE__
-             },
+           SharedWS.start_session(
+             endpoint: endpoint,
              session_struct: session_struct,
              owner: caller
            ) do
@@ -217,5 +241,95 @@ defmodule SurfBoard.Drivers.ChromeCDP do
 
   defp chrome_available? do
     match?({:ok, _}, SurfBoard.BrowserPaths.chrome_path())
+  end
+
+  # `remote_url` is either a literal ws(s):// DevTools URL, or a bare
+  # HTTP endpoint (host:port) that needs /json/version discovery to
+  # find the actual webSocketDebuggerUrl.
+  defp resolve_remote_ws_url("ws://" <> _ = url), do: url
+  defp resolve_remote_ws_url("wss://" <> _ = url), do: url
+
+  defp resolve_remote_ws_url(endpoint) do
+    # Run the discovery in a fresh Task so its receive loop doesn't
+    # contend with the caller's own mailbox.
+    task = Task.async(fn -> discover_ws_url(endpoint) end)
+    Task.await(task, 10_000)
+  end
+
+  defp discover_ws_url(endpoint) do
+    endpoint = String.trim_trailing(endpoint, "/")
+
+    {:ok, conn} = Mint.HTTP.connect(:http, host(endpoint), port(endpoint))
+
+    {:ok, conn, ref} =
+      Mint.HTTP.request(
+        conn,
+        "GET",
+        "/json/version",
+        [{"host", "localhost"}],
+        nil
+      )
+
+    {body, conn} = receive_body!(conn, ref)
+    _ = Mint.HTTP.close(conn)
+
+    case Jason.decode(body) do
+      {:ok, %{"webSocketDebuggerUrl" => ws_url}} ->
+        rewrite_ws_host(ws_url, endpoint)
+
+      {:ok, other} ->
+        raise "Chrome /json/version did not include webSocketDebuggerUrl: #{inspect(other)}"
+
+      {:error, _} ->
+        raise "Chrome /json/version returned invalid JSON: #{body}"
+    end
+  end
+
+  defp receive_body!(conn, ref, acc \\ "") do
+    receive do
+      message ->
+        case Mint.HTTP.stream(conn, message) do
+          {:ok, conn, responses} ->
+            {conn, body} =
+              Enum.reduce(responses, {conn, acc}, fn
+                {:data, ^ref, data}, {c, a} -> {c, a <> data}
+                {:done, ^ref}, {c, a} -> {c, a}
+                _, {c, a} -> {c, a}
+              end)
+
+            if Enum.any?(responses, &match?({:done, ^ref}, &1)) do
+              {body, conn}
+            else
+              receive_body!(conn, ref, body)
+            end
+
+          :unknown ->
+            receive_body!(conn, ref, acc)
+
+          {:error, _conn, reason, _} ->
+            raise "Chrome /json/version request failed: #{inspect(reason)}"
+        end
+    after
+      5_000 -> raise "Chrome /json/version timed out"
+    end
+  end
+
+  defp host(endpoint) do
+    case String.split(endpoint, ":") do
+      [h | _] -> h
+      _ -> endpoint
+    end
+  end
+
+  defp port(endpoint) do
+    case String.split(endpoint, ":") do
+      [_, p] -> String.to_integer(p)
+      _ -> 9222
+    end
+  end
+
+  defp rewrite_ws_host(ws_url, endpoint) do
+    uri = URI.parse(ws_url)
+    URI.to_string(%{uri | host: host(endpoint), port: port(endpoint)})
   end
 end

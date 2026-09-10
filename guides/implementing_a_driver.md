@@ -41,6 +41,54 @@ Underneath both, `SurfBoard.Transport.WireSocket` is shared low-level Mint
 WebSocket plumbing (connect, upgrade, encode/decode, frame dispatch) — it knows
 neither the protocol nor the driver, and you generally don't need to touch it.
 
+## Endpoints: started instances of a strategy
+
+`SurfBoard.Endpoint` is the started, independently-addressable instance of
+one `Transport.Strategy` + its `Config` — the thing a session actually
+references (`start_session(endpoint: ...)`), rather than a driver resolving
+an implicit, hardcoded connection at compile time. A driver's own
+`init/1` starts one **default** endpoint the same way it always has (so
+`SurfBoard.start_session(driver: :chrome_cdp)` with no other opts keeps
+working exactly as before) — but a caller can also start their own
+`Endpoint` and pass it explicitly:
+
+```elixir
+# app boot — the default endpoint is used implicitly, unchanged from before
+SurfBoard.start_session(driver: :chrome_cdp)
+
+# a test suite starts and owns a second, independent endpoint alongside it
+{:ok, _} = SurfBoard.Endpoint.start_link(
+  name: MyApp.TestChrome,
+  strategy: SurfBoard.Transport.Strategy.SharedWS,
+  config: %SurfBoard.Transport.Strategy.SharedWS.Config{
+    resolve_ws_url: fn -> SurfBoard.Drivers.ChromeCDP.Server.ws_url(some_server) end
+  }
+)
+
+SurfBoard.start_session(driver: :chrome_cdp, endpoint: MyApp.TestChrome)
+```
+
+Both endpoints are alive in the same BEAM at once, each with its own
+independent state — e.g. an application connecting to a remote Chrome
+over `ws://` in production, while its own test suite launches and owns a
+second, local Chrome, without either interfering with the other. This is
+what actually makes a strategy swappable without its callers caring
+whether it's single- or multi-process: two `SharedWS` endpoints never
+share a connection just because they're the same strategy.
+
+Every strategy gets wrapped this way, even ones with nothing to cache
+(`IsolatedProcess`, `PerSession`, `BiDi` don't hold persistent connection
+state — see their moduledocs) — only `SharedWS` needs the endpoint's own
+state today (the shared ws_pid, lazily connected and cached via
+`Endpoint.get_or_compute/3`, scoped to *that* endpoint instance rather
+than a global). Keeping the API uniform means a currently-stateless
+strategy could grow real shared state later with no change to how
+callers reference it. `LightpandaCDP`'s `:isolated`/`:external` opts (and
+`ChromeBiDi`'s default path) build a transient, unnamed endpoint per
+`start_session/1` call instead of a driver-owned default one, precisely
+because their strategies cache nothing — there's no state worth keeping
+around past that one session's startup.
+
 ## What a driver module actually does
 
 `SurfBoard.Driver` is a 2-callback behaviour: `start_session/1` and
@@ -93,42 +141,54 @@ strategy for an existing vendor).
 
      def driver_spec, do: @driver_spec
 
+     @default_endpoint_name __MODULE__.DefaultEndpoint
+
      # ----- Supervisor: how your browser process / connection comes up -----
      def start_link(opts \\ []), do: Supervisor.start_link(__MODULE__, :ok, opts)
 
      @impl Supervisor
      def init(_) do
-       # Start whatever process(es) your connection strategy needs —
-       # a server GenServer, a shared-connection Agent, nothing at all if
-       # you connect directly. Mirror ChromeCDP.Server / LightpandaCDP's
-       # `init/1` for the shape.
+       # Start whatever process(es) your connection strategy needs, plus
+       # one default SurfBoard.Endpoint wrapping your strategy's Config —
+       # nothing else if you connect directly with nothing to launch.
+       # Mirror ChromeCDP/LightpandaCDP's `init/1` for the shape.
+       children = [
+         {SurfBoard.Endpoint,
+          name: @default_endpoint_name,
+          strategy: SurfBoard.Transport.Strategy.SharedWS,
+          config: %SurfBoard.Transport.Strategy.SharedWS.Config{
+            resolve_ws_url: fn -> :your_server.ws_url(:your_server_name) end
+          }}
+       ]
+
+       Supervisor.init(children, strategy: :one_for_one)
      end
 
      # ----- Session lifecycle -----
      @impl SurfBoard.Driver
      def start_session(opts \\ []) do
+       endpoint = Keyword.get(opts, :endpoint, @default_endpoint_name)
+
        # Build a template %SurfBoard.Session{driver: __MODULE__, driver_spec:
        # @driver_spec, capabilities: ..., ...} — leave bidi_pid/browsing_context
        # unset, your chosen Transport.Strategy fills those in — and hand it
-       # to your strategy's start_session/1 alongside a :config built from
-       # that strategy's own Config struct (each strategy defines its own,
-       # e.g. Transport.Strategy.SharedWS.Config):
+       # to your strategy's start_session/1 alongside the :endpoint (the
+       # default one above, or opts[:endpoint] if the caller passed their
+       # own independently-started one):
        #
        #   Transport.Strategy.SharedWS.start_session(
-       #     config: %Transport.Strategy.SharedWS.Config{
-       #       connection: YourSharedConnection,
-       #       driver: __MODULE__
-       #     },
+       #     endpoint: endpoint,
        #     session_struct: template,
        #     owner: Keyword.get(opts, :owner, self())
        #   )
        #
        # Every SurfBoard.Transport.Strategy implementation shares this
        # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
-       # contract (see "Own your connection" below) — opts only ever
-       # carries :session_struct, :config, and :owner, never bare
-       # connection details, so reusing a strategy is just picking the
-       # module and building its Config.
+       # contract (see "Own your connection" below and
+       # [Endpoints](#endpoints-started-instances-of-a-strategy)) — opts
+       # only ever carries :session_struct, :endpoint, and :owner, never
+       # bare connection details, so reusing a strategy is just picking
+       # the module and starting the right kind of endpoint.
      end
 
      @impl SurfBoard.Driver

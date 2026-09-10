@@ -10,7 +10,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{Metadata, Session, UserAgent}
+  alias SurfBoard.{Endpoint, Metadata, Session, UserAgent}
   alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
@@ -18,8 +18,8 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   alias SurfBoard.Frames
   alias SurfBoard.Permissions
   alias SurfBoard.SendKeysSession
-  alias SurfBoard.Transport
   alias SurfBoard.Transport.Protocol
+  alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
   alias SurfBoard.Windows
 
   @driver_spec %Spec{
@@ -225,16 +225,18 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         {:error, :shared_server_not_running}
 
       _pid ->
-        # credo:disable-for-next-line Credo.Check.Refactor.Apply
-        ws_url = apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
-        config = %Transport.Strategy.PerSession.Config{ws_url: ws_url}
-        {:ok, &start_via_strategy(&1, Transport.Strategy.PerSession, config)}
+        config = %PerSession.Config{
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          ws_url: apply(@lightpanda_server, :ws_url, [@lightpanda_server_name])
+        }
+
+        {:ok, &start_via_strategy(&1, PerSession, config)}
     end
   end
 
   defp isolated_connection(_opts) do
     if Code.ensure_loaded?(@lightpanda_server) do
-      config = %Transport.Strategy.IsolatedProcess.Config{
+      config = %IsolatedProcess.Config{
         spawn_fun: fn ->
           # credo:disable-for-next-line Credo.Check.Refactor.Apply
           apply(@lightpanda_server, :start_link, [[name: nil, wrapper_script: wrapper_script()]])
@@ -243,7 +245,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
         url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end
       }
 
-      {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, config)}
+      {:ok, &start_via_strategy(&1, IsolatedProcess, config)}
     else
       {:error, :lightpanda_package_not_loaded}
     end
@@ -252,15 +254,24 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   defp external_connection(opts) do
     case Keyword.get(opts, :ws_url) do
       url when is_binary(url) ->
-        config = %Transport.Strategy.IsolatedProcess.Config{ws_url: url}
-        {:ok, &start_via_strategy(&1, Transport.Strategy.IsolatedProcess, config)}
+        config = %IsolatedProcess.Config{ws_url: url}
+        {:ok, &start_via_strategy(&1, IsolatedProcess, config)}
 
       _ ->
         {:error, :ws_url_required}
     end
   end
 
-  defp start_via_strategy(opts, transport_mod, config) do
+  # Lightpanda's :shared/:isolated/:external choice varies per call (not
+  # fixed once at Supervisor.init/1 time, unlike ChromeCDP's default
+  # endpoint), so it builds and tears down its own transient, unnamed
+  # `Endpoint` per session rather than referencing a driver-owned default
+  # one. None of PerSession/IsolatedProcess cache connection state on
+  # their endpoint (unlike SharedWS), so nothing is lost by not keeping
+  # it around past this one session's start.
+  defp start_via_strategy(opts, strategy, config) do
+    {:ok, endpoint} = Endpoint.start_link(strategy: strategy, config: config)
+
     session_struct = %Session{
       id: "v2drv-#{System.unique_integer([:positive])}",
       url: "about:blank",
@@ -277,12 +288,15 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     }
 
     strategy_opts = [
-      config: config,
+      endpoint: endpoint,
       session_struct: session_struct,
       owner: Keyword.get(opts, :owner, self())
     ]
 
-    with {:ok, session} <- transport_mod.start_session(strategy_opts) do
+    result = strategy.start_session(strategy_opts)
+    Agent.stop(endpoint)
+
+    with {:ok, session} <- result do
       apply_session_opts(session, opts)
       {:ok, session}
     end

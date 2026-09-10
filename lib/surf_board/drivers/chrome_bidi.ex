@@ -11,7 +11,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{Metadata, Session, UserAgent}
+  alias SurfBoard.{Endpoint, Metadata, Session, UserAgent}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
@@ -90,7 +90,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   @impl SurfBoard.Driver
   def start_session(opts \\ []) do
-    base_url = resolve_base_url(opts)
+    {endpoint, cleanup} = resolve_endpoint(opts)
 
     session_struct = %Session{
       id: "v2bidi-#{System.unique_integer([:positive])}",
@@ -103,12 +103,16 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()
     }
 
-    with {:ok, session} <-
-           BiDi.start_session(
-             config: %BiDi.Config{base_url: base_url},
-             session_struct: session_struct,
-             owner: Keyword.get(opts, :owner, self())
-           ) do
+    result =
+      BiDi.start_session(
+        endpoint: endpoint,
+        session_struct: session_struct,
+        owner: Keyword.get(opts, :owner, self())
+      )
+
+    cleanup.()
+
+    with {:ok, session} <- result do
       caller = Keyword.get(opts, :owner, self())
       _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
 
@@ -132,6 +136,24 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
       end
 
       {:ok, session}
+    end
+  end
+
+  # An explicit `:endpoint` opt uses that started endpoint as-is (no
+  # cleanup — it's the caller's own, independently-started endpoint).
+  # Otherwise, since Strategy.BiDi caches nothing on its endpoint (each
+  # session does its own POST /session — see Strategy.BiDi's moduledoc),
+  # build a transient, unnamed one from opts[:base_url] (or the driver's
+  # own BidiServer) and tear it down again once start_session/1 returns.
+  defp resolve_endpoint(opts) do
+    case Keyword.get(opts, :endpoint) do
+      nil ->
+        config = %BiDi.Config{base_url: resolve_base_url(opts)}
+        {:ok, endpoint} = Endpoint.start_link(strategy: BiDi, config: config)
+        {endpoint, fn -> Agent.stop(endpoint) end}
+
+      endpoint ->
+        {endpoint, fn -> :ok end}
     end
   end
 

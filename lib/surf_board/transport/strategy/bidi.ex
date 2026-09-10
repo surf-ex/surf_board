@@ -26,7 +26,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Clients.BiDi.Wire
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
-  alias SurfBoard.Session
+  alias SurfBoard.{Endpoint, Session}
 
   defmodule Config do
     @moduledoc false
@@ -44,7 +44,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   Bring up a new BiDi session.
 
   Required opts:
-    * `:config`         — `%Config{base_url: ...}`
+    * `:endpoint`       — a started `SurfBoard.Endpoint` wrapping `%Config{base_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` template; this
                           function fills in `pid`, `bidi_pid` and
                           `browsing_context`.
@@ -56,7 +56,8 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   @impl true
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
-    %Config{base_url: base_url, capabilities: caps} = Keyword.fetch!(opts, :config)
+    endpoint = Keyword.fetch!(opts, :endpoint)
+    %Config{base_url: base_url, capabilities: caps} = Endpoint.info(endpoint).config
     session_struct = Keyword.fetch!(opts, :session_struct)
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())
