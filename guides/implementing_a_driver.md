@@ -56,17 +56,22 @@ working exactly as before) — but a caller can also start their own
 # app boot — the default launcher is used implicitly, unchanged from before
 SurfBoard.start_session(driver: :chrome_cdp)
 
-# a test suite starts and owns a second, independent launcher alongside it
-{:ok, _} = SurfBoard.Launcher.start_link(
-  name: MyApp.TestChrome,
-  strategy: SurfBoard.Transport.Strategy.SharedWS,
-  config: %SurfBoard.Transport.Strategy.SharedWS.Config{
-    resolve_ws_url: fn -> SurfBoard.Drivers.ChromeCDP.Server.ws_url(some_server) end
-  }
-)
+# a test suite starts and owns a second, independent launcher alongside it —
+# SurfBoard.Launcher.Chrome builds the Strategy.SharedWS.Config for you
+# (spawns and supervises its own Chrome process here; use
+# Launcher.Chrome.connect/1 instead to point at an already-running one)
+{:ok, _sup} = SurfBoard.Launcher.Chrome.start_link(name: MyApp.TestChrome)
 
 SurfBoard.start_session(driver: :chrome_cdp, launcher: MyApp.TestChrome)
 ```
+
+`SurfBoard.Launcher.Chrome` is the reusable convenience for standing up a
+`Strategy.SharedWS` launcher talking to Chrome — the same thing
+`Drivers.ChromeCDP` itself uses for its own default launcher (see
+[What a driver module actually does](#what-a-driver-module-actually-does)).
+Building a `Launcher` directly, by hand, with your own `Config` (as shown
+below) is the lower-level path — reach for it only when you're writing a
+new driver, not when you just want a second Chrome.
 
 Both launchers are alive in the same BEAM at once, each with its own
 independent state — e.g. an application connecting to a remote Chrome
@@ -114,9 +119,12 @@ A driver that wants its launchers to support this attaches both hooks
 when it starts them (its default one in `init/1`, and any transient
 ones it builds per call) and its own `start_session/1` collapses to
 "resolve which launcher, then call `Launcher.start_session/2`" — see
-`ChromeCDP.start_session/1` for the smallest example: it's three lines,
-with `build_template/1` and `post_start/2` as private functions the
-default launcher was started with. `SurfBoard.start_session(driver: ...)`
+`ChromeCDP.start_session/1` for the smallest example: it's three lines.
+`Drivers.ChromeCDP` doesn't even define its own `build_template/1`/
+`post_start/2` anymore — `SurfBoard.Launcher.Chrome.build_template/1`
+and `.post_start/2` are the real implementation (session template, UA
+override, window size, log-event subscription), and `ChromeCDP.init/1`
+just wires its default launcher up to them. `SurfBoard.start_session(driver: ...)`
 stays the entry point when you don't already have a launcher in hand
 (most callers, most of the time) — the hooks exist so that once you
 *do* have one, it's not a dead end.
