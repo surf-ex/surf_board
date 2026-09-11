@@ -104,13 +104,19 @@ defmodule SurfBoard.Browser do
   ```
   """
 
-  alias SurfBoard.CookieError
+  alias SurfBoard.Browser.Cookies
+  alias SurfBoard.Browser.Dialogs
+  alias SurfBoard.Browser.Form
+  alias SurfBoard.Browser.Internal
+  alias SurfBoard.Browser.LiveViewPatch
+  alias SurfBoard.Browser.Mouse
+  alias SurfBoard.Browser.Navigation
+  alias SurfBoard.Browser.Query, as: BrowserQuery
+  alias SurfBoard.Browser.Screenshot
+  alias SurfBoard.Browser.Windows
   alias SurfBoard.Element
-  alias SurfBoard.NoBaseUrlError
   alias SurfBoard.Query
-  alias SurfBoard.Query.ErrorMessage
   alias SurfBoard.Session
-  alias SurfBoard.StaleReferenceError
 
   @type t :: any()
 
@@ -124,8 +130,6 @@ defmodule SurfBoard.Browser do
           element
           | session
   @type opts :: Query.opts()
-
-  @default_max_wait_time 3_000
 
   @doc """
   Attempts to synchronize with the browser. This is most often used to
@@ -142,26 +146,7 @@ defmodule SurfBoard.Browser do
   """
   @type sync_result :: {:ok, any()} | {:error, any()}
   @spec retry((-> sync_result), non_neg_integer()) :: sync_result()
-
-  def retry(f, start_time \\ current_time()) do
-    case f.() do
-      {:ok, result} ->
-        {:ok, result}
-
-      {:error, :stale_reference} ->
-        retry(f, start_time)
-
-      {:error, :invalid_selector} ->
-        {:error, :invalid_selector}
-
-      {:error, e} ->
-        if max_time_exceeded?(nil, start_time) do
-          {:error, e}
-        else
-          retry(f, start_time)
-        end
-    end
-  end
+  def retry(f, start_time \\ Internal.current_time()), do: Internal.retry(f, start_time)
 
   @doc """
   Fills in an element identified by `query` with `value`.
@@ -182,92 +167,19 @@ defmodule SurfBoard.Browser do
   """
   @spec fill_in(parent, Query.t(), with: String.t()) :: parent
   @spec fill_in(parent, Query.t(), [{:with, String.t()} | {:await, atom}]) :: parent
-  def fill_in(%Session{} = parent, query, opts) when is_list(opts) do
-    value = Keyword.fetch!(opts, :with)
-    await_mode = Keyword.get(opts, :await, :auto)
+  def fill_in(parent, query, opts) when is_list(opts), do: Form.fill_in(parent, query, opts)
 
-    cond do
-      parent.live_view_aware? and await_mode == :defer ->
-        # Deferred: use the same fused single-roundtrip pipeline,
-        # but force `drain_idle_ms: 0` so the JS-side skips the
-        # in-band patch drain. Arm a patch promise BEAM-side
-        # beforehand so a subsequent `SurfBoard.LiveView.await_patch/2`
-        # can resolve on the next patch.
-        armed = SurfBoard.LiveView.arm_next_patch(parent)
-
-        _ =
-          find_lazy(parent, query, fn element ->
-            session = SurfBoard.Element.root_session(element)
-            spec(session).wire_protocol.fill_in(session, element, value, 0)
-          end)
-
-        armed
-
-      true ->
-        # Fused: one round-trip does silent clear + set_value + (on
-        # phx-change forms, when live_view_aware?, drain_patches).
-        # Saves two round-trips vs the legacy element-op-per-step.
-        drain_idle_ms =
-          if parent.live_view_aware? and classify_interaction(parent, query, :change) != :none,
-            do: 300,
-            else: 0
-
-        find_lazy(parent, query, fn element ->
-          session = SurfBoard.Element.root_session(element)
-          spec(session).wire_protocol.fill_in(session, element, value, drain_idle_ms)
-        end)
-    end
-  end
-
-  # A real session (as opposed to nil, e.g. from get_session/1 on a
-  # detached element). Every current driver's wire_protocol ships
-  # element ops through W.run, so this is a nil-guard, not a driver
-  # capability check — if a future driver's wire_protocol genuinely
-  # can't support the W.run pipeline, that's a DriverSpec field to add
-  # then, not something to guess at now.
-  defp remote_session?(%Session{}), do: true
-  defp remote_session?(_), do: false
-
-  defp maybe_snapshot_page_id(%Session{pending_await: nil} = session) when is_struct(session) do
-    if session.live_view_aware? and remote_session?(session) do
-      SurfBoard.LiveView.defer_next_patch(session)
-    else
-      session
-    end
-  end
-
-  defp maybe_snapshot_page_id(parent), do: parent
-
-  # @doc """
-  # Clears an input field. Input elements are looked up by id, label text, or name.
-  # The element can also be passed in directly.
-  # """
   @spec clear(parent, Query.t()) :: parent
   @spec clear(parent, Query.t(), keyword) :: parent
-
-  def clear(parent, query), do: clear(parent, query, [])
-
-  def clear(parent, query, opts) when is_list(opts) do
-    with_patch_await(
-      parent,
-      query,
-      :change,
-      fn ->
-        parent
-        |> find_lazy(query, &Element.clear/1)
-      end,
-      opts
-    )
-  end
+  def clear(parent, query), do: Form.clear(parent, query)
+  def clear(parent, query, opts) when is_list(opts), do: Form.clear(parent, query, opts)
 
   @doc """
   Attaches a file to a file input. Input elements are looked up by id, label text,
   or name.
   """
   @spec attach_file(parent, Query.t(), path: String.t()) :: parent
-  def attach_file(parent, query, path: path) do
-    set_value(parent, query, :filename.absname(path))
-  end
+  def attach_file(parent, query, path: path), do: Form.attach_file(parent, query, path: path)
 
   @doc """
   Takes a screenshot of the current window.
@@ -279,46 +191,8 @@ defmodule SurfBoard.Browser do
   """
   @type take_screenshot_opt :: {:name, String.t()} | {:log, boolean}
   @spec take_screenshot(parent, [take_screenshot_opt]) :: parent
-
-  def take_screenshot(screenshotable, opts \\ []) do
-    image_data = raw_screenshot(get_session(screenshotable), screenshotable)
-
-    name =
-      opts
-      |> Keyword.get(:name, :erlang.system_time())
-      |> to_string
-      |> remove_illegal_characters
-
-    path = path_for_screenshot(name)
-
-    try do
-      write_screenshot!(path, image_data)
-
-      if opts[:log] do
-        IO.puts("Screenshot taken, find it at #{build_file_url(path)}")
-      end
-
-      Map.update(screenshotable, :screenshots, [], &(&1 ++ [path]))
-    rescue
-      _ ->
-        IO.puts("\nFailed to make a screenshot")
-
-        screenshotable
-    end
-  end
-
-  defp remove_illegal_characters(string), do: String.replace(string, ~r{<>:"/\\\?\*}, "")
-
-  # Take a full-page screenshot. Returns the raw binary (the Driver
-  # contract callers expect), "" on error rather than raising.
-  defp raw_screenshot(%Session{} = session, %Session{}) do
-    case spec(session).wire_protocol.take_screenshot(session) do
-      {:ok, binary} -> binary
-      _ -> ""
-    end
-  end
-
-  defp raw_screenshot(%Session{} = session, %Element{}), do: raw_screenshot(session, session)
+  def take_screenshot(screenshotable, opts \\ []),
+    do: Screenshot.take_screenshot(screenshotable, opts)
 
   @doc """
   Grants media permissions (`:camera`, `:microphone`) for `session`, so a
@@ -339,15 +213,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec grant_permissions(session, [:camera | :microphone]) :: :ok | {:error, term}
-  def grant_permissions(%Session{} = session, permissions) when is_list(permissions) do
-    case spec(session).grant_permissions do
-      SurfBoard.Permissions.Unsupported ->
-        raise SurfBoard.DriverError.not_supported("grant_permissions/2", session.spec_module)
-
-      mod ->
-        mod.grant_permissions(session, permissions)
-    end
-  end
+  def grant_permissions(%Session{} = session, permissions) when is_list(permissions),
+    do: Form.grant_permissions(session, permissions)
 
   @doc """
   Gets the window handle of the current window.
@@ -377,11 +244,7 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec window_handle(session :: Session.t()) :: String.t()
-  def window_handle(%Session{} = session) do
-    {:ok, handle} = spec(session).windows.window_handle(session)
-
-    handle
-  end
+  def window_handle(%Session{} = session), do: Windows.window_handle(session)
 
   @doc """
   Gets the window handles of all available windows.
@@ -404,11 +267,7 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec window_handles(session :: Session.t()) :: [String.t()]
-  def window_handles(%Session{} = session) do
-    {:ok, handles} = spec(session).windows.window_handles(session)
-
-    handles
-  end
+  def window_handles(%Session{} = session), do: Windows.window_handles(session)
 
   @doc """
   Focuses the window identified by the given handle.
@@ -436,11 +295,8 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec focus_window(session :: Session.t(), window_handle :: String.t()) :: parent
-  def focus_window(%Session{} = session, window_handle) do
-    {:ok, _} = spec(session).windows.focus_window(session, window_handle)
-
-    session
-  end
+  def focus_window(%Session{} = session, window_handle),
+    do: Windows.focus_window(session, window_handle)
 
   @doc """
   Closes the current window.
@@ -468,11 +324,7 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec close_window(session :: Session.t()) :: Session.t()
-  def close_window(%Session{} = session) do
-    {:ok, _} = spec(session).windows.close_window(session)
-
-    session
-  end
+  def close_window(%Session{} = session), do: Windows.close_window(session)
 
   @doc """
   Gets the size of the current window.
@@ -499,11 +351,7 @@ defmodule SurfBoard.Browser do
           String.t() => pos_integer,
           String.t() => pos_integer
         }
-  def window_size(%Session{} = session) do
-    case spec(session).wire_protocol.get_window_size(session) do
-      {:ok, %{width: w, height: h}} -> %{"width" => w, "height" => h}
-    end
-  end
+  def window_size(%Session{} = session), do: Windows.window_size(session)
 
   @doc """
   Sets the size of the current window.
@@ -527,11 +375,8 @@ defmodule SurfBoard.Browser do
   """
   @spec resize_window(session :: Session.t(), width :: pos_integer(), height :: pos_integer()) ::
           Session.t()
-  def resize_window(%Session{} = session, width, height) do
-    {:ok, _} = spec(session).wire_protocol.set_window_size(session, width, height)
-
-    session
-  end
+  def resize_window(%Session{} = session, width, height),
+    do: Windows.resize_window(session, width, height)
 
   @doc """
   Maximizes the current window.
@@ -556,7 +401,7 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec maximize_window(session :: Session.t()) :: Session.t()
-  def maximize_window(%Session{} = session), do: session
+  def maximize_window(%Session{} = session), do: Windows.maximize_window(session)
 
   @doc """
   Gets the position of the current window.
@@ -581,7 +426,7 @@ defmodule SurfBoard.Browser do
           String.t() => pos_integer,
           String.t() => pos_integer
         }
-  def window_position(%Session{}), do: %{"x" => 0, "y" => 0}
+  def window_position(%Session{} = session), do: Windows.window_position(session)
 
   @doc """
   Sets the position of the current window.
@@ -604,66 +449,43 @@ defmodule SurfBoard.Browser do
   ```
   """
   @spec move_window(session :: Session.t(), x :: pos_integer(), y :: pos_integer()) :: Session.t()
-  def move_window(%Session{} = session, _x, _y), do: session
+  def move_window(%Session{} = session, x, y), do: Windows.move_window(session, x, y)
 
   @doc """
   Changes the driver focus to the frame found by query.
   """
   @spec focus_frame(parent, Query.t()) :: parent
-  def focus_frame(%Session{} = session, %Query{} = query) do
-    session
-    |> find(query, &spec(session).frames.focus_frame(session, &1))
-  end
+  def focus_frame(%Session{} = session, %Query{} = query), do: Windows.focus_frame(session, query)
 
   @doc """
   Changes the driver focus to the parent frame.
   """
   @spec focus_parent_frame(parent) :: parent
-
-  def focus_parent_frame(%Session{} = session) do
-    {:ok, _} = spec(session).frames.focus_parent_frame(session)
-    session
-  end
+  def focus_parent_frame(%Session{} = session), do: Windows.focus_parent_frame(session)
 
   @doc """
   Changes the driver focus to the default (top level) frame.
   """
   @spec focus_default_frame(parent) :: parent
-
-  def focus_default_frame(%Session{} = session) do
-    {:ok, _} = spec(session).frames.focus_frame(session, nil)
-    session
-  end
+  def focus_default_frame(%Session{} = session), do: Windows.focus_default_frame(session)
 
   @doc """
   Gets the current url of the session
   """
   @spec current_url(parent) :: String.t()
-
-  def current_url(%Session{} = session) do
-    {:ok, url} = spec(session).wire_protocol.current_url(session)
-    url
-  end
+  def current_url(%Session{} = session), do: Navigation.current_url(session)
 
   @doc """
   Gets the current path of the session
   """
   @spec current_path(parent) :: String.t()
-
-  def current_path(%Session{} = session) do
-    {:ok, path} = spec(session).wire_protocol.current_path(session)
-    path
-  end
+  def current_path(%Session{} = session), do: Navigation.current_path(session)
 
   @doc """
   Gets the title for the current page
   """
   @spec page_title(parent) :: String.t()
-
-  def page_title(%Session{} = session) do
-    {:ok, title} = spec(session).wire_protocol.page_title(session)
-    title
-  end
+  def page_title(%Session{} = session), do: Navigation.page_title(session)
 
   @doc """
   Executes JavaScript synchronously, taking as arguments the script to execute,
@@ -674,26 +496,14 @@ defmodule SurfBoard.Browser do
   @spec execute_script(parent, String.t(), list) :: parent
   @spec execute_script(parent, String.t(), (binary() -> any())) :: parent
   @spec execute_script(parent, String.t(), list, (binary() -> any())) :: parent
+  def execute_script(session, script),
+    do: SurfBoard.Browser.Script.execute_script(session, script)
 
-  def execute_script(session, script) do
-    execute_script(session, script, [])
-  end
+  def execute_script(session, script, arguments_or_callback),
+    do: SurfBoard.Browser.Script.execute_script(session, script, arguments_or_callback)
 
-  def execute_script(session, script, arguments) when is_list(arguments) do
-    execute_script(session, script, arguments, fn _ -> nil end)
-  end
-
-  def execute_script(session, script, callback) when is_function(callback) do
-    execute_script(session, script, [], callback)
-  end
-
-  def execute_script(%Session{} = parent, script, arguments, callback)
-      when is_list(arguments) and is_function(callback) do
-    parent = maybe_snapshot_page_id(parent)
-    {:ok, value} = spec(parent).wire_protocol.evaluate(parent, script, arguments)
-    callback.(value)
-    parent
-  end
+  def execute_script(session, script, arguments, callback),
+    do: SurfBoard.Browser.Script.execute_script(session, script, arguments, callback)
 
   @doc """
   Executes asynchronous JavaScript, taking as arguments the script to execute,
@@ -704,25 +514,14 @@ defmodule SurfBoard.Browser do
   @spec execute_script_async(parent, String.t(), list) :: parent
   @spec execute_script_async(parent, String.t(), (binary() -> any())) :: parent
   @spec execute_script_async(parent, String.t(), list, (binary() -> any())) :: parent
+  def execute_script_async(session, script),
+    do: SurfBoard.Browser.Script.execute_script_async(session, script)
 
-  def execute_script_async(session, script) do
-    execute_script_async(session, script, [])
-  end
+  def execute_script_async(session, script, arguments_or_callback),
+    do: SurfBoard.Browser.Script.execute_script_async(session, script, arguments_or_callback)
 
-  def execute_script_async(session, script, arguments) when is_list(arguments) do
-    execute_script_async(session, script, arguments, fn _ -> nil end)
-  end
-
-  def execute_script_async(session, script, callback) when is_function(callback) do
-    execute_script_async(session, script, [], callback)
-  end
-
-  def execute_script_async(%Session{} = parent, script, arguments, callback)
-      when is_list(arguments) and is_function(callback) do
-    {:ok, value} = spec(parent).wire_protocol.evaluate_async(parent, script, arguments)
-    callback.(value)
-    parent
-  end
+  def execute_script_async(session, script, arguments, callback),
+    do: SurfBoard.Browser.Script.execute_script_async(session, script, arguments, callback)
 
   @doc """
   Sends a list of key strokes to active element. If strings are included
@@ -746,44 +545,14 @@ defmodule SurfBoard.Browser do
   """
   @spec send_keys(parent, Query.t(), Element.keys_to_send()) :: parent
   @spec send_keys(parent, Element.keys_to_send()) :: parent
-
-  def send_keys(parent, query, list) do
-    with_patch_await(parent, query, :change, fn ->
-      find_lazy(parent, query, fn element ->
-        element
-        |> Element.send_keys(list)
-      end)
-    end)
-  end
-
-  def send_keys(%Element{} = element, keys) do
-    Element.send_keys(element, keys)
-  end
-
-  def send_keys(parent, keys) when is_binary(keys) do
-    send_keys(parent, [keys])
-  end
-
-  def send_keys(%Session{} = parent, keys) when is_list(keys) do
-    case spec(parent).send_keys_session do
-      SurfBoard.SendKeysSession.Unsupported ->
-        raise SurfBoard.DriverError.not_supported("send_keys/2", parent.spec_module)
-
-      mod ->
-        {:ok, _} = mod.send_keys_to_session(parent, keys)
-        parent
-    end
-  end
+  def send_keys(parent, query, list), do: Form.send_keys(parent, query, list)
+  def send_keys(parent, keys), do: Form.send_keys(parent, keys)
 
   @doc """
   Retrieves the source of the current page.
   """
   @spec page_source(parent) :: String.t()
-
-  def page_source(%Session{} = session) do
-    {:ok, source} = spec(session).wire_protocol.page_source(session)
-    source
-  end
+  def page_source(%Session{} = session), do: Navigation.page_source(session)
 
   @doc """
   The HTTP status code of the most recently visited page.
@@ -800,12 +569,7 @@ defmodule SurfBoard.Browser do
 
   """
   @spec status(session) :: non_neg_integer() | nil
-  def status(%Session{} = session) do
-    case last_response(session) do
-      %{status: status} -> status
-      _ -> nil
-    end
-  end
+  def status(%Session{} = session), do: Navigation.status(session)
 
   @doc """
   Response headers of the most recently visited page, as a map with
@@ -817,18 +581,7 @@ defmodule SurfBoard.Browser do
 
   """
   @spec response_headers(session) :: %{String.t() => String.t()} | nil
-  def response_headers(%Session{} = session) do
-    case last_response(session) do
-      %{headers: headers} when is_map(headers) -> headers
-      _ -> nil
-    end
-  end
-
-  defp last_response(%Session{} = session) do
-    if remote_session?(session) do
-      SurfBoard.Transport.Protocol.last_response(session)
-    end
-  end
+  def response_headers(%Session{} = session), do: Navigation.response_headers(session)
 
   @doc """
   Sets the value of an element. The allowed type for the value depends on the
@@ -838,45 +591,7 @@ defmodule SurfBoard.Browser do
   * :unselected for a checkbox
   """
   @spec set_value(parent, Query.t(), Element.value()) :: parent
-
-  def set_value(parent, query, :selected) do
-    if remote_session?(get_session(parent)) do
-      find_lazy(parent, query, fn element ->
-        session = SurfBoard.Element.root_session(element)
-        spec(session).wire_protocol.set_checked(session, element, true)
-      end)
-    else
-      find(parent, query, fn element ->
-        case Element.selected?(element) do
-          true -> :ok
-          false -> Element.click(element)
-        end
-      end)
-    end
-  end
-
-  def set_value(parent, query, :unselected) do
-    if remote_session?(get_session(parent)) do
-      find_lazy(parent, query, fn element ->
-        session = SurfBoard.Element.root_session(element)
-        spec(session).wire_protocol.set_checked(session, element, false)
-      end)
-    else
-      find(parent, query, fn element ->
-        case Element.selected?(element) do
-          false -> :ok
-          true -> Element.click(element)
-        end
-      end)
-    end
-  end
-
-  def set_value(parent, query, value) do
-    find_lazy(parent, query, fn element ->
-      element
-      |> Element.set_value(value)
-    end)
-  end
+  def set_value(parent, query, value), do: Form.set_value(parent, query, value)
 
   @doc """
   Clicks the mouse on the element returned by the query or at the
@@ -902,287 +617,77 @@ defmodule SurfBoard.Browser do
   @spec click(parent, :left | :middle | :right) :: parent
   @spec click(parent, Query.t()) :: parent
   @spec click(parent, Query.t(), keyword) :: parent
-  def click(parent, button) when button in [:left, :middle, :right] do
-    case spec(parent).wire_protocol.click_at_cursor(parent, button) do
-      {:ok, _} ->
-        parent
-    end
-  end
-
-  def click(parent, query) do
-    click(parent, query, [])
-  end
-
-  def click(parent, query, opts) when is_list(opts) do
-    case Keyword.get(opts, :await, :auto) do
-      :defer -> click_deferred(parent, query)
-      _ -> click_auto(parent, query)
-    end
-  end
-
-  defp click_auto(parent, query) do
-    session = get_session(parent)
-
-    # Lightpanda: route through CDPClient.click_aware which captures
-    # pre_page_id, classifies, clicks, awaits page_ready — same shape
-    # as do_post_click but in one native call. Avoids the post-click
-    # `find` polling fallback that cost LP ~3s per submit-form click.
-    #
-    # Chrome CDP / BiDi: Element.click's own classify + patch-await +
-    # navigation/page-ready logic already handles this.
-    # No outer with_patch_await needed — wrapping it would double-wait.
-    if session && session.spec_module == SurfBoard.Specs.LightpandaCDP &&
-         not in_frame?(session) && not in_switched_window?(session) do
-      click_with_page_await(parent, query)
-    else
-      parent |> find(query, &Element.click/1)
-    end
-  end
-
-  # Deferred click: fire the click via the Orchestrator's
-  # `click_deferred/2` which returns immediately after dispatching
-  # without awaiting `page_ready`. Stash the captured pre-click
-  # `pageId` on the session so `SurfBoard.LiveView.await_patch/2`
-  # can drain the wait later.
-  #
-  # In-process LV driver: defer is a no-op (renders synchronously),
-  # so just delegate to auto.
-  defp click_deferred(parent, query) do
-    session = get_session(parent)
-
-    # No spec (LV driver, or unusual session shape) → fall through to the
-    # normal click; there's no awaiting machinery to skip.
-    if is_nil(session) or is_nil(session.spec) do
-      click_auto(parent, query)
-    else
-      case find_lazy(parent, query) do
-        %Element{} = element ->
-          case do_click_deferred(session, element) do
-            {:ok, pre_page_id} ->
-              %{session | pending_await: {:page_ready_after, pre_page_id}}
-
-            {:error, _} ->
-              # Click dispatch failed (e.g. transport issue). Don't stash a
-              # half-baked await — fall back to whatever surface error
-              # handling the assertion does.
-              session
-          end
-
-        other ->
-          other
-      end
-    end
-  end
-
-  # Fires the click and returns immediately after dispatching, without
-  # awaiting the bootstrap's page_ready signal. Returns {:ok,
-  # pre_page_id} so the caller can stash it on the session and drain
-  # the wait later via SurfBoard.LiveView.await_patch/2. Falls back to
-  # a plain click (no classify, no wait) when the session isn't
-  # live_view_aware? — there's no awaiting machinery to skip, so
-  # :defer collapses to the normal path.
-  defp do_click_deferred(%Session{} = session, %Element{} = element) do
-    wire = spec(session).wire_protocol
-
-    if session.live_view_aware? do
-      # Stash pre_page_id via a closure-capture sink — the underlying
-      # call returns {:ok, classification, :deferred}, and we want the
-      # pre_page_id back. A 1-arity sink keeps the call signature
-      # explicit without leaking a tuple shape change.
-      ref = make_ref()
-      parent_pid = self()
-
-      sink = fn pre_page_id ->
-        send(parent_pid, {ref, :pre_page_id, pre_page_id})
-      end
-
-      result =
-        wire.click_aware_with_classification(session, element,
-          await: false,
-          pre_page_id_sink: sink
-        )
-
-      pre_page_id =
-        receive do
-          {^ref, :pre_page_id, id} -> id
-        after
-          0 -> nil
-        end
-
-      case result do
-        {:ok, _classification, :deferred} -> {:ok, pre_page_id}
-        {:ok, _classification, :ready} -> {:ok, pre_page_id}
-        {:error, _} = err -> err
-      end
-    else
-      case wire.click(session, element) do
-        {:ok, _} -> {:ok, nil}
-        err -> err
-      end
-    end
-  end
-
-  # click path: find the element, then route the click through
-  # CDPClient.click_aware which:
-  #   1. captures pre_page_id from the bootstrap
-  #   2. classifies the click (patch / navigate / full_page / none)
-  #   3. dispatches the click via JS
-  #   4. for non-"none" classifications, awaits the bootstrap's
-  #      page_ready notification on the new document (push-based, no
-  #      polling)
-  defp click_with_page_await(parent, query) do
-    # Use find_lazy: click_aware does two element ops on the result and
-    # discards it. Lazy saves the ref-fetch round-trip at find time
-    # (the V8 ref isn't needed — each subsequent op re-resolves via the
-    # spliced query+target ops in W.run).
-    case find_lazy(parent, query) do
-      %SurfBoard.Element{} = element ->
-        case click_aware_client(element.parent).click_aware(element.parent, element) do
-          {:ok, _classification} ->
-            parent
-
-          {:error, :timeout} ->
-            # Page-ready timeout: the click ran but no page_ready
-            # arrived. Fall through; subsequent assertions will retry
-            # via their own polling.
-            parent
-
-          {:error, _} ->
-            find_lazy(parent, query, &Element.click/1)
-            parent
-        end
-
-      _ ->
-        parent |> find_lazy(query, &Element.click/1)
-    end
-  end
-
-  # Pick the client module that owns a given session's transport.
-  # CDP and BiDi expose the same `click_aware/2` shape, so callers
-  # can invoke `mod.click_aware(...)` uniformly.
-  defp click_aware_client(%SurfBoard.Session{spec_module: SurfBoard.Specs.ChromeBiDi}),
-    do: SurfBoard.Clients.BiDi.Client
-
-  defp click_aware_client(_), do: SurfBoard.Clients.CDP.Client
+  def click(parent, button_or_query), do: Mouse.click(parent, button_or_query)
+  def click(parent, query, opts) when is_list(opts), do: Mouse.click(parent, query, opts)
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.
   """
   @spec double_click(parent) :: parent
-  def double_click(parent) do
-    case spec(parent).wire_protocol.double_click(parent) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def double_click(parent), do: Mouse.double_click(parent)
 
   @doc """
    Clicks and holds the given mouse button at the current mouse coordinates.
   """
   @spec button_down(parent, atom) :: parent
-  def button_down(parent, button \\ :left) when button in [:left, :middle, :right] do
-    case spec(parent).wire_protocol.button_down(parent, button) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def button_down(parent, button \\ :left), do: Mouse.button_down(parent, button)
 
   @doc """
    Releases given previously held mouse button.
   """
   @spec button_up(parent, atom) :: parent
-  def button_up(parent, button \\ :left) when button in [:left, :middle, :right] do
-    case spec(parent).wire_protocol.button_up(parent, button) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def button_up(parent, button \\ :left), do: Mouse.button_up(parent, button)
 
   @doc """
   Hovers over an element.
   """
   @spec hover(parent, Query.t()) :: parent
-  def hover(parent, query) do
-    parent
-    |> find(query, &Element.hover/1)
-  end
+  def hover(parent, query), do: Mouse.hover(parent, query)
 
   @doc """
   Moves mouse by an offset relative to current cursor position.
   """
   @spec move_mouse_by(parent, integer, integer) :: parent
-  def move_mouse_by(parent, x_offset, y_offset) do
-    case spec(parent).wire_protocol.move_mouse_by(parent, x_offset, y_offset) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def move_mouse_by(parent, x_offset, y_offset),
+    do: Mouse.move_mouse_by(parent, x_offset, y_offset)
 
   @doc """
   Touches the screen at the given position.
   """
   @spec touch_down(parent, integer, integer) :: session
-
-  def touch_down(parent, x, y) when is_integer(x) and is_integer(y) do
-    case spec(parent).wire_protocol.touch_down(Element.root_session(parent), nil, x, y) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def touch_down(parent, x, y) when is_integer(x) and is_integer(y),
+    do: Mouse.touch_down(parent, x, y)
 
   @doc """
   Touches and holds the element on its top-left corner plus an optional offset.
   """
   @spec touch_down(parent, Query.t(), integer, integer) :: session
-
-  def touch_down(parent, query, x_offset \\ 0, y_offset \\ 0) do
-    parent
-    |> find(query, &Element.touch_down(&1, x_offset, y_offset))
-  end
+  def touch_down(parent, query, x_offset \\ 0, y_offset \\ 0),
+    do: Mouse.touch_down(parent, query, x_offset, y_offset)
 
   @doc """
   Stops touching the screen.
   """
   @spec touch_up(parent) :: parent
-
-  def touch_up(parent) do
-    case spec(parent).wire_protocol.touch_up(parent) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def touch_up(parent), do: Mouse.touch_up(parent)
 
   @doc """
   Taps the element.
   """
   @spec tap(parent, Query.t()) :: session
-
-  def tap(parent, query) do
-    parent
-    |> find(query, &Element.tap/1)
-  end
+  def tap(parent, query), do: Mouse.tap(parent, query)
 
   @doc """
   Moves the touch pointer (finger, stylus etc.) on the screen to the point determined by the given coordinates.
   """
   @spec touch_move(parent, non_neg_integer, non_neg_integer) :: parent
-
-  def touch_move(parent, x, y) do
-    case spec(parent).wire_protocol.touch_move(parent, x, y) do
-      {:ok, _} ->
-        parent
-    end
-  end
+  def touch_move(parent, x, y), do: Mouse.touch_move(parent, x, y)
 
   @doc """
   Scroll on the screen from the given element by the given offset using touch events.
   """
   @spec touch_scroll(parent, Query.t(), integer, integer) :: parent
-
-  def touch_scroll(parent, query, x, y) do
-    parent
-    |> find(query, &Element.touch_scroll(&1, x, y))
-  end
+  def touch_scroll(parent, query, x, y), do: Mouse.touch_scroll(parent, query, x, y)
 
   @doc """
   Gets the Element's text value.
@@ -1191,46 +696,26 @@ defmodule SurfBoard.Browser do
   """
   @spec text(parent) :: String.t()
   @spec text(parent, Query.t()) :: String.t()
-  def text(parent, query) do
-    parent
-    |> find_lazy(query)
-    |> Element.text()
-  end
-
-  def text(%Session{} = session) do
-    session
-    |> find_lazy(Query.css("body"))
-    |> Element.text()
-  end
+  def text(parent), do: BrowserQuery.text(parent)
+  def text(parent, query), do: BrowserQuery.text(parent, query)
 
   @doc """
   Gets the value of the elements attribute.
   """
   @spec attr(parent, Query.t(), String.t()) :: String.t() | nil
-  def attr(parent, query, name) do
-    parent
-    |> find_lazy(query)
-    |> Element.attr(name)
-  end
+  def attr(parent, query, name), do: BrowserQuery.attr(parent, query, name)
 
   @doc """
   Checks if the element has been selected. Alias for checked?(element)
   """
   @spec selected?(parent, Query.t()) :: boolean()
-  def selected?(parent, query) do
-    parent
-    |> find_lazy(query)
-    |> Element.selected?()
-  end
+  def selected?(parent, query), do: BrowserQuery.selected?(parent, query)
 
   @doc """
   Checks if the element is visible on the page
   """
   @spec visible?(parent, Query.t()) :: boolean()
-  def visible?(parent, query) do
-    parent
-    |> has?(query)
-  end
+  def visible?(parent, query), do: BrowserQuery.visible?(parent, query)
 
   @doc """
   Finds and returns one or more DOM element(s) on the page based on the given query.
@@ -1259,84 +744,7 @@ defmodule SurfBoard.Browser do
   - By default only elements that would be visible to a real user on the page are returned.
   """
   @spec find(parent, Query.t()) :: Element.t() | [Element.t()]
-  def find(parent, %Query{} = query) do
-    do_find(parent, query, current_time())
-  end
-
-  # Callback form of find_lazy/2: mirrors find/3 but elements are lazy.
-  # Caller's callback runs against the lazy element and the parent is
-  # returned for piping. The callback may invoke any Element op that
-  # routes through call_on_element — pointer/touch ops and frame focus
-  # need eager refs and should not be on the lazy path.
-  defp find_lazy(parent, %Query{} = query, callback) when is_function(callback) do
-    results = find_lazy(parent, query)
-    callback.(results)
-    parent
-  end
-
-  # Internal find that returns lazy Elements (no V8 ref-fetch round
-  # trip). Use only when the caller will discard the elements after
-  # one or two ops — e.g. Browser.text/2, attr/3. Subsequent ops on
-  # lazy elements re-resolve via [query, target N] inside W.run.
-  #
-  # Falls back to eager find inside a frame or a non-default window,
-  # since the lazy path's [query, target N] re-resolution isn't taught
-  # about frame/window scoping yet (every current driver's wire_protocol
-  # supports the pipeline itself — see remote_session?/1).
-  defp find_lazy(parent, %Query{} = query) do
-    session = get_session(parent)
-
-    if remote_session?(session) && not in_frame?(session) && not in_switched_window?(session) do
-      do_find_lazy(parent, query, current_time())
-    else
-      do_find(parent, query, current_time())
-    end
-  end
-
-  defp do_find_lazy(parent, query, start_time),
-    do: do_find_with(parent, query, start_time, lazy: true)
-
-  # The find path can return :stale_reference when a concurrent
-  # navigation cleared `window.__w.queries` between the count
-  # notification and the element fetch, OR when the find itself timed
-  # out but the elements actually exist (sync recheck found > 0). In
-  # both cases the right move is to re-run the whole query against the
-  # current page — the query budget bounds the total wait.
-  defp do_find(parent, query, start_time),
-    do: do_find_with(parent, query, start_time, [])
-
-  # Single retry loop shared by do_find and do_find_lazy. Differs only
-  # in the `opts` passed to execute_query (lazy: true for the lazy
-  # path).
-  defp do_find_with(parent, query, start_time, opts) do
-    case execute_query(parent, query, opts) do
-      {:ok, query} ->
-        Query.result(query)
-
-      {:error, :stale_reference} ->
-        # `wait: 0` means "the DOM as it is right now", so don't re-query
-        # past a stale element either — that would be waiting.
-        if Query.wait(query) == 0 or max_time_exceeded?(get_session(parent), start_time) do
-          raise SurfBoard.QueryError, ErrorMessage.message(query, :not_found)
-        else
-          do_find_with(parent, query, start_time, opts)
-        end
-
-      {:error, {:not_found, result}} ->
-        query = %{query | result: result}
-
-        case validate_html(parent, query) do
-          {:ok, _} ->
-            raise SurfBoard.QueryError, ErrorMessage.message(query, :not_found)
-
-          {:error, html_error} ->
-            raise SurfBoard.QueryError, ErrorMessage.message(query, html_error)
-        end
-
-      {:error, e} ->
-        raise SurfBoard.QueryError, ErrorMessage.message(query, e)
-    end
-  end
+  def find(parent, %Query{} = query), do: BrowserQuery.find(parent, query)
 
   @doc """
   Same as `find/2`, but takes a callback to enact side effects on the found element(s).
@@ -1361,12 +769,8 @@ defmodule SurfBoard.Browser do
   - Returns the first argument to make the function pipe-able.
   """
   @spec find(parent, Query.t(), (Element.t() -> any())) :: parent
-  def find(parent, %Query{} = query, callback) when is_function(callback) do
-    results = find(parent, query)
-    callback.(results)
-
-    parent
-  end
+  def find(parent, %Query{} = query, callback) when is_function(callback),
+    do: BrowserQuery.find(parent, query, callback)
 
   @doc """
   Finds all of the DOM elements that match the CSS selector. If no elements are
@@ -1374,62 +778,22 @@ defmodule SurfBoard.Browser do
   `find(session, css("element", count: nil, minimum: 0))`.
   """
   @spec all(parent, Query.t()) :: [Element.t()]
-  def all(parent, %Query{} = query) do
-    find(
-      parent,
-      %{query | conditions: Keyword.merge(query.conditions, count: nil, minimum: 0)}
-    )
-  end
+  def all(parent, %Query{} = query), do: BrowserQuery.all(parent, query)
 
   @doc """
   Validates that the query returns a result. This can be used to define other
   types of matchers.
   """
   @spec has?(parent, Query.t()) :: boolean()
-  def has?(parent, query) do
-    case execute_query(parent, query) do
-      {:ok, _} -> true
-      {:error, _} -> false
-    end
-  end
+  def has?(parent, query), do: BrowserQuery.has?(parent, query)
 
   @doc """
   Matches the Element's value with the provided value.
   """
   @spec has_value?(parent, Query.t(), any()) :: boolean()
   @spec has_value?(Element.t(), any()) :: boolean()
-  def has_value?(parent, query, value) do
-    parent
-    |> find_lazy(query)
-    |> has_value?(value)
-  end
-
-  def has_value?(%Element{} = element, value) do
-    session = SurfBoard.Element.root_session(element)
-
-    if remote_session?(session) do
-      case spec(session).wire_protocol.await_value(
-             session,
-             element,
-             value,
-             max_wait_time(session)
-           ) do
-        {:ok, true} -> true
-        _ -> false
-      end
-    else
-      retry_match(fn -> Element.value(element) == value end)
-    end
-  end
-
-  defp retry_match(predicate) do
-    case retry(fn ->
-           if predicate.(), do: {:ok, true}, else: {:error, false}
-         end) do
-      {:ok, true} -> true
-      _ -> false
-    end
-  end
+  def has_value?(parent, query, value), do: BrowserQuery.has_value?(parent, query, value)
+  def has_value?(%Element{} = element, value), do: BrowserQuery.has_value?(element, value)
 
   @doc """
   Matches the parent's content with the provided text.
@@ -1454,65 +818,33 @@ defmodule SurfBoard.Browser do
   """
   @spec has_text?(parent, String.t()) :: boolean()
   @spec has_text?(parent, Query.t(), String.t()) :: boolean()
-  def has_text?(parent, query, text) do
-    parent
-    |> find_lazy(query)
-    |> has_text?(text)
-  end
+  def has_text?(parent, query, text), do: BrowserQuery.has_text?(parent, query, text)
 
-  def has_text?(%Session{} = session, text) when is_binary(text) do
-    session
-    |> find_lazy(Query.css("body"))
-    |> has_text?(text)
-  end
+  def has_text?(%Session{} = session, text) when is_binary(text),
+    do: BrowserQuery.has_text?(session, text)
 
-  def has_text?(%Element{} = element, text) when is_binary(text) do
-    session = SurfBoard.Element.root_session(element)
-
-    if remote_session?(session) do
-      # Single-RT await: V8 polls textContent with MutationObserver +
-      # onPatchEnd until match or timeout. Replaces an Elixir-side
-      # retry loop that polled Element.text every 25ms.
-      case spec(session).wire_protocol.await_text(session, element, text, max_wait_time(session)) do
-        {:ok, true} -> true
-        _ -> false
-      end
-    else
-      retry_match(fn -> Element.text(element) =~ text end)
-    end
-  end
+  def has_text?(%Element{} = element, text) when is_binary(text),
+    do: BrowserQuery.has_text?(element, text)
 
   @doc """
   Searches for CSS on the page.
   """
   @spec has_css?(parent, Query.t(), String.t()) :: boolean()
   @spec has_css?(parent, String.t()) :: boolean()
-  def has_css?(parent, query, css) when is_binary(css) do
-    parent
-    |> find(query)
-    |> has?(Query.css(css, count: :any))
-  end
+  def has_css?(parent, query, css) when is_binary(css),
+    do: BrowserQuery.has_css?(parent, query, css)
 
-  def has_css?(parent, css) when is_binary(css) do
-    parent
-    |> has?(Query.css(css, count: :any))
-  end
+  def has_css?(parent, css) when is_binary(css), do: BrowserQuery.has_css?(parent, css)
 
   @doc """
   Searches for CSS that should not be on the page
   """
   @spec has_no_css?(parent, Query.t(), String.t()) :: boolean()
   @spec has_no_css?(parent, String.t()) :: boolean()
-  def has_no_css?(parent, query, css) when is_binary(css) do
-    parent
-    |> find(query)
-    |> has?(Query.css(css, count: 0))
-  end
+  def has_no_css?(parent, query, css) when is_binary(css),
+    do: BrowserQuery.has_no_css?(parent, query, css)
 
-  def has_no_css?(parent, css) when is_binary(css) do
-    parent
-    |> has?(Query.css(css, count: 0))
-  end
+  def has_no_css?(parent, css) when is_binary(css), do: BrowserQuery.has_no_css?(parent, css)
 
   @doc """
   Changes the current page to the provided route.
@@ -1528,85 +860,14 @@ defmodule SurfBoard.Browser do
   successfully and raises nothing.
   """
   @spec visit(session, String.t()) :: session
-  def visit(%Session{} = session, path) do
-    uri = URI.parse(path)
+  def visit(%Session{} = session, path), do: Navigation.visit(session, path)
 
-    result =
-      cond do
-        uri.host == nil && String.length(base_url(session)) == 0 ->
-          raise NoBaseUrlError, path
+  @doc false
+  def cookies(%Session{} = session), do: Cookies.cookies(session)
 
-        uri.host ->
-          do_visit(session, path)
-
-        true ->
-          do_visit(session, request_url(session, path))
-      end
-
-    case result do
-      {:error, reason} ->
-        raise SurfBoard.NavigationError, %{url: path, reason: reason}
-
-      _ ->
-        :ok
-    end
-
-    # Opt-in only (`live_view_aware: true`): wait for the LiveView client
-    # to connect (near-instant once joined). A plain scraping/automation
-    # session skips this entirely — it's a LiveView-specific concern, not
-    # something every remote-driver visit should pay for. Best-effort:
-    # the result is advisory, downstream actions still auto-wait.
-    if session.live_view_aware? and remote_session?(session) do
-      _ = SurfBoard.LiveViewAware.await_liveview_connected(session)
-    end
-
-    session
-  end
-
-  # Navigate + log-check wrap (spec.log_check_interactions?) +
-  # LiveView-connect await when live_view_aware? — the same await as
-  # visit/2's own outer one above (gated on live_view_aware? alone here
-  # vs. live_view_aware? and remote_session? there). Both run; this
-  # mirrors the pre-existing Orchestrator.visit/3 behavior exactly
-  # rather than removing what looks like a redundant second await.
-  defp do_visit(%Session{} = session, url) do
-    spec = spec(session)
-
-    flow = fn ->
-      result = spec.wire_protocol.visit(session, url)
-
-      if session.live_view_aware?,
-        do: _ = SurfBoard.LiveViewAware.await_liveview_connected(session)
-
-      result
-    end
-
-    SurfBoard.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
-  end
-
-  def cookies(%Session{} = session) do
-    {:ok, cookies_list} = spec(session).wire_protocol.cookies(session)
-
-    cookies_list
-  end
-
-  def set_cookie(%Session{} = session, key, value, attributes \\ []) do
-    if blank_page?(session) do
-      raise CookieError
-    end
-
-    case spec(session).wire_protocol.set_cookie(session, key, value, Map.new(attributes)) do
-      {:ok, _list} ->
-        session
-
-      {:error, :invalid_cookie_domain} ->
-        raise CookieError
-    end
-  end
-
-  defp blank_page?(%Session{} = session) do
-    spec(session).wire_protocol.blank_page?(session)
-  end
+  @doc false
+  def set_cookie(%Session{} = session, key, value, attributes \\ []),
+    do: Cookies.set_cookie(session, key, value, attributes)
 
   @doc """
   Accepts one alert dialog, which must be triggered within the specified `fun`.
@@ -1618,9 +879,7 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def accept_alert(%Session{} = session, fun) do
-    spec(session).dialogs.accept_alert(session, fun)
-  end
+  def accept_alert(%Session{} = session, fun), do: Dialogs.accept_alert(session, fun)
 
   @doc """
   Accepts one confirmation dialog, which must be triggered within the specified
@@ -1632,9 +891,7 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def accept_confirm(%Session{} = session, fun) do
-    spec(session).dialogs.accept_confirm(session, fun)
-  end
+  def accept_confirm(%Session{} = session, fun), do: Dialogs.accept_confirm(session, fun)
 
   @doc """
   Dismisses one confirmation dialog, which must be triggered within the
@@ -1647,9 +904,7 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def dismiss_confirm(%Session{} = session, fun) do
-    spec(session).dialogs.dismiss_confirm(session, fun)
-  end
+  def dismiss_confirm(%Session{} = session, fun), do: Dialogs.dismiss_confirm(session, fun)
 
   @doc """
   Accepts one prompt, which must be triggered within the specified `fun`. The
@@ -1672,17 +927,10 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def accept_prompt(%Session{} = session, fun) do
-    do_accept_prompt(session, nil, fun)
-  end
+  def accept_prompt(%Session{} = session, fun), do: Dialogs.accept_prompt(session, fun)
 
-  def accept_prompt(%Session{} = session, [with: input_value], fun) when is_binary(input_value) do
-    do_accept_prompt(session, input_value, fun)
-  end
-
-  defp do_accept_prompt(%Session{} = session, input_value, fun) do
-    spec(session).dialogs.accept_prompt(session, input_value, fun)
-  end
+  def accept_prompt(%Session{} = session, [with: input_value], fun) when is_binary(input_value),
+    do: Dialogs.accept_prompt(session, [with: input_value], fun)
 
   @doc """
   Dismisses one prompt, which must be triggered within the specified `fun`.
@@ -1694,279 +942,11 @@ defmodule SurfBoard.Browser do
   end
   ```
   """
-  def dismiss_prompt(%Session{} = session, fun) do
-    spec(session).dialogs.dismiss_prompt(session, fun)
-  end
+  def dismiss_prompt(%Session{} = session, fun), do: Dialogs.dismiss_prompt(session, fun)
 
-  defp validate_html(parent, %{html_validation: :button_type} = query) do
-    buttons = all(parent, Query.css("button", text: query.selector))
-
-    if Enum.count(buttons) == 1 do
-      {:error, :button_with_bad_type}
-    else
-      {:ok, query}
-    end
-  end
-
-  defp validate_html(parent, %{html_validation: :bad_label} = query) do
-    label_query = Query.css("label", text: query.selector)
-    labels = all(parent, label_query)
-
-    case labels do
-      [label] ->
-        for_attr = Element.attr(label, "for")
-
-        error =
-          if for_attr == nil do
-            :label_with_no_for
-          else
-            id_query = Query.css("[id='#{for_attr}']", count: :any)
-            matching_id_count = parent |> all(id_query) |> Enum.count()
-
-            {:label_does_not_find_field, for_attr, matching_id_count}
-          end
-
-        {:error, error}
-
-      _ ->
-        {:ok, query}
-    end
-  end
-
-  defp validate_html(_, query), do: {:ok, query}
-
-  defp validate_visibility(query, elements) do
-    case Query.visible?(query) do
-      :any ->
-        {:ok, elements}
-
-      true ->
-        {:ok, Enum.filter(elements, &Element.visible?(&1))}
-
-      false ->
-        {:ok, Enum.reject(elements, &Element.visible?(&1))}
-    end
-  end
-
-  defp validate_selected(query, elements) do
-    case Query.selected?(query) do
-      :any ->
-        {:ok, elements}
-
-      true ->
-        {:ok, Enum.filter(elements, &Element.selected?(&1))}
-
-      false ->
-        {:ok, Enum.reject(elements, &Element.selected?(&1))}
-    end
-  end
-
-  defp validate_count(query, elements) do
-    if Query.matches_count?(query, Enum.count(elements)) do
-      {:ok, elements}
-    else
-      {:error, {:not_found, elements}}
-    end
-  end
-
-  defp do_at(query, elements) do
-    case {Query.at_number(query), length(elements)} do
-      {:all, _} ->
-        {:ok, elements}
-
-      {n, count} when n < count ->
-        {:ok, [Enum.at(elements, n)]}
-
-      {_, _} ->
-        {:error, {:not_found, elements}}
-    end
-  end
-
-  defp validate_text(query, elements) do
-    text = Query.inner_text(query)
-
-    if text do
-      {:ok, Enum.filter(elements, &matching_text?(&1, text))}
-    else
-      {:ok, elements}
-    end
-  end
-
-  defp matching_text?(%Element{} = element, text) do
-    case spec(element).wire_protocol.text(Element.root_session(element), element) do
-      {:ok, element_text} ->
-        element_text =~ ~r/#{Regex.escape(text)}/
-
-      {:error, _} ->
-        false
-    end
-  end
-
-  def execute_query(parent, query, opts \\ [])
-
-  def execute_query(parent, query, opts) do
-    session = get_session(parent)
-
-    # CDP and BiDi both use the ops pipeline for find+filter in one
-    # eval. Push-based: CDP uses Runtime.addBinding, BiDi uses
-    # script.channel. The in-frame / switched-window cases keep the
-    # legacy element-by-element path until the pipeline is taught
-    # about frame scoping.
-    if session && remote_session?(session) &&
-         not in_frame?(session) && not in_switched_window?(session) do
-      execute_query_pipeline(parent, query, opts)
-    else
-      execute_query_legacy(parent, query)
-    end
-  end
-
-  # Ops pipeline: compile find + visibility/text/selected filters into one
-  # JS evaluation. Both CDP and BiDi use push-based find (CDP:
-  # Runtime.addBinding → Runtime.bindingCalled; BiDi: script.channel),
-  # dispatched generically through whichever wire_protocol this
-  # session's spec names — no spec-identity branching, since
-  # every wire_protocol implements both find_elements/3 and
-  # find_elements_lazy/3 (see OpsShared).
-  defp execute_query_pipeline(parent, query, opts) do
-    alias SurfBoard.Clients.CDP.Ops
-
-    session = get_session(parent)
-    lazy? = Keyword.get(opts, :lazy, false)
-    wire_protocol = spec(session).wire_protocol
-
-    with {:ok, _ops, validated} <- Ops.compile_query(parent, query) do
-      timeout = query_timeout(session, validated)
-
-      result =
-        if lazy? do
-          wire_protocol.find_elements_lazy(parent, validated, timeout: timeout)
-        else
-          wire_protocol.find_elements(parent, validated, timeout: timeout)
-        end
-
-      case result do
-        {:ok, elements} ->
-          with {:ok, elements} <- validate_count(validated, elements),
-               {:ok, elements} <- do_at(validated, elements) do
-            {:ok, %{validated | result: elements}}
-          end
-
-        error ->
-          error
-      end
-    end
-  end
-
-  defp execute_query_legacy(parent, query) do
-    retry(fn ->
-      try do
-        with {:ok, query} <- Query.validate(query),
-             compiled_query <- Query.compile(query),
-             {:ok, elements} <- spec(parent).wire_protocol.find_elements(parent, compiled_query),
-             {:ok, elements} <- validate_visibility(query, elements),
-             {:ok, elements} <- validate_text(query, elements),
-             {:ok, elements} <- validate_selected(query, elements),
-             {:ok, elements} <- validate_count(query, elements),
-             {:ok, elements} <- do_at(query, elements) do
-          {:ok, %{query | result: elements}}
-        end
-      rescue
-        StaleReferenceError ->
-          {:error, :stale_reference}
-      end
-    end)
-  end
-
-  defp get_session(%Session{} = s), do: s
-  defp get_session(%Element{parent: p}), do: get_session(p)
-  defp get_session(_), do: nil
-
-  defp spec(%Session{spec: spec}), do: spec
-  defp spec(%Element{} = element), do: spec(Element.root_session(element))
-
-  defp in_frame?(%Session{} = session) do
-    Process.get({:cdp_frame_stack, session.id}, []) != [] or
-      Process.get({:surf_board_frame_context, session.id}) != nil
-  end
-
-  defp in_switched_window?(%Session{} = session) do
-    Process.get({:cdp_current_target, session.id}) != nil or
-      Process.get({:surf_board_focused_context, session.id}) != nil
-  end
-
-  # `retry/2` is a public arity-2 function taking a closure, with no session
-  # to hand — those retries fall back to the configured budget. The paths
-  # that *do* have a session (find, await_text/value, query_timeout) pass it,
-  # so a session-scoped `:max_wait_time` governs the waits that matter.
-  defp max_time_exceeded?(session, start_time) do
-    current_time() - start_time > max_wait_time(session)
-  end
-
-  defp current_time do
-    :erlang.monotonic_time(:milli_seconds)
-  end
-
-  defp max_wait_time(session) do
-    Keyword.get(session_opts(session), :max_wait_time) ||
-      SurfBoard.Config.get(:max_wait_time, @default_max_wait_time)
-  end
-
-  # `all/2` and similar snapshot queries set `minimum: 0`. They want the
-  # current matches now, not "wait until something appears." Skip the
-  # full max_wait_time budget for those — fall through to the inline
-  # sync-count branch quickly.
-  #
-  # An explicit `wait:` on the query wins over both: `wait: 0` is the
-  # "right now" form, and a positive value overrides `:max_wait_time` for
-  # this query alone.
-  defp query_timeout(session, %SurfBoard.Query{conditions: conditions} = query) do
-    # Matched with `is_integer/1` rather than truthiness — `wait: 0` is a
-    # meaningful value, not an absent one.
-    case SurfBoard.Query.wait(query) do
-      wait when is_integer(wait) ->
-        wait
-
-      nil ->
-        if Keyword.get(conditions, :minimum) == 0,
-          do: 50,
-          else: max_wait_time(session)
-    end
-  end
-
-  defp request_url(session, path) do
-    base_url = String.trim_trailing(base_url(session), "/")
-    path = String.trim_leading(path, "/")
-
-    "#{base_url}/#{path}"
-  end
-
-  defp base_url(session) do
-    Keyword.get(session_opts(session), :base_url) ||
-      SurfBoard.Config.get(:base_url) || ""
-  end
-
-  # Per-session overrides passed to start_session/1 win over config, so an
-  # application's scraping session isn't governed by whatever the test
-  # suite configured (or vice versa). See `SurfBoard.Config`.
-  defp session_opts(%Session{session_opts: opts}) when is_list(opts), do: opts
-  defp session_opts(_), do: []
-
-  defp path_for_screenshot(name) do
-    "#{screenshot_dir()}/#{name}.png"
-  end
-
-  defp write_screenshot!(path, image_data) do
-    expanded_path = Path.expand(path)
-    :ok = expanded_path |> Path.dirname() |> File.mkdir_p!()
-
-    :ok = File.write!(expanded_path, image_data)
-
-    :ok
-  end
-
-  defp screenshot_dir do
-    Application.get_env(:surf_board, :screenshot_dir, "#{File.cwd!()}/screenshots")
-  end
+  @doc false
+  def execute_query(parent, query, opts \\ []),
+    do: BrowserQuery.execute_query(parent, query, opts)
 
   @doc """
   Waits for the next LiveView DOM patch.
@@ -2003,151 +983,5 @@ defmodule SurfBoard.Browser do
       |> has?(Query.css(".updated"))
   """
   @spec await_patch(session, keyword()) :: session
-  def await_patch(%Session{} = session, opts \\ []) do
-    SurfBoard.LiveView.await_patch(session, opts)
-  end
-
-  # Wraps an interaction with prepare_patch/await_patch.
-  # Sets up the promise before the action, awaits after.
-  # Skips if: no live_view_aware? opt-in, or the element is a JS-only
-  # click (phx-click without a push command, e.g. JS.toggle).
-  defp with_patch_await(session_or_parent, query, interaction, fun, opts \\ [])
-
-  defp with_patch_await(%Session{} = session, query, interaction, fun, opts) do
-    # Classification runs a JS round-trip and only makes sense for a
-    # session that opted in via `live_view_aware: true` — a plain
-    # scraping/automation session skips this entirely, same as
-    # Orchestrator.click_strategy_for/1.
-    if session.live_view_aware? and remote_session?(session) do
-      mode = Keyword.get(opts, :await, :auto)
-
-      case classify_interaction(session, query, interaction) do
-        :patch when mode == :defer ->
-          # Arm a patch promise, run the action, return the session
-          # with :armed stashed. Caller drains via
-          # `SurfBoard.LiveView.await_patch/2`.
-          armed = SurfBoard.LiveView.arm_next_patch(session)
-          _ = fun.()
-          armed
-
-        :patch ->
-          do_patch_await(session, fun)
-
-        :navigate ->
-          do_navigate_await(session, fun)
-
-        :full_page ->
-          result = fun.()
-          SurfBoard.Transport.Protocol.await_next_page_load(session)
-          SurfBoard.LiveViewAware.await_liveview_connected(session)
-          result
-
-        :none ->
-          fun.()
-      end
-    else
-      fun.()
-    end
-  end
-
-  defp with_patch_await(_parent, _query, _interaction, fun, _opts), do: fun.()
-
-  # Classify the interaction: :patch, :navigate, :full_page, or :none.
-  defp do_patch_await(session, fun) do
-    case SurfBoard.LiveViewAware.prepare_patch(session) do
-      :prepared ->
-        result = fun.()
-
-        case SurfBoard.LiveViewAware.await_patch(session) do
-          :ok ->
-            result
-
-          :timeout ->
-            # We classified this interaction as :patch (a server-driven
-            # patch was expected) but the patch never fired within the
-            # budget — the event-driven path fell back to its timeout.
-            result
-
-          :page_navigated ->
-            SurfBoard.Transport.Protocol.await_next_page_load(session)
-            SurfBoard.LiveViewAware.await_liveview_connected(session)
-            result
-        end
-
-      :no_liveview ->
-        fun.()
-    end
-  end
-
-  defp do_navigate_await(session, fun) do
-    # We already know this is a navigation (push_navigate / redirect), not
-    # a patch. Don't await_patch — its fixed 5s timeout fires before the
-    # slow navigation completes under load, adding pure dead time. Instead
-    # go straight to waiting for the new LiveView to connect (which waits
-    # for the URL to change first via the pre_url check).
-    {:ok, pre_url} = SurfBoard.Protocol.current_url(session)
-    result = fun.()
-    SurfBoard.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
-    result
-  end
-
-  # :patch     — phx-click, phx-submit, phx-change, <.link patch=...>
-  # :navigate  — <.link navigate=...> (data-phx-link="redirect")
-  # :full_page — plain <a href="..."> (full HTTP navigation)
-  # :none      — no LiveView binding, no link
-  defp classify_interaction(session, query, interaction) do
-    with {:ok, validated} <- Query.validate(query),
-         compiled <- Query.compile(validated) do
-      case compiled do
-        {:css, selector} ->
-          check_phx_binding(session, selector, interaction)
-
-        {:xpath, xpath} ->
-          check_phx_binding_xpath(session, xpath, interaction)
-      end
-    else
-      _ -> :none
-    end
-  end
-
-  # Both check_phx_binding/* delegate to W.run via a [query, classify_first]
-  # opcode pipeline. The single source of truth for the classifier is
-  # `W.classify` in priv/surf_board.js — the page-side interpreter
-  # exposes it via the `classify_first` accumulator op.
-  defp check_phx_binding(session, selector, interaction),
-    do: classify_via_query(session, "css", selector, interaction)
-
-  defp check_phx_binding_xpath(session, xpath, interaction),
-    do: classify_via_query(session, "xpath", xpath, interaction)
-
-  defp classify_via_query(session, query_type, selector, interaction) do
-    ops_json =
-      Jason.encode!([
-        ["query", query_type, selector],
-        ["classify_first", to_string(interaction)]
-      ])
-
-    js = "window.__w.run(#{ops_json}, null).meta.classification"
-
-    case SurfBoard.Protocol.eval(session, js) do
-      {:ok, result} -> parse_classification(result)
-      _ -> :none
-    end
-  rescue
-    _ -> :none
-  end
-
-  defp parse_classification("navigate"), do: :navigate
-  defp parse_classification("full_page"), do: :full_page
-  defp parse_classification("patch"), do: :patch
-  defp parse_classification("none"), do: :none
-  # If classification JS failed or returned something unexpected, don't
-  # default to :patch — that adds a 5s await_patch timeout for no reason.
-  # Safer to skip the wait and let the normal retry loop handle it.
-  defp parse_classification(_), do: :none
-
-  @doc false
-  def build_file_url(path) do
-    "file://" <> (path |> Path.expand() |> URI.encode())
-  end
+  def await_patch(%Session{} = session, opts \\ []), do: LiveViewPatch.await_patch(session, opts)
 end
