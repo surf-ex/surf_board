@@ -88,9 +88,11 @@ state today (the shared ws_pid, lazily connected and cached via
 `Launcher.get_or_compute/3`, scoped to *that* launcher instance rather
 than a global). Keeping the API uniform means a currently-stateless
 strategy could grow real shared state later with no change to how
-callers reference it. `LightpandaCDP`'s `:isolated`/`:external` opts (and
-`ChromeBiDi`'s default path) build a transient, unnamed launcher per
-`start_session/1` call instead of a driver-owned default one, precisely
+callers reference it. `LightpandaCDP`'s `:isolated` opt (no dedicated
+`Launcher.Lightpanda` constructor for it — see that module's moduledoc)
+and `ChromeBiDi`'s default path (`Launcher.BiDi.connect/1`) build a
+transient, unnamed launcher per `start_session/1` call instead of a
+driver-owned default one, precisely
 because their strategies cache nothing — there's no state worth keeping
 around past that one session's startup.
 
@@ -120,14 +122,16 @@ when it starts them (its default one in `init/1`, and any transient
 ones it builds per call) and its own `start_session/1` collapses to
 "resolve which launcher, then call `Launcher.start_session/2`" — see
 `ChromeCDP.start_session/1` for the smallest example: it's three lines.
-`Drivers.ChromeCDP` doesn't even define its own `build_template/1`/
-`post_start/2` anymore — `SurfBoard.Launcher.Chrome.build_template/1`
-and `.post_start/2` are the real implementation (session template, UA
-override, window size, log-event subscription), and `ChromeCDP.init/1`
-just wires its default launcher up to them. `SurfBoard.start_session(driver: ...)`
-stays the entry point when you don't already have a launcher in hand
-(most callers, most of the time) — the hooks exist so that once you
-*do* have one, it's not a dead end.
+All three built-in drivers follow this now — none of them defines its
+own `build_template/1`/`post_start/2` anymore. `SurfBoard.Launcher.Chrome`,
+`SurfBoard.Launcher.Lightpanda`, and `SurfBoard.Launcher.BiDi` are the
+real implementations (session template, UA override, window size,
+log-event subscription/UA-unsupported warning as appropriate per
+vendor), and each driver's `init/1`/`start_session/1` just wires its
+launcher(s) up to them. `SurfBoard.start_session(driver: ...)` stays
+the entry point when you don't already have a launcher in hand (most
+callers, most of the time) — the hooks exist so that once you *do*
+have one, it's not a dead end.
 
 ## What a driver module actually does
 

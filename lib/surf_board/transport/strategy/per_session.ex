@@ -25,17 +25,24 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
 
   defmodule Config do
     @moduledoc false
-    # `ws_url` — the shared browser's WebSocket URL; this session opens
-    # its own connection to it (Lightpanda accepts many WS to one binary).
-    @enforce_keys [:ws_url]
-    defstruct [:ws_url]
+    # `resolve_ws_url` — zero-arg function returning the shared
+    # browser's WebSocket URL (Lightpanda accepts many WS to one
+    # binary, so every session calls this fresh — nothing is cached).
+    # Deferred rather than a literal `ws_url` because when the shared
+    # binary is launched by the same construct that builds this Config
+    # (see `Launcher.Lightpanda.start_link/1`), the URL isn't known
+    # until the launched process reports it — resolving it eagerly at
+    # Config-build time would mean blocking before the process has
+    # even started.
+    @enforce_keys [:resolve_ws_url]
+    defstruct [:resolve_ws_url]
   end
 
   @doc """
   Bring up a new session.
 
   Required opts:
-    * `:launcher` — a started `SurfBoard.Launcher` wrapping `%Config{ws_url: ...}`
+    * `:launcher` — a started `SurfBoard.Launcher` wrapping `%Config{resolve_ws_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` to back the session
       with (driver fills in id/url/capabilities/etc.)
 
@@ -48,7 +55,8 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   @spec start_session(keyword) :: {:ok, Session.t()} | {:error, term}
   def start_session(opts) do
     launcher = Keyword.fetch!(opts, :launcher)
-    %Config{ws_url: ws_url} = Launcher.info(launcher).config
+    %Config{resolve_ws_url: resolve_ws_url} = Launcher.info(launcher).config
+    ws_url = resolve_ws_url.()
     session_struct = Keyword.fetch!(opts, :session_struct)
     teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
     owner = Keyword.get(opts, :owner, self())

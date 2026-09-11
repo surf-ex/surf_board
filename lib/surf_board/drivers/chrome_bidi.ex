@@ -6,20 +6,27 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
   # Supervisor surface) and its @driver_spec. Every capability is
   # dispatched by Browser.ex/Element.ex calling session.driver_spec's
   # dimension modules directly.
+  #
+  # `Launcher.BiDi` — not this module — owns everything about actually
+  # building a working BiDi session (the session template, UA
+  # override, window size, log.entryAdded subscription) and building
+  # the launcher itself (`connect/1`, dialing a base_url). This driver
+  # is built *on top of* `Launcher.BiDi`: `start_session/1` resolves a
+  # base_url (a caller-given one, or this driver's own BidiServer
+  # sidecar) and calls `Launcher.BiDi.connect/1` with it, unless the
+  # caller already passed a `:launcher`.
 
   use Supervisor
 
   @behaviour SurfBoard.Driver
 
-  alias SurfBoard.{Launcher, Metadata, Session, UserAgent}
-  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
-  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
+  alias SurfBoard.Launcher
+  alias SurfBoard.Launcher.BiDi, as: LauncherBiDi
   alias SurfBoard.Browser
+  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
+  alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.DriverSpec, as: Spec
   alias SurfBoard.Permissions
-  alias SurfBoard.Transport.Strategy.BiDi
-  alias SurfBoard.Transport.Protocol
 
   @driver_spec %Spec{
     browser: Browser.Chrome,
@@ -32,15 +39,6 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
-
-  # Mirrors ChromeCDP's base UA. When the feature passes BEAM sandbox
-  # metadata, we append it (via `SurfBoard.Metadata`) and push it with
-  # BiDi's `emulation.setUserAgentOverride` so server-side requests carry
-  # the `BeamMetadata (...)` segment sandbox_shim reads to find the
-  # sandbox owner. Without it, DB-backed browser tests crash with
-  # DBConnection.OwnershipError.
-  @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
-                     "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 
   @doc false
   def driver_spec, do: @driver_spec
@@ -98,70 +96,21 @@ defmodule SurfBoard.Drivers.ChromeBiDi do
 
   # An explicit `:launcher` opt uses that started launcher as-is (no
   # cleanup — it's the caller's own, independently-started launcher; it
-  # already carries whatever hooks it was started with). Otherwise,
-  # since Strategy.BiDi caches nothing on its launcher (each session
-  # does its own POST /session — see Strategy.BiDi's moduledoc), build
-  # a transient, unnamed one from opts[:base_url] (or the driver's own
-  # BidiServer), with the same build_template/post_start hooks
-  # ChromeCDP's default launcher gets, and tear it down again once
-  # start_session/1 returns.
+  # already carries whatever hooks it was started with). Otherwise
+  # build a transient, unnamed one via `Launcher.BiDi.connect/1` from
+  # opts[:base_url] (or this driver's own BidiServer sidecar), and tear
+  # it down again once start_session/1 returns — `Strategy.BiDi` caches
+  # no connection state on its launcher (each session does its own
+  # POST /session), so nothing is lost by not keeping it around.
   defp resolve_launcher(opts) do
     case Keyword.get(opts, :launcher) do
       nil ->
-        config = %BiDi.Config{base_url: resolve_base_url(opts)}
-
-        {:ok, launcher} =
-          Launcher.start_link(
-            strategy: BiDi,
-            config: config,
-            build_template: &build_template/1,
-            post_start: &post_start/2
-          )
-
+        {:ok, launcher} = LauncherBiDi.connect(base_url: resolve_base_url(opts))
         {launcher, fn -> Agent.stop(launcher) end}
 
       launcher ->
         {launcher, fn -> :ok end}
     end
-  end
-
-  defp build_template(opts) do
-    %Session{
-      id: "v2bidi-#{System.unique_integer([:positive])}",
-      url: "about:blank",
-      session_url: "about:blank",
-      driver: __MODULE__,
-      driver_spec: @driver_spec,
-      live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-      browsing_context: nil,
-      capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()
-    }
-  end
-
-  defp post_start(session, opts) do
-    caller = Keyword.get(opts, :owner, self())
-    _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
-
-    if UserAgent.override?(opts) do
-      ua =
-        opts
-        |> UserAgent.resolve(@base_user_agent)
-        |> Metadata.append(Keyword.get(opts, :metadata))
-
-      _ =
-        Protocol.cdp_send(
-          session,
-          "emulation.setUserAgentOverride",
-          %{"userAgent" => ua, "contexts" => [session.browsing_context]},
-          []
-        )
-    end
-
-    if window_size = Keyword.get(opts, :window_size) do
-      _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
-    end
-
-    {:ok, session}
   end
 
   defp resolve_base_url(opts) do
