@@ -163,7 +163,7 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
     session_struct = %Session{
       id: "v2-bidi-test",
       url: "",
-      driver: :test,
+      spec_module: :test,
       capabilities: %{}
     }
 

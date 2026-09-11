@@ -10,7 +10,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
   #     shared binary, one fresh WebSocket per session). This is a
   #     Supervisor (not the launcher itself): it owns a
   #     `Lightpanda.Server` and a `Launcher` as its two children, same
-  #     crash-restart guarantee `Drivers.LightpandaCDP`'s own default
+  #     crash-restart guarantee `Specs.LightpandaCDP`'s own default
   #     launcher gets. The launcher child is registered under the
   #     `:name` you asked for — that name (not this Supervisor's pid)
   #     is what you use afterward:
@@ -31,17 +31,17 @@ defmodule SurfBoard.Launcher.Lightpanda do
   #
   # Both `start_link/1` and `connect/1` build a real, working
   # Lightpanda session on their own — this is the one place a
-  # %SurfBoard.Session{} template for Drivers.LightpandaCDP gets built
+  # %SurfBoard.Session{} template for Specs.LightpandaCDP gets built
   # (`build_template/1`) and finished (`post_start/2`: the BEAM sandbox
   # metadata UA, window size, :user_agent-unsupported warning).
-  # `Drivers.LightpandaCDP` itself is built on top of this module for
+  # `Specs.LightpandaCDP` itself is built on top of this module for
   # its :shared/:external opts, not the other way around.
   # Pass your own `:build_template`/`:post_start` to override these
   # defaults entirely.
 
   alias SurfBoard.{DependencyError, Metadata, UserAgent}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Drivers.LightpandaCDP
+  alias SurfBoard.Specs.LightpandaCDP
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
 
@@ -120,7 +120,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
   Checks whether `start_link/1` can actually succeed — the `lightpanda`
   package is on the load path. Returns
   `:ok | {:error, %SurfBoard.DependencyError{}}`, same contract as
-  `SurfBoard.Driver.validate/0`.
+  `SurfBoard.SpecModule.validate/0`.
   """
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
@@ -234,8 +234,8 @@ defmodule SurfBoard.Launcher.Lightpanda do
       id: "v2drv-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
-      driver: LightpandaCDP,
-      driver_spec: LightpandaCDP.driver_spec(),
+      spec_module: LightpandaCDP,
+      driver_spec: LightpandaCDP.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       capabilities: %{
         flat_session_id: true,

@@ -1,31 +1,29 @@
-defmodule SurfBoard.Drivers.LightpandaCDP do
+defmodule SurfBoard.Specs.LightpandaCDP do
   @moduledoc false
 
-  # Lightpanda driver speaking CDP over the surf_board transport stack.
-  # Only owns lifecycle (start/end_session, the Supervisor surface) and
-  # its @driver_spec. Every capability is dispatched by Browser.ex/
-  # Element.ex calling session.driver_spec's dimension modules directly.
+  # Lightpanda protocol-variant spec speaking CDP over the surf_board
+  # transport stack. Only owns its capability-dispatch table (`spec/0`).
+  # Every capability is dispatched by Browser.ex/Element.ex calling
+  # session.driver_spec's dimension modules directly.
   #
   # `Launcher.Lightpanda` — not this module — owns everything about
   # actually building a working Lightpanda session (the session
   # template, UA-unsupported warning, window size) and building the
   # launcher itself (spawn+own a shared local Lightpanda, or connect to
-  # a caller-given `:ws_url`). This driver is built *on top of*
+  # a caller-given `:ws_url`). This spec is built *on top of*
   # `Launcher.Lightpanda` for two of its three `:connection` modes; the
   # third (`:isolated`) has no dedicated `Launcher.Lightpanda`
   # constructor — see that module's moduledoc for why — so it still
   # builds a raw `Launcher` wrapping `Strategy.IsolatedProcess.Config`
   # directly, same as before.
 
-  use Supervisor
-
-  @behaviour SurfBoard.Driver
+  @behaviour SurfBoard.SpecModule
 
   alias SurfBoard.Launcher
   alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs
-  alias SurfBoard.DriverSpec, as: Spec
+  alias SurfBoard.Spec
   alias SurfBoard.Frames
   alias SurfBoard.Launcher.Lightpanda, as: LauncherLightpanda
   alias SurfBoard.Permissions
@@ -33,7 +31,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   alias SurfBoard.Transport.Strategy.IsolatedProcess
   alias SurfBoard.Windows
 
-  @driver_spec %Spec{
+  @spec_data %Spec{
     browser: Browser.Lightpanda,
     wire_protocol: CDPClient,
     dialogs: Dialogs.Unsupported,
@@ -45,10 +43,10 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     log_check_interactions?: false
   }
 
-  @doc false
-  def driver_spec, do: @driver_spec
+  @impl SurfBoard.SpecModule
+  def spec, do: @spec_data
 
-  # ----- Driver supervisor -----
+  # ----- Default launcher -----
   #
   # Starts a single shared Lightpanda binary if the package is on the
   # load path (via `Launcher.Lightpanda.start_link/1`). Sessions
@@ -57,34 +55,19 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   # binary spawn (Transport.Strategy.IsolatedProcess) if no shared
   # server is running.
 
-  def child_spec(opts) do
-    %{
-      id: __MODULE__,
-      start: {__MODULE__, :start_link, [opts]},
-      type: :supervisor
-    }
-  end
-
-  def start_link(opts \\ []) do
-    Supervisor.start_link(__MODULE__, :ok, opts)
-  end
-
   @lightpanda_server Module.concat([Lightpanda, Server])
   @default_launcher_name __MODULE__.DefaultLauncher
 
-  @impl Supervisor
-  def init(_) do
-    children =
-      if Code.ensure_loaded?(@lightpanda_server) do
-        [{LauncherLightpanda, name: @default_launcher_name}]
-      else
-        []
-      end
-
-    Supervisor.init(children, strategy: :one_for_one)
+  @impl SurfBoard.SpecModule
+  def default_launcher_spec do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      {LauncherLightpanda, name: @default_launcher_name}
+    else
+      SurfBoard.NoopSupervisor.child_spec(id: __MODULE__)
+    end
   end
 
-  @doc false
+  @impl SurfBoard.SpecModule
   def validate do
     if Code.ensure_loaded?(@lightpanda_server) do
       LauncherLightpanda.validate()
@@ -93,21 +76,21 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
     end
   end
 
-  @doc false
+  @impl SurfBoard.SpecModule
   def cleanup_stale_sessions, do: :ok
 
   # ----- Session lifecycle -----
 
   # `:connection` picks which of the three ways a session gets its
   # Lightpanda transport — the (launch, socket, process-model)
-  # combination underneath this one (protocol, vendor) driver:
+  # combination underneath this one (protocol, vendor) spec:
   #
   #   * `:shared`   — reuse the already-running shared Lightpanda
-  #                   binary (this driver's Supervisor started it once,
-  #                   at boot, iff the `lightpanda` package is loaded,
-  #                   via `Launcher.Lightpanda.start_link/1`). Fresh WS
-  #                   per session, fused actor (no extra hop). Fails
-  #                   with `{:error, :shared_server_not_running}` if
+  #                   binary (started once, lazily, iff the `lightpanda`
+  #                   package is loaded, via `Launcher.Lightpanda.start_link/1`
+  #                   — see `default_launcher_spec/0`). Fresh WS per
+  #                   session, fused actor (no extra hop). Fails with
+  #                   `{:error, :shared_server_not_running}` if
   #                   explicitly requested but nothing is up.
   #   * `:isolated` — spawn a brand-new private Lightpanda binary for
   #                   just this session. Slower (pays binary startup
@@ -115,10 +98,10 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   #                   `lightpanda` package; fails with
   #                   `{:error, :lightpanda_package_not_loaded}` if it
   #                   isn't on the load path.
-  #   * `:external` — connect to a Lightpanda instance this driver
-  #                   never launches at all, via a caller-supplied
-  #                   `:ws_url` (`Launcher.Lightpanda.connect/1`).
-  #                   Requires `:ws_url` in opts; fails with
+  #   * `:external` — connect to a Lightpanda instance this spec never
+  #                   launches at all, via a caller-supplied `:ws_url`
+  #                   (`Launcher.Lightpanda.connect/1`). Requires
+  #                   `:ws_url` in opts; fails with
   #                   `{:error, :ws_url_required}` otherwise.
   #
   # Omitted (the default): auto-detect, in priority order — an
@@ -126,7 +109,7 @@ defmodule SurfBoard.Drivers.LightpandaCDP do
   # shared server if one is running (`:shared`); else spawn a private
   # one if the package is available (`:isolated`); else raise, since
   # there is no way to get a Lightpanda connection at all.
-  @impl SurfBoard.Driver
+  @impl SurfBoard.SpecModule
   def start_session(opts \\ []) do
     case resolve_connection(opts) do
       {:ok, fun} -> fun.(opts)

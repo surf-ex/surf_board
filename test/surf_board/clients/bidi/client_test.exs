@@ -31,7 +31,7 @@ defmodule SurfBoard.V2.BiDiClientTest do
   end
 
   defp start(base_url) do
-    session_struct = %Session{id: "bc-test", url: "", driver: :test, capabilities: %{}}
+    session_struct = %Session{id: "bc-test", url: "", spec_module: :test, capabilities: %{}}
 
     {:ok, launcher} =
       SurfBoard.Launcher.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})

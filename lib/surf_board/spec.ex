@@ -1,10 +1,10 @@
-defmodule SurfBoard.DriverSpec do
+defmodule SurfBoard.Spec do
   @moduledoc false
 
-  # A driver-as-data: dimension modules plus per-driver cross-cutting
-  # flags. `Browser`/`Element` read from this struct directly to
-  # dispatch each capability to the right client module — there's no
-  # intermediary module between them and this Spec.
+  # A protocol variant as data: dimension modules plus per-variant
+  # cross-cutting flags. `Browser`/`Element` read from this struct
+  # directly to dispatch each capability to the right client module —
+  # there's no intermediary module between them and this Spec.
   #
   # Stamped onto `Session.driver_spec` at start_session time; from then
   # on, the session is fully described by its Spec.

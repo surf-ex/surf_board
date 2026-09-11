@@ -1,35 +1,19 @@
 defmodule SurfBoard.Integration.ChromeBiDiSmokeTest do
   @moduledoc """
-  Smoke test for the Chrome BiDi driver against the surf_board public
+  Smoke test for the Chrome BiDi spec against the surf_board public
   API. Not exhaustive — just enough to trust the extraction stands on
   its own. BiDi runs through a local chromium-bidi Node sidecar (see
   priv/bidi-server), which needs `npm install` in that directory.
 
-  BiDi isn't part of the default driver ladder (config :surf_board,
-  browser: :chrome opts a test run into it), so this test starts the
-  ChromeBiDi supervisor itself rather than relying on
-  SurfBoard.Integration.SessionCase's auto-injected session — same
-  pattern as the unit-level bidi_client_test.exs.
+  `SurfBoard.start_session(driver: :chrome)` starts the sidecar lazily,
+  the first time it's called (`Specs.ChromeBiDi.default_launcher_spec/0`,
+  under `SurfBoard.DriverSupervisor`) — no manual setup needed here,
+  same as chrome_cdp/lightpanda's SessionCase-driven tests.
   """
-  use ExUnit.Case, async: false
-  use SurfBoard.DSL
+  use SurfBoard.Integration.SessionCase, async: false
 
-  setup do
-    {:ok, _} = SurfBoard.Drivers.ChromeBiDi.start_link(name: SurfBoard.Drivers.ChromeBiDi)
-
-    on_exit(fn ->
-      try do
-        Supervisor.stop(SurfBoard.Drivers.ChromeBiDi, :normal, 5_000)
-      catch
-        :exit, _ -> :ok
-      end
-    end)
-
-    {:ok, session} = SurfBoard.start_session(driver: :chrome)
-    on_exit(fn -> SurfBoard.end_session(session) end)
-
-    {:ok, session: session}
-  end
+  @moduletag driver: :chrome
+  @moduletag :chrome
 
   test "visit + current_url + page_title", %{session: session} do
     visit(session, "/index.html")

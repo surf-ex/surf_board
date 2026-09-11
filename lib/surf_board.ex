@@ -25,10 +25,11 @@ defmodule SurfBoard do
   def start(_type, _args) do
     SurfBoard.Bench.Timing.setup()
 
-    # No driver is started here — a session's driver isn't known until
-    # `start_session/1` is called, so its supervisor starts lazily then
-    # (see `ensure_driver_started/1`). Nothing about booting the
-    # application should depend on Chrome/Lightpanda being installed.
+    # No spec's default launcher is started here — a session's spec
+    # isn't known until `start_session/1` is called, so its launcher
+    # starts lazily then (see `ensure_spec_started/1`). Nothing about
+    # booting the application should depend on Chrome/Lightpanda being
+    # installed.
     children = [
       {DynamicSupervisor, name: SurfBoard.DriverSupervisor, strategy: :one_for_one},
       {SurfBoard.SessionStore, [name: SurfBoard.SessionStore]}
@@ -38,19 +39,16 @@ defmodule SurfBoard do
     Supervisor.start_link(children, opts)
   end
 
-  # Starts `mod`'s supervisor under `SurfBoard.DriverSupervisor` on first
-  # use, idempotently — a second call for an already-running driver is a
-  # no-op. Runs `mod.validate/0` first so a missing dependency (Chrome/
-  # Lightpanda not installed, no remote_url configured, ...) surfaces
-  # its own clear DependencyError instead of spinning up a Supervisor
-  # tree that's just going to fail lower down anyway. Runs
-  # `mod.cleanup_stale_sessions/0` once, right after a fresh start.
-  defp ensure_driver_started(mod) do
+  # Starts `mod`'s default launcher under `SurfBoard.DriverSupervisor`
+  # on first use, idempotently — a second call for an already-running
+  # spec is a no-op. Runs `mod.validate/0` first so a missing
+  # dependency (Chrome/Lightpanda not installed, no remote_url
+  # configured, ...) surfaces its own clear DependencyError instead of
+  # spinning up a launcher that's just going to fail lower down anyway.
+  # Runs `mod.cleanup_stale_sessions/0` once, right after a fresh start.
+  defp ensure_spec_started(mod) do
     with :ok <- mod.validate() do
-      case DynamicSupervisor.start_child(
-             SurfBoard.DriverSupervisor,
-             {mod, [name: Module.concat(mod, Supervisor)]}
-           ) do
+      case DynamicSupervisor.start_child(SurfBoard.DriverSupervisor, mod.default_launcher_spec()) do
         {:ok, _pid} ->
           mod.cleanup_stale_sessions()
           :ok
@@ -58,13 +56,13 @@ defmodule SurfBoard do
         {:error, {:already_started, _pid}} ->
           :ok
 
-        # A driver whose supervisor starts a fixed-named child (e.g.
-        # ChromeBiDi's ChromiumBiDi.Server) reports a second concurrent
+        # A spec whose default launcher starts a fixed-named child (e.g.
+        # ChromeBiDi's chromium-bidi sidecar) reports a second concurrent
         # start attempt this way rather than as a flat :already_started —
-        # the DynamicSupervisor call for the driver itself succeeds far
+        # the DynamicSupervisor call for the launcher itself succeeds far
         # enough to spawn the child before the child's own name clash
         # unwinds the start. Treat it the same as :already_started: some
-        # other call already has (or is bringing up) this driver.
+        # other call already has (or is bringing up) this spec's launcher.
         {:error, {:shutdown, {:failed_to_start_child, _child, {:already_started, _pid}}}} ->
           :ok
 
@@ -93,14 +91,13 @@ defmodule SurfBoard do
       shared binary is already running, else `:isolated`). An explicit
       value that isn't actually available returns `{:error, reason}`
       rather than silently falling back — see
-      `SurfBoard.Drivers.LightpandaCDP.start_session/1`. Chrome CDP has
+      `SurfBoard.Specs.LightpandaCDP.start_session/1`. Chrome CDP has
       the analogous `:shared`/`:external` choice too, but it's fixed
-      once for the life of the BEAM (the driver's own connection
-      process starts lazily on first use and is never restarted per
-      session) — set it via
+      once for the life of the BEAM (the default launcher starts lazily
+      on first use and is never restarted per session) — set it via
       `config :surf_board, :chrome_cdp_v2, connection: :shared | :external`,
       not as a `start_session/1` opt. See
-      `SurfBoard.Drivers.ChromeCDP.init/1`.
+      `SurfBoard.Specs.ChromeCDP.default_launcher_spec/0`.
     * `:user_agent` — replace this session's User-Agent. Chrome only; see
       below.
     * `:window_size` — `[width: w, height: h]`.
@@ -187,7 +184,7 @@ defmodule SurfBoard do
   defp do_start_session(opts) do
     mod = opts |> resolve_driver() |> driver_module_for()
 
-    with :ok <- ensure_driver_started(mod) do
+    with :ok <- ensure_spec_started(mod) do
       mod.start_session(opts)
     end
   end
@@ -197,9 +194,9 @@ defmodule SurfBoard do
   """
   @spec end_session(Session.t()) :: :ok | {:error, reason}
   def end_session(%Session{} = session) do
-    # Every driver's end_session/1 was identical (Protocol.stop/1, no
-    # driver-specific teardown) — call it directly so ending a session
-    # never needs to look up a driver module, symmetric with
+    # Every spec's end_session/1 was identical (Protocol.stop/1, no
+    # spec-specific teardown) — call it directly so ending a session
+    # never needs to look up a spec module, symmetric with
     # Launcher.start_session/2 not needing one either.
     result = Protocol.stop(session)
 
@@ -226,10 +223,10 @@ defmodule SurfBoard do
   @doc false
   def driver_module_for(driver) do
     case driver do
-      :lightpanda -> SurfBoard.Drivers.LightpandaCDP
-      :chrome_cdp -> SurfBoard.Drivers.ChromeCDP
-      :chrome -> SurfBoard.Drivers.ChromeBiDi
-      _ -> SurfBoard.Drivers.ChromeCDP
+      :lightpanda -> SurfBoard.Specs.LightpandaCDP
+      :chrome_cdp -> SurfBoard.Specs.ChromeCDP
+      :chrome -> SurfBoard.Specs.ChromeBiDi
+      _ -> SurfBoard.Specs.ChromeCDP
     end
   end
 

@@ -34,13 +34,13 @@ defmodule SurfBoard.DriverForTest do
 
   describe "driver_module_for/1" do
     test "maps known driver atoms to their module" do
-      assert SurfBoard.driver_module_for(:chrome_cdp) == SurfBoard.Drivers.ChromeCDP
-      assert SurfBoard.driver_module_for(:lightpanda) == SurfBoard.Drivers.LightpandaCDP
-      assert SurfBoard.driver_module_for(:chrome) == SurfBoard.Drivers.ChromeBiDi
+      assert SurfBoard.driver_module_for(:chrome_cdp) == SurfBoard.Specs.ChromeCDP
+      assert SurfBoard.driver_module_for(:lightpanda) == SurfBoard.Specs.LightpandaCDP
+      assert SurfBoard.driver_module_for(:chrome) == SurfBoard.Specs.ChromeBiDi
     end
 
     test "falls back to ChromeCDP for an unknown driver" do
-      assert SurfBoard.driver_module_for(:nope) == SurfBoard.Drivers.ChromeCDP
+      assert SurfBoard.driver_module_for(:nope) == SurfBoard.Specs.ChromeCDP
     end
   end
 end

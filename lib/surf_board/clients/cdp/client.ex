@@ -951,7 +951,7 @@ defmodule SurfBoard.Clients.CDP.Client do
             id: object_id,
             handle: object_id,
             parent: session,
-            driver: session.driver,
+            spec_module: session.spec_module,
             url: session.session_url
           }
         end)
@@ -991,7 +991,7 @@ defmodule SurfBoard.Clients.CDP.Client do
             id: object_id,
             handle: object_id,
             parent: session,
-            driver: session.driver,
+            spec_module: session.spec_module,
             url: session.session_url
           }
         end)
@@ -1003,7 +1003,8 @@ defmodule SurfBoard.Clients.CDP.Client do
         # so callers see a non-empty count, but downstream ops on these
         # elements will fail (no objectId). The browser-driver layer
         # decides how to handle that (retry, etc.).
-        {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
+        {:ok,
+         List.duplicate(%Element{parent: session, spec_module: session.spec_module}, found_count)}
     end
   end
 

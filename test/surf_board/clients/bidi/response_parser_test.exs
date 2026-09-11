@@ -135,7 +135,7 @@ defmodule SurfBoard.Clients.BiDi.ResponseParserTest do
     test "creates Element structs from node tuples" do
       parent = %SurfBoard.Session{
         session_url: "http://localhost:9515/session/123",
-        driver: SurfBoard.Drivers.ChromeBiDi
+        spec_module: SurfBoard.Specs.ChromeBiDi
       }
 
       nodes = [
@@ -149,7 +149,7 @@ defmodule SurfBoard.Clients.BiDi.ResponseParserTest do
       [el1, el2] = elements
       assert el1.handle == "shared-1"
       assert el1.id == "42"
-      assert el1.driver == SurfBoard.Drivers.ChromeBiDi
+      assert el1.spec_module == SurfBoard.Specs.ChromeBiDi
       assert el2.handle == "shared-2"
     end
   end

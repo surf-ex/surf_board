@@ -479,7 +479,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
                 id: sid,
                 handle: sid,
                 parent: session,
-                driver: session.driver,
+                spec_module: session.spec_module,
                 url: session.session_url
               }
 
@@ -564,7 +564,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
                 id: sid,
                 handle: sid,
                 parent: session,
-                driver: session.driver,
+                spec_module: session.spec_module,
                 url: session.session_url
               }
 
@@ -592,7 +592,8 @@ defmodule SurfBoard.Clients.BiDi.Client do
         # Page navigated mid-flight or the array's gone — emit
         # placeholders so callers see the count, but ops on them will
         # surface as stale_reference.
-        {:ok, List.duplicate(%Element{parent: session, driver: session.driver}, found_count)}
+        {:ok,
+         List.duplicate(%Element{parent: session, spec_module: session.spec_module}, found_count)}
     end
   end
 

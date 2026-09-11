@@ -228,9 +228,9 @@ defmodule SurfBoard.LiveView do
 
   # ----- Private -----
 
-  defp remote?(%Session{driver: SurfBoard.Drivers.ChromeBiDi}), do: true
-  defp remote?(%Session{driver: SurfBoard.Drivers.ChromeCDP}), do: true
-  defp remote?(%Session{driver: SurfBoard.Drivers.LightpandaCDP}), do: true
+  defp remote?(%Session{spec_module: SurfBoard.Specs.ChromeBiDi}), do: true
+  defp remote?(%Session{spec_module: SurfBoard.Specs.ChromeCDP}), do: true
+  defp remote?(%Session{spec_module: SurfBoard.Specs.LightpandaCDP}), do: true
   defp remote?(_), do: false
 
   defp eval_silent(session, js) do

@@ -556,7 +556,7 @@ defmodule SurfBoard.OpsShared do
       %Element{
         handle: {:lazy, ops, idx, parent_id},
         parent: session,
-        driver: session.driver,
+        spec_module: session.spec_module,
         url: session.session_url,
         session_url: session.session_url
       }

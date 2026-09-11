@@ -27,7 +27,7 @@ defmodule SurfBoard.Element do
 
   alias SurfBoard.{Session, StaleReferenceError}
 
-  defstruct [:url, :session_url, :parent, :id, :driver, :handle, screenshots: []]
+  defstruct [:url, :session_url, :parent, :id, :spec_module, :handle, screenshots: []]
 
   @type value ::
           String.t()
@@ -53,7 +53,7 @@ defmodule SurfBoard.Element do
           url: String.t(),
           id: String.t(),
           screenshots: list,
-          driver: module,
+          spec_module: module,
           handle: handle()
         }
 
@@ -371,7 +371,7 @@ defimpl Inspect, for: SurfBoard.Element do
     Inspect.Algebra.string(
       "%SurfBoard.Element{" <>
         "id: #{Kernel.inspect(element.id)}, " <>
-        "driver: #{Kernel.inspect(element.driver)}" <>
+        "spec_module: #{Kernel.inspect(element.spec_module)}" <>
         "}" <> suffix
     )
   end

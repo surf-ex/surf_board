@@ -331,7 +331,7 @@ defmodule SurfBoard.Browser do
   the launch flags give `getUserMedia` an actual device to open. See the
   [Recording guide](recording.html) for a Chrome image built for this.
 
-  CDP-only (`driver: :chrome_cdp`); other drivers raise
+  CDP-only (`driver: :chrome_cdp`); other spec modules raise
   `SurfBoard.DriverError`.
 
   ```elixir
@@ -342,7 +342,7 @@ defmodule SurfBoard.Browser do
   def grant_permissions(%Session{} = session, permissions) when is_list(permissions) do
     case spec(session).grant_permissions do
       SurfBoard.Permissions.Unsupported ->
-        raise SurfBoard.DriverError.not_supported("grant_permissions/2", session.driver)
+        raise SurfBoard.DriverError.not_supported("grant_permissions/2", session.spec_module)
 
       mod ->
         mod.grant_permissions(session, permissions)
@@ -767,7 +767,7 @@ defmodule SurfBoard.Browser do
   def send_keys(%Session{} = parent, keys) when is_list(keys) do
     case spec(parent).send_keys_session do
       SurfBoard.SendKeysSession.Unsupported ->
-        raise SurfBoard.DriverError.not_supported("send_keys/2", parent.driver)
+        raise SurfBoard.DriverError.not_supported("send_keys/2", parent.spec_module)
 
       mod ->
         {:ok, _} = mod.send_keys_to_session(parent, keys)
@@ -931,7 +931,7 @@ defmodule SurfBoard.Browser do
     # Chrome CDP / BiDi: Element.click's own classify + patch-await +
     # navigation/page-ready logic already handles this.
     # No outer with_patch_await needed — wrapping it would double-wait.
-    if session && session.driver == SurfBoard.Drivers.LightpandaCDP &&
+    if session && session.spec_module == SurfBoard.Specs.LightpandaCDP &&
          not in_frame?(session) && not in_switched_window?(session) do
       v2_click_with_await(parent, query)
     else
@@ -1060,7 +1060,7 @@ defmodule SurfBoard.Browser do
   # Pick the client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
-  defp v2_click_module(%SurfBoard.Session{driver: SurfBoard.Drivers.ChromeBiDi}),
+  defp v2_click_module(%SurfBoard.Session{spec_module: SurfBoard.Specs.ChromeBiDi}),
     do: SurfBoard.Clients.BiDi.Client
 
   defp v2_click_module(_), do: SurfBoard.Clients.CDP.Client

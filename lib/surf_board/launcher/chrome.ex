@@ -14,9 +14,9 @@ defmodule SurfBoard.Launcher.Chrome do
   #     is a Supervisor (not the launcher itself): it owns a
   #     `Drivers.ChromeCDP.Server` and a `Launcher` as its two
   #     children, giving the spawned Chrome the same crash-restart
-  #     guarantee ChromeCDP's own default launcher gets. The launcher
-  #     child is registered under the `:name` you asked for — that
-  #     name (not this Supervisor's pid) is what you use afterward:
+  #     guarantee `Specs.ChromeCDP`'s own default launcher gets. The
+  #     launcher child is registered under the `:name` you asked for —
+  #     that name (not this Supervisor's pid) is what you use afterward:
   #
   #       {:ok, _sup} = Launcher.Chrome.start_link(name: MyApp.TestChrome)
   #       {:ok, session} = Launcher.start_session(MyApp.TestChrome)
@@ -31,18 +31,18 @@ defmodule SurfBoard.Launcher.Chrome do
   #
   # Both build a real, working Chrome session on their own — this is
   # the one place a %SurfBoard.Session{} template for
-  # Drivers.ChromeCDP gets built (`build_template/1`) and finished
+  # Specs.ChromeCDP gets built (`build_template/1`) and finished
   # (`post_start/2`: UA override, window size, console/exception log
-  # subscription). `Drivers.ChromeCDP` itself is built on top of this
-  # module, not the other way around: its `init/1` just decides which
-  # of `start_link/1`/`connect/1` to use for its own default launcher,
-  # the same choice this module's caller makes for any other one.
-  # Pass your own `:build_template`/`:post_start` to override these
-  # defaults entirely.
+  # subscription). `Specs.ChromeCDP` itself is built on top of this
+  # module, not the other way around: its `default_launcher_spec/0`
+  # just decides which of `start_link/1`/`connect/1` to use for its own
+  # default launcher, the same choice this module's caller makes for
+  # any other one. Pass your own `:build_template`/`:post_start` to
+  # override these defaults entirely.
 
   alias SurfBoard.{DependencyError, Metadata, UserAgent}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Drivers.ChromeCDP
+  alias SurfBoard.Specs.ChromeCDP
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.SharedWS
@@ -112,7 +112,7 @@ defmodule SurfBoard.Launcher.Chrome do
   Checks whether `start_link/1` can actually succeed — Chrome is
   installed — without starting anything. Returns
   `:ok | {:error, %SurfBoard.DependencyError{}}`, same contract as
-  `SurfBoard.Driver.validate/0`.
+  `SurfBoard.SpecModule.validate/0`.
   """
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
@@ -148,9 +148,9 @@ defmodule SurfBoard.Launcher.Chrome do
 
   @doc """
   Builds the `%SharedWS.Config{}` `connect/1` uses, without starting
-  anything — for a caller (like `Drivers.ChromeCDP.init/1`) that needs
-  to fold a "connect to this url" launcher into a `Supervisor`
-  children list rather than start it immediately.
+  anything — for a caller (like `Specs.ChromeCDP.default_launcher_spec/0`)
+  that needs to fold a "connect to this url" launcher into a child spec
+  rather than start it immediately.
   """
   @spec connect_config(String.t()) :: %SharedWS.Config{}
   def connect_config(url) do
@@ -168,8 +168,8 @@ defmodule SurfBoard.Launcher.Chrome do
       id: "v2-chrome-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
-      driver: ChromeCDP,
-      driver_spec: ChromeCDP.driver_spec(),
+      spec_module: ChromeCDP,
+      driver_spec: ChromeCDP.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       capabilities: Keyword.get(opts, :capabilities, %{})
     }
@@ -216,7 +216,7 @@ defmodule SurfBoard.Launcher.Chrome do
   # `url` is either a literal ws(s):// DevTools URL, or a bare HTTP
   # endpoint (host:port) that needs /json/version discovery to find
   # the actual webSocketDebuggerUrl. Mirrors
-  # Drivers.ChromeCDP.resolve_remote_ws_url/1 — kept as a separate copy
+  # Specs.ChromeCDP.remote_url/0's own callers — kept as a separate copy
   # (not a shared helper) since it's small and each side's error
   # messages reference a different caller.
   defp resolve_remote_ws_url("ws://" <> _ = url), do: url

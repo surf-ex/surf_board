@@ -126,7 +126,7 @@ defmodule SurfBoard.Clients.BiDi.ResponseParser do
         session_url: parent.session_url,
         url: parent.session_url <> "/element/#{backend_node_id}",
         parent: parent,
-        driver: parent.driver,
+        spec_module: parent.spec_module,
         handle: shared_id
       }
     end)
