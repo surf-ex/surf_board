@@ -25,16 +25,16 @@ defmodule SurfBoard.Launcher do
   # stateless strategy can grow real shared state later with no change
   # to how callers reference it.
   #
-  # `build_template` and `post_start` are the two driver-supplied hooks
+  # `build_template` and `post_start` are the two vendor-supplied hooks
   # that make `start_session/2` a complete, standalone entry point —
-  # everything a driver's own `start_session/1` used to do around the
-  # strategy call, now attached to the launcher itself instead of
-  # living only in the driver module:
+  # everything a spec module's own `start_session/1` used to do around
+  # the strategy call, now attached to the launcher itself instead of
+  # living only in the spec module:
   #
   #   * `build_template.(opts)` — builds the `%SurfBoard.Session{}`
-  #     template (id/driver/driver_spec/live_view_aware?/base
+  #     template (id/spec_module/spec/live_view_aware?/base
   #     capabilities) `start_session/2` hands to the strategy.
-  #   * `post_start.(session, opts)` — driver-specific work that has to
+  #   * `post_start.(session, opts)` — vendor-specific work that has to
   #     run *after* the strategy returns a live session (UA override,
   #     window size, log-event subscription, …); returns
   #     `{:ok, session} | {:error, term}`.

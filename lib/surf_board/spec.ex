@@ -6,7 +6,7 @@ defmodule SurfBoard.Spec do
   # directly to dispatch each capability to the right client module —
   # there's no intermediary module between them and this Spec.
   #
-  # Stamped onto `Session.driver_spec` at start_session time; from then
+  # Stamped onto `Session.spec` at start_session time; from then
   # on, the session is fully described by its Spec.
 
   defstruct [

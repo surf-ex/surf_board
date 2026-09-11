@@ -164,7 +164,7 @@ defmodule SurfBoard.BrowserTest do
     test "raises on a driver that doesn't support it (e.g. Lightpanda)" do
       session = %Session{
         spec_module: SurfBoard.Specs.LightpandaCDP,
-        driver_spec: SurfBoard.Specs.LightpandaCDP.spec()
+        spec: SurfBoard.Specs.LightpandaCDP.spec()
       }
 
       assert_raise SurfBoard.DriverError, fn ->
@@ -174,6 +174,6 @@ defmodule SurfBoard.BrowserTest do
   end
 
   defp session_for_driver(driver) do
-    %Session{spec_module: driver, driver_spec: driver.spec()}
+    %Session{spec_module: driver, spec: driver.spec()}
   end
 end

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Driver.PermissionsDispatchTest do
+defmodule SurfBoard.PermissionsDispatchTest do
   use ExUnit.Case, async: true
 
   # Regression coverage for the same class of bug caught while building
@@ -16,7 +16,7 @@ defmodule SurfBoard.Driver.PermissionsDispatchTest do
 
   describe "LightpandaCDP" do
     test "grant_permissions/2 raises SurfBoard.DriverError without touching the transport" do
-      session = %Session{spec_module: LightpandaCDP, driver_spec: LightpandaCDP.spec()}
+      session = %Session{spec_module: LightpandaCDP, spec: LightpandaCDP.spec()}
 
       assert_raise SurfBoard.DriverError, ~r/grant_permissions\/2 is not supported/, fn ->
         Browser.grant_permissions(session, [:camera])
@@ -26,7 +26,7 @@ defmodule SurfBoard.Driver.PermissionsDispatchTest do
 
   describe "ChromeBiDi" do
     test "grant_permissions/2 raises SurfBoard.DriverError without touching the transport" do
-      session = %Session{spec_module: ChromeBiDi, driver_spec: ChromeBiDi.spec()}
+      session = %Session{spec_module: ChromeBiDi, spec: ChromeBiDi.spec()}
 
       assert_raise SurfBoard.DriverError, ~r/grant_permissions\/2 is not supported/, fn ->
         Browser.grant_permissions(session, [:camera])

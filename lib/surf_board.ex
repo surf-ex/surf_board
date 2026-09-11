@@ -95,7 +95,7 @@ defmodule SurfBoard do
       the analogous `:shared`/`:external` choice too, but it's fixed
       once for the life of the BEAM (the default launcher starts lazily
       on first use and is never restarted per session) — set it via
-      `config :surf_board, :chrome_cdp_v2, connection: :shared | :external`,
+      `config :surf_board, :chrome_cdp, connection: :shared | :external`,
       not as a `start_session/1` opt. See
       `SurfBoard.Specs.ChromeCDP.default_launcher_spec/0`.
     * `:user_agent` — replace this session's User-Agent. Chrome only; see

@@ -11,7 +11,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   # mailbox. Causal ordering between events and responses is preserved
   # without any barrier.
   #
-  # Used by V2Driver when a shared Lightpanda server is running: each
+  # Used by LightpandaCDP when a shared Lightpanda server is running: each
   # session opens its own WS to the same binary, runs Target.create-
   # Target + attachToTarget on that WS, and the resulting actor
   # handles everything for that session.

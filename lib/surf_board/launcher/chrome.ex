@@ -165,11 +165,11 @@ defmodule SurfBoard.Launcher.Chrome do
   @doc false
   def build_template(opts) do
     %SurfBoard.Session{
-      id: "v2-chrome-#{System.unique_integer([:positive])}",
+      id: "chrome-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
       spec_module: ChromeCDP,
-      driver_spec: ChromeCDP.spec(),
+      spec: ChromeCDP.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       capabilities: Keyword.get(opts, :capabilities, %{})
     }

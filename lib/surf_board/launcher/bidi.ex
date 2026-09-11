@@ -56,20 +56,22 @@ defmodule SurfBoard.Launcher.BiDi do
 
     alias SurfBoard.Launcher.BiDi
 
-    def start_link({name, _opts}) do
-      Supervisor.start_link(__MODULE__, :ok, name: BiDi.supervisor_name(name))
+    def start_link({name, _opts} = arg) do
+      Supervisor.start_link(__MODULE__, arg, name: BiDi.supervisor_name(name))
     end
 
     @impl Supervisor
-    def init(:ok) do
-      Supervisor.init([{BidiServer, [name: BiDi.bidi_server_name()]}], strategy: :one_for_one)
+    def init({name, _opts}) do
+      Supervisor.init([{BidiServer, [name: BiDi.bidi_server_name(name)]}], strategy: :one_for_one)
     end
   end
 
   @doc false
   def supervisor_name(name), do: Module.concat(name, Supervisor)
   @doc false
-  def bidi_server_name, do: __MODULE__.BidiServer
+  def bidi_server_name(name), do: Module.concat(name, BidiServer)
+  @doc false
+  def default_name, do: SurfBoard.Specs.ChromeBiDi.DefaultLauncher
 
   @doc """
   Connects to a chromium-bidi HTTP endpoint, wrapped in a `Launcher` —
@@ -92,9 +94,9 @@ defmodule SurfBoard.Launcher.BiDi do
 
   @doc """
   Resolves the `base_url` a session should connect to: a caller-given
-  one wins; otherwise the default sidecar's own WS URL, converted to
-  its HTTP equivalent (they share host/port; chromium-bidi serves
-  both).
+  one wins; otherwise the sidecar's own WS URL (`:launcher_name`,
+  defaulting to the default launcher), converted to its HTTP
+  equivalent (they share host/port; chromium-bidi serves both).
   """
   @spec resolve_base_url(keyword) :: String.t()
   def resolve_base_url(opts) do
@@ -103,7 +105,8 @@ defmodule SurfBoard.Launcher.BiDi do
         url
 
       _ ->
-        ws_url = bidi_ws_url_with_retry(5)
+        name = Keyword.get(opts, :launcher_name, default_name())
+        ws_url = bidi_ws_url_with_retry(name, 5)
 
         ws_url
         |> URI.parse()
@@ -116,29 +119,29 @@ defmodule SurfBoard.Launcher.BiDi do
   # The supervised BidiServer process can crash mid-suite (chromium-bidi
   # Node process exits non-zero; OOM on CI runners is the most common
   # cause). The one_for_one Supervisor restarts it, but there's a short
-  # window where GenServer.call(bidi_server_name(), _) exits with
+  # window where GenServer.call(bidi_server_name(name), _) exits with
   # :noproc before the new pid registers under the name. Retry with a
   # small backoff to ride out the gap.
-  defp bidi_ws_url_with_retry(0) do
-    BidiServer.ws_url(bidi_server_name())
+  defp bidi_ws_url_with_retry(name, 0) do
+    BidiServer.ws_url(bidi_server_name(name))
   end
 
-  defp bidi_ws_url_with_retry(retries_left) do
-    BidiServer.ws_url(bidi_server_name())
+  defp bidi_ws_url_with_retry(name, retries_left) do
+    BidiServer.ws_url(bidi_server_name(name))
   catch
     :exit, _ ->
       Process.sleep(500)
-      bidi_ws_url_with_retry(retries_left - 1)
+      bidi_ws_url_with_retry(name, retries_left - 1)
   end
 
   @doc false
   def build_template(opts) do
     %SurfBoard.Session{
-      id: "v2bidi-#{System.unique_integer([:positive])}",
+      id: "bidi-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
       spec_module: ChromeBiDi,
-      driver_spec: ChromeBiDi.spec(),
+      spec: ChromeBiDi.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       browsing_context: nil,
       capabilities: Keyword.get(opts, :capabilities, %{}) |> Map.new()

@@ -112,7 +112,7 @@ the launcher.
 ```
 
 * **`build_template.(opts)`** — builds the `%SurfBoard.Session{}`
-  template (id/spec_module/driver_spec/live_view_aware?/base capabilities)
+  template (id/spec_module/spec/live_view_aware?/base capabilities)
   that gets handed to the strategy.
 * **`post_start.(session, opts)`** — vendor-specific work that has to
   run after the strategy returns a live session (UA override, window
@@ -147,7 +147,7 @@ identical (`Transport.Protocol.stop/1`, no spec-specific work), so
 `SurfBoard.end_session/1` calls that directly and no `end_session` callback
 exists at all. Every browser capability (`visit/2`, `click/1`,
 `find_elements/2`, `cookies/1`, `focus_frame/2`, ...) is dispatched by
-`SurfBoard.Browser`/`SurfBoard.Element` calling `session.driver_spec` — your
+`SurfBoard.Browser`/`SurfBoard.Element` calling `session.spec` — your
 `%SurfBoard.Spec{}` — directly. There's no per-spec module standing between
 them and your Spec; `Browser`/`Element` never call
 `session.spec_module.<capability>`. All you write is:
@@ -260,7 +260,7 @@ strategy for an existing vendor).
      defp build_template(opts) do
        %SurfBoard.Session{
          spec_module: __MODULE__,
-         driver_spec: @spec_data,
+         spec: @spec_data,
          live_view_aware?: Keyword.get(opts, :live_view_aware, false),
          capabilities: Keyword.get(opts, :capabilities, %{})
          # bidi_pid/browsing_context stay unset — your strategy fills

@@ -4,7 +4,7 @@ defmodule SurfBoard.Specs.LightpandaCDP do
   # Lightpanda protocol-variant spec speaking CDP over the surf_board
   # transport stack. Only owns its capability-dispatch table (`spec/0`).
   # Every capability is dispatched by Browser.ex/Element.ex calling
-  # session.driver_spec's dimension modules directly.
+  # session.spec's dimension modules directly.
   #
   # `Launcher.Lightpanda` — not this module — owns everything about
   # actually building a working Lightpanda session (the session
@@ -63,7 +63,7 @@ defmodule SurfBoard.Specs.LightpandaCDP do
     if Code.ensure_loaded?(@lightpanda_server) do
       {LauncherLightpanda, name: @default_launcher_name}
     else
-      SurfBoard.NoopSupervisor.child_spec(id: __MODULE__)
+      SurfBoard.Launcher.Noop.child_spec(id: __MODULE__)
     end
   end
 
@@ -141,7 +141,7 @@ defmodule SurfBoard.Specs.LightpandaCDP do
         fun
 
       true ->
-        raise "V2Driver requires either a :ws_url opt or the `lightpanda` package on the path"
+        raise "LightpandaCDP requires either a :ws_url opt or the `lightpanda` package on the path"
     end
   end
 

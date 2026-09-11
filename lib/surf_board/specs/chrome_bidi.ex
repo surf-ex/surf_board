@@ -5,7 +5,7 @@ defmodule SurfBoard.Specs.ChromeBiDi do
   # chromium-bidi Node sidecar. Only owns its capability-dispatch table
   # (`spec/0`) and a one-off vendor behavior (`touch_scroll_impl/3`).
   # Every capability is dispatched by Browser.ex/Element.ex calling
-  # session.driver_spec's dimension modules directly.
+  # session.spec's dimension modules directly.
   #
   # `Launcher.BiDi` — not this module — owns everything about actually
   # building a working BiDi session (the session template, UA
@@ -46,7 +46,7 @@ defmodule SurfBoard.Specs.ChromeBiDi do
 
   @impl SurfBoard.SpecModule
   def default_launcher_spec do
-    name = __MODULE__.DefaultLauncher
+    name = LauncherBiDi.default_name()
 
     %{
       id: name,

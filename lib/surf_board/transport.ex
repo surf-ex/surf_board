@@ -10,8 +10,8 @@ defmodule SurfBoard.Transport do
   # — each way of doing that lives under `Transport.Strategy.*`, and
   # implements the `SurfBoard.Transport.Strategy` behaviour: one
   # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
-  # callback, driver-agnostic — the caller supplies a `:session_struct`
-  # template (id/driver/driver_spec/live_view_aware?/base capabilities
+  # callback, spec-agnostic — the caller supplies a `:session_struct`
+  # template (id/spec_module/spec/live_view_aware?/base capabilities
   # already filled in) and the strategy returns it with `bidi_pid`,
   # `browsing_context`, and `capabilities` populated and the session
   # GenServer already up.

@@ -1,4 +1,4 @@
-defmodule SurfBoard.NoopSupervisor do
+defmodule SurfBoard.Launcher.Noop do
   @moduledoc false
 
   # A zero-child Supervisor — what a spec module's `default_launcher_spec/0`

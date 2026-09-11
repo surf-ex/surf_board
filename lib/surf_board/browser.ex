@@ -933,7 +933,7 @@ defmodule SurfBoard.Browser do
     # No outer with_patch_await needed — wrapping it would double-wait.
     if session && session.spec_module == SurfBoard.Specs.LightpandaCDP &&
          not in_frame?(session) && not in_switched_window?(session) do
-      v2_click_with_await(parent, query)
+      click_with_page_await(parent, query)
     else
       parent |> find(query, &Element.click/1)
     end
@@ -952,7 +952,7 @@ defmodule SurfBoard.Browser do
 
     # No spec (LV driver, or unusual session shape) → fall through to the
     # normal click; there's no awaiting machinery to skip.
-    if is_nil(session) or is_nil(session.driver_spec) do
+    if is_nil(session) or is_nil(session.spec) do
       click_auto(parent, query)
     else
       case find_lazy(parent, query) do
@@ -1030,14 +1030,14 @@ defmodule SurfBoard.Browser do
   #   4. for non-"none" classifications, awaits the bootstrap's
   #      page_ready notification on the new document (push-based, no
   #      polling)
-  defp v2_click_with_await(parent, query) do
+  defp click_with_page_await(parent, query) do
     # Use find_lazy: click_aware does two element ops on the result and
     # discards it. Lazy saves the ref-fetch round-trip at find time
     # (the V8 ref isn't needed — each subsequent op re-resolves via the
     # spliced query+target ops in W.run).
     case find_lazy(parent, query) do
       %SurfBoard.Element{} = element ->
-        case v2_click_module(element.parent).click_aware(element.parent, element) do
+        case click_aware_client(element.parent).click_aware(element.parent, element) do
           {:ok, _classification} ->
             parent
 
@@ -1060,10 +1060,10 @@ defmodule SurfBoard.Browser do
   # Pick the client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
-  defp v2_click_module(%SurfBoard.Session{spec_module: SurfBoard.Specs.ChromeBiDi}),
+  defp click_aware_client(%SurfBoard.Session{spec_module: SurfBoard.Specs.ChromeBiDi}),
     do: SurfBoard.Clients.BiDi.Client
 
-  defp v2_click_module(_), do: SurfBoard.Clients.CDP.Client
+  defp click_aware_client(_), do: SurfBoard.Clients.CDP.Client
 
   @doc """
   Double-clicks left mouse button at the current mouse coordinates.
@@ -1824,7 +1824,7 @@ defmodule SurfBoard.Browser do
   # JS evaluation. Both CDP and BiDi use push-based find (CDP:
   # Runtime.addBinding → Runtime.bindingCalled; BiDi: script.channel),
   # dispatched generically through whichever wire_protocol this
-  # session's driver_spec names — no driver-identity branching, since
+  # session's spec names — no spec-identity branching, since
   # every wire_protocol implements both find_elements/3 and
   # find_elements_lazy/3 (see OpsShared).
   defp execute_query_pipeline(parent, query, opts) do
@@ -1881,7 +1881,7 @@ defmodule SurfBoard.Browser do
   defp get_session(%Element{parent: p}), do: get_session(p)
   defp get_session(_), do: nil
 
-  defp spec(%Session{driver_spec: spec}), do: spec
+  defp spec(%Session{spec: spec}), do: spec
   defp spec(%Element{} = element), do: spec(Element.root_session(element))
 
   defp in_frame?(%Session{} = session) do

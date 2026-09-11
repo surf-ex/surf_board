@@ -318,7 +318,7 @@ defmodule SurfBoard.Element do
     |> handle_value_result()
   end
 
-  defp spec(%__MODULE__{} = element), do: root_session(element).driver_spec
+  defp spec(%__MODULE__{} = element), do: root_session(element).spec
 
   defp handle_action_result(result, element) do
     case result do

@@ -1,4 +1,4 @@
-defmodule SurfBoard.V2.BiDiClientTest do
+defmodule SurfBoard.Clients.BiDi.ClientTest do
   use ExUnit.Case, async: false
 
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer

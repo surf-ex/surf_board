@@ -231,11 +231,11 @@ defmodule SurfBoard.Launcher.Lightpanda do
   @doc false
   def build_template(opts) do
     %SurfBoard.Session{
-      id: "v2drv-#{System.unique_integer([:positive])}",
+      id: "lightpanda-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
       spec_module: LightpandaCDP,
-      driver_spec: LightpandaCDP.spec(),
+      spec: LightpandaCDP.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       capabilities: %{
         flat_session_id: true,

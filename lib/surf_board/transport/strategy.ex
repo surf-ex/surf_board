@@ -7,8 +7,8 @@ defmodule SurfBoard.Transport.Strategy do
   #
   # `opts` carries exactly three keys, none of them strategy-specific:
   #
-  #   * `:session_struct` — the driver's `%SurfBoard.Session{}` template
-  #     (id/driver/driver_spec/live_view_aware?/base capabilities filled
+  #   * `:session_struct` — the spec's `%SurfBoard.Session{}` template
+  #     (id/spec_module/spec/live_view_aware?/base capabilities filled
   #     in; bidi_pid/browsing_context left for the strategy to set).
   #   * `:launcher` — a `SurfBoard.Launcher.ref` — the started launcher
   #     instance this session connects through. Every strategy reads its

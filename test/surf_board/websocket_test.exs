@@ -1,12 +1,11 @@
-defmodule SurfBoard.V2.WebSocketTest do
+defmodule SurfBoard.WebSocketTest do
   use ExUnit.Case, async: true
 
   alias SurfBoard.WebSocket
 
   # Smoke tests for the public API surface. The end-to-end flow
   # (connect, encode JSON, route responses, fan out events) is
-  # exercised when V2.Session lands and the integration suite runs
-  # against it.
+  # exercised by the integration suite against a real session.
 
   describe "module shape" do
     test "exports the expected functions" do

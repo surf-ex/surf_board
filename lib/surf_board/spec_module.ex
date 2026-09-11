@@ -7,7 +7,7 @@ defmodule SurfBoard.SpecModule do
   # it. It owns no session lifecycle itself — no Supervisor, no
   # process — every browser capability (visit, click, cookies,
   # dialogs, window/frame management, ...) is dispatched by
-  # Browser.ex/Element.ex calling session.driver_spec's dimension
+  # Browser.ex/Element.ex calling session.spec's dimension
   # modules directly, and process ownership (spawning/supervising a
   # browser, holding a connection) belongs to the vendor's
   # `Launcher.<Vendor>` module, not here. Ending a session needs no

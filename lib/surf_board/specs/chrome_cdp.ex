@@ -8,7 +8,7 @@ defmodule SurfBoard.Specs.ChromeCDP do
   #
   # Only owns its capability-dispatch table (`spec/0`) and a couple of
   # one-off vendor behaviors (`touch_scroll_impl/3`). Every capability
-  # is dispatched by Browser.ex/Element.ex calling session.driver_spec's
+  # is dispatched by Browser.ex/Element.ex calling session.spec's
   # dimension modules directly.
   #
   # `Launcher.Chrome` — not this module — owns everything about
@@ -97,7 +97,7 @@ defmodule SurfBoard.Specs.ChromeCDP do
   end
 
   defp configured_connection do
-    Application.get_env(:surf_board, :chrome_cdp_v2, []) |> Keyword.get(:connection)
+    Application.get_env(:surf_board, :chrome_cdp, []) |> Keyword.get(:connection)
   end
 
   @impl SurfBoard.SpecModule
@@ -110,7 +110,7 @@ defmodule SurfBoard.Specs.ChromeCDP do
           {:error,
            SurfBoard.DependencyError.exception(
              "connection: :external configured, but no remote_url is set. " <>
-               "Set SURF_BOARD_CHROME_URL or config :surf_board, :chrome_cdp_v2, remote_url: \"...\"."
+               "Set SURF_BOARD_CHROME_URL or config :surf_board, :chrome_cdp, remote_url: \"...\"."
            )}
         end
 
@@ -159,6 +159,6 @@ defmodule SurfBoard.Specs.ChromeCDP do
   @doc false
   def remote_url do
     SurfBoard.BrowserPaths.chrome_url() ||
-      Application.get_env(:surf_board, :chrome_cdp_v2, []) |> Keyword.get(:remote_url)
+      Application.get_env(:surf_board, :chrome_cdp, []) |> Keyword.get(:remote_url)
   end
 end
