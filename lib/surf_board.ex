@@ -201,15 +201,15 @@ defmodule SurfBoard do
     result = Protocol.stop(session)
 
     # Drain any in-flight WebSocket events that arrived after session
-    # teardown. Without this, :bidi_event messages linger in the test
+    # teardown. Without this, :v2_event messages linger in the test
     # process mailbox and can interfere with the next session.
-    drain_bidi_events()
+    drain_v2_events()
     result
   end
 
-  defp drain_bidi_events do
+  defp drain_v2_events do
     receive do
-      {:bidi_event, _, _} -> drain_bidi_events()
+      {:v2_event, _, _} -> drain_v2_events()
     after
       0 -> :ok
     end

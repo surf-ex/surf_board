@@ -11,77 +11,72 @@ defmodule SurfBoard.Transport.Actor do
   # remaining real differences instead of hand-copying three actors.
   #
   # Configured per-driver via `%Transport.Actor.Config{}` (built by
-  # each driver's start_session/1), covering the three axes that
+  # each driver's start_session/1), covering the two axes that
   # actually vary:
   #
-  #   * `socket`    — `{:fused, wire_socket}` when this actor owns its
-  #                   own `WireSocket` directly (no separate process,
-  #                   no extra hop — Lightpanda's per-session model),
-  #                   or `{:shared, pid}` when it routes commands
-  #                   through an already-running socket-owner process
-  #                   (`SurfBoard.WebSocket` for CDP's shared-WS and
-  #                   isolated-process models, or
-  #                   `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
-  #                   for BiDi — see the moduledoc note below on why
-  #                   BiDi stays "shared" despite being 1:1 with its
-  #                   session).
-  #   * `send`      — `:inline` registers into this actor's own
-  #                   `pending_calls` and returns immediately (CDP,
-  #                   both socket modes — `WireSocket`/`WebSocket`
-  #                   reply asynchronously without blocking on the
-  #                   wire round-trip). `:spawn_link` spawns a linked
-  #                   helper process to make the blocking call and
-  #                   `GenServer.reply/2` on this actor's behalf — BiDi
-  #                   only, because `WebSocketClient.send_command/4` is
-  #                   itself a blocking `GenServer.call`; without the
-  #                   helper, one slow BiDi round-trip would stall this
-  #                   actor's mailbox and delay every concurrent event
-  #                   it needs to process (page-load milestones,
-  #                   bootstrap payloads, ...) until the call returns.
-  #   * `load`      — `:buffer` (CDP's `Page.lifecycleEvent`, which can
-  #                   fire more than once and persists until consumed)
-  #                   vs. `:wake_once` (BiDi's `browsingContext.load`,
-  #                   one-shot per navigation) — see
-  #                   `Transport.Common`'s `record_load_milestone/3`
-  #                   vs. `record_load_or_wake_once/3` and
-  #                   `await_page_load/6`'s `drop_on_consume?`.
-  #   * `subscribe` — `:passive` (CDP) just tells the local socket
-  #                   owner to forward matching frames to this actor's
-  #                   mailbox. `:active` (BiDi) does that AND issues a
-  #                   real `session.subscribe` wire call, because BiDi
-  #                   requires the server to be told which events to
-  #                   emit at all — CDP sessions get every event they've
-  #                   enabled the right domain for, with no separate
-  #                   subscribe step on the wire.
+  #   * `socket` — `{:fused, ws_url}` when this actor owns its own
+  #                `WireSocket` directly (no separate process, no extra
+  #                hop — Lightpanda's per-session model), or
+  #                `{:remote, module, pid}` when it routes commands
+  #                through an already-running socket-owner process
+  #                elsewhere (`SurfBoard.WebSocket` for CDP's shared-WS
+  #                and isolated-process models — genuinely serving many
+  #                sessions; `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
+  #                for BiDi — always 1:1 with its session, but still a
+  #                separate process since chromium-bidi's session comes
+  #                up via an HTTP handshake before any actor exists to
+  #                embed a socket into). Both remote owners implement the
+  #                identical `cast_send/5` contract (fire the send,
+  #                return a wire id, deliver the reply later via
+  #                `{:v2_response, wire_id, result}` sent to the given
+  #                owner pid; events arrive as `{:v2_event, method,
+  #                event}`) — `module` names which one this socket is, so
+  #                this actor's own dispatch is otherwise identical
+  #                either way. Cardinality (1:1 vs N:1) is a fact about
+  #                the remote owner, invisible here.
+  #   * `load`   — `:buffer` (CDP's `Page.lifecycleEvent`, which can
+  #                fire more than once and persists until consumed) vs.
+  #                `:wake_once` (BiDi's `browsingContext.load`, one-shot
+  #                per navigation) — see `Transport.Common`'s
+  #                `record_load_milestone/3` vs.
+  #                `record_load_or_wake_once/3` and `await_page_load/6`'s
+  #                `drop_on_consume?`. The one genuine protocol-level
+  #                difference left, unrelated to socket wiring.
   #
-  # Why BiDi's WebSocketClient stays a separate ("shared") process
-  # rather than embedding its own WireSocket directly (which would make
-  # it "fused" like Lightpanda, and let this module own the connection
-  # itself): it's a smaller, lower-risk change to keep it as-is for
-  # this pass. Folding it in later would mean deleting
-  # Drivers.ChromeBiDi.WebSocketClient as a GenServer entirely — a
-  # reasonable follow-up, not bundled with this one.
+  # There used to be a third axis (`send: :inline | :spawn_link`) whose
+  # `:spawn_link` mode spawned a linked helper to make a blocking
+  # `WebSocketClient.send_command/4` call on this actor's behalf. That
+  # wasn't a genuine BiDi wire constraint — `WebSocketClient`'s own
+  # `handle_call` never blocked its mailbox, same as `SurfBoard.WebSocket`;
+  # the only thing blocking was this actor calling it via a synchronous
+  # `GenServer.call` instead of the cast_send-and-correlate-later shape
+  # `SurfBoard.WebSocket` already used. Giving `WebSocketClient` the
+  # identical `cast_send/5` contract removed the need for the shim
+  # entirely — every remote socket is sent to the same way.
+  #
+  # Similarly, `subscribe: :passive | :active` used to exist so BiDi
+  # could issue a real `session.subscribe` wire call whenever
+  # `Transport.Protocol.subscribe/3` was invoked — but nothing ever
+  # called that for a BiDi session (BiDi subscribes everything it needs
+  # once, upfront, during `Strategy.BiDi`'s own handshake). `:active`
+  # was dead code; deleted along with the config key.
 
   use GenServer
   require Logger
 
   alias SurfBoard.Transport.{Common, WireSocket}
-  alias SurfBoard.WebSocket
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
 
   defmodule Config do
     @moduledoc false
 
-    @enforce_keys [:socket, :send, :load, :subscribe, :wire]
-    defstruct [:socket, :send, :load, :subscribe, :wire]
+    @enforce_keys [:socket, :load, :wire]
+    defstruct [:socket, :load, :wire]
 
-    @type socket :: {:fused, ws_url :: String.t()} | {:shared, pid()}
+    @type socket :: {:fused, ws_url :: String.t()} | {:remote, module(), pid()}
 
     @type t :: %__MODULE__{
             socket: socket(),
-            send: :inline | :spawn_link,
             load: :buffer | :wake_once,
-            subscribe: :passive | :active,
             # The Wire.handle_event/3-shaped module for this actor's
             # protocol — SurfBoard.Clients.CDP.Wire or
             # SurfBoard.Clients.BiDi.Wire.
@@ -93,10 +88,10 @@ defmodule SurfBoard.Transport.Actor do
     :config,
     # ----- Socket state -----
     # `{:fused, wire_socket}` mode only — the WireSocket.t() this actor
-    # owns directly. nil in `:shared` mode (commands route through
+    # owns directly. nil in `:remote` mode (commands route through
     # config.socket's pid instead).
     :wire_socket,
-    # `{:shared, pid}` mode only — monitor ref on the socket-owner
+    # `{:remote, pid}` mode only — monitor ref on the socket-owner
     # process, so this actor stops cleanly if it dies.
     :socket_ref,
     # ----- Per-session state -----
@@ -167,7 +162,7 @@ defmodule SurfBoard.Transport.Actor do
     end
   end
 
-  def init({%Config{socket: {:shared, socket_pid}} = config, init_fun, teardown_fun, owner}) do
+  def init({%Config{socket: {:remote, _mod, socket_pid}} = config, init_fun, teardown_fun, owner}) do
     Process.flag(:trap_exit, true)
     ref = Process.monitor(owner)
     socket_ref = Process.monitor(socket_pid)
@@ -227,7 +222,7 @@ defmodule SurfBoard.Transport.Actor do
     {:reply, :ok, %{state | frame_stack: []}}
   end
 
-  def handle_call({:cdp_send, method, params, opts}, from, %{config: %{send: :inline}} = state) do
+  def handle_call({:cdp_send, method, params, opts}, from, state) do
     opts = override_session_id(opts, state)
     t0 = SurfBoard.Bench.Timing.mark_now()
 
@@ -242,35 +237,14 @@ defmodule SurfBoard.Transport.Actor do
   end
 
   def handle_call(
-        {:cdp_send, method, params, _opts},
-        from,
-        %{config: %{send: :spawn_link}} = state
-      ) do
-    # Don't block this actor on a synchronous wire round-trip — spawn a
-    # tiny linked waiter that makes the call and replies on our behalf,
-    # so concurrent mailbox traffic (events on the same connection)
-    # keeps flowing. See moduledoc.
-    parent = self()
-    %{socket: {:shared, socket_pid}} = state.config
-
-    spawn_link(fn ->
-      result = send_shared_blocking(socket_pid, method, params)
-      GenServer.reply(from, result)
-      send(parent, {:done_send, self()})
-    end)
-
-    {:noreply, state}
-  end
-
-  def handle_call(
         {:subscribe, event_method, routing_key},
         _from,
-        %{config: %{subscribe: :passive, socket: {:shared, socket_pid}}} = state
+        %{config: %{socket: {:remote, socket_mod, socket_pid}}} = state
       ) do
     key = routing_key || state.session.browsing_context || :global
 
     try do
-      :ok = WebSocket.subscribe(socket_pid, event_method, key, self())
+      :ok = socket_mod.subscribe(socket_pid, event_method, key, self())
       {:reply, :ok, state}
     catch
       :exit, _ -> {:reply, {:error, :session_closed}, state}
@@ -280,30 +254,10 @@ defmodule SurfBoard.Transport.Actor do
   def handle_call(
         {:subscribe, _event_method, _routing_key},
         _from,
-        %{config: %{subscribe: :passive, socket: {:fused, _}}} = state
+        %{config: %{socket: {:fused, _}}} = state
       ) do
     # No-op: a fused actor owns its socket and already processes every
     # event that arrives on it directly.
-    {:reply, :ok, state}
-  end
-
-  def handle_call(
-        {:subscribe, event_method, _routing_key},
-        _from,
-        %{config: %{subscribe: :active}} = state
-      ) do
-    %{socket: {:shared, socket_pid}} = state.config
-
-    WebSocketClient.subscribe(socket_pid, event_method, self(), :global)
-
-    _ =
-      WebSocketClient.send_command(
-        socket_pid,
-        "session.subscribe",
-        %{"events" => [event_method]},
-        10_000
-      )
-
     {:reply, :ok, state}
   end
 
@@ -358,19 +312,13 @@ defmodule SurfBoard.Transport.Actor do
   end
 
   @impl true
-  def handle_cast({:cdp_cast, method, params, opts}, %{config: %{send: :inline}} = state) do
+  def handle_cast({:cdp_cast, method, params, opts}, state) do
     opts = override_session_id(opts, state)
 
     case send_inline_cast(state, method, params, opts) do
       {:ok, state} -> {:noreply, state}
       {:error, state, _reason} -> {:noreply, state}
     end
-  end
-
-  def handle_cast({:cdp_cast, method, params, _opts}, %{config: %{send: :spawn_link}} = state) do
-    %{socket: {:shared, socket_pid}} = state.config
-    WebSocketClient.cast_command(socket_pid, method, normalize_params(params))
-    {:noreply, state}
   end
 
   # ----- Inbound: socket messages + timer messages -----
@@ -396,21 +344,14 @@ defmodule SurfBoard.Transport.Actor do
 
   def handle_info(
         {:v2_response, wire_id, result},
-        %{config: %{socket: {:shared, _}, send: :inline}} = state
+        %{config: %{socket: {:remote, _mod, _pid}}} = state
       ) do
     {:noreply, deliver_response(wire_id, result, state)}
   end
 
   def handle_info(
         {:v2_event, method, event},
-        %{config: %{socket: {:shared, _}, wire: wire_mod}} = state
-      ) do
-    {:noreply, wire_mod.handle_event(state, method, event)}
-  end
-
-  def handle_info(
-        {:bidi_event, method, event},
-        %{config: %{socket: {:shared, _}, wire: wire_mod}} = state
+        %{config: %{socket: {:remote, _mod, _pid}, wire: wire_mod}} = state
       ) do
     {:noreply, wire_mod.handle_event(state, method, event)}
   end
@@ -427,11 +368,9 @@ defmodule SurfBoard.Transport.Actor do
     {:noreply, Common.handle_find_timeout(state, query_id)}
   end
 
-  def handle_info({:done_send, _pid}, state), do: {:noreply, state}
-
   def handle_info(
         {:DOWN, ref, :process, _pid, reason},
-        %{socket_ref: ref, config: %{socket: {:shared, _}}} = state
+        %{socket_ref: ref, config: %{socket: {:remote, _mod, _socket_pid}}} = state
       ) do
     {:stop, {:socket_down, reason}, state}
   end
@@ -440,7 +379,10 @@ defmodule SurfBoard.Transport.Actor do
     {:stop, :normal, state}
   end
 
-  def handle_info({:EXIT, pid, reason}, %{config: %{socket: {:shared, pid}}} = state) do
+  def handle_info(
+        {:EXIT, pid, reason},
+        %{config: %{socket: {:remote, _mod, pid}}} = state
+      ) do
     {:stop, {:socket_exit, reason}, state}
   end
 
@@ -509,9 +451,14 @@ defmodule SurfBoard.Transport.Actor do
     {:ok, wire_id, %{state | wire_socket: wire_socket}}
   end
 
-  defp send_inline(%{config: %{socket: {:shared, socket_pid}}} = state, method, params, opts) do
+  defp send_inline(
+         %{config: %{socket: {:remote, socket_mod, socket_pid}}} = state,
+         method,
+         params,
+         opts
+       ) do
     try do
-      wire_id = WebSocket.cast_send(socket_pid, self(), method, params, opts)
+      wire_id = socket_mod.cast_send(socket_pid, self(), method, params, opts)
       {:ok, wire_id, state}
     catch
       :exit, _ -> {:error, state, :session_closed}
@@ -523,30 +470,19 @@ defmodule SurfBoard.Transport.Actor do
     {:ok, %{state | wire_socket: wire_socket}}
   end
 
-  defp send_inline_cast(%{config: %{socket: {:shared, socket_pid}}} = state, method, params, opts) do
+  defp send_inline_cast(
+         %{config: %{socket: {:remote, socket_mod, socket_pid}}} = state,
+         method,
+         params,
+         opts
+       ) do
     try do
-      _ = WebSocket.cast_send(socket_pid, self(), method, params, opts)
+      _ = socket_mod.cast_send(socket_pid, self(), method, params, opts)
       {:ok, state}
     catch
       :exit, _ -> {:error, state, :session_closed}
     end
   end
-
-  defp send_shared_blocking(socket_pid, method, params) do
-    WebSocketClient.send_command(socket_pid, method, normalize_params(params), 30_000)
-  end
-
-  # WebSocketClient (BiDi) expects string-keyed params; CDPClient often
-  # passes atom-keyed maps. Normalize either way. No-op for the :inline
-  # send strategy, which passes params straight to WireSocket.
-  defp normalize_params(params) when is_map(params) do
-    Map.new(params, fn
-      {k, v} when is_atom(k) -> {Atom.to_string(k), v}
-      {k, v} -> {k, v}
-    end)
-  end
-
-  defp normalize_params(other), do: other
 
   defp override_session_id(opts, state) do
     case Keyword.fetch(opts, :session_id) do

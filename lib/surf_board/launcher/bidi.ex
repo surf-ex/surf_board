@@ -151,7 +151,7 @@ defmodule SurfBoard.Launcher.BiDi do
   @doc false
   def post_start(session, opts) do
     caller = Keyword.get(opts, :owner, self())
-    _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", caller, :global)
+    _ = WebSocketClient.subscribe(session.bidi_pid, "log.entryAdded", :global, caller)
 
     if UserAgent.override?(opts) do
       ua =

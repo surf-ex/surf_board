@@ -47,12 +47,12 @@ defmodule SurfBoard.Clients.BiDi.Dialogs do
       Commands.subscribe(["browsingContext.userPromptOpened"], [ctx])
 
     WebSocketClient.send_command(ws_pid, sub_method, sub_params)
-    WebSocketClient.subscribe(ws_pid, "browsingContext.userPromptOpened", self(), ctx)
+    WebSocketClient.subscribe(ws_pid, "browsingContext.userPromptOpened", ctx, self())
   end
 
   defp await_event(%Session{}, timeout_ms) do
     receive do
-      {:bidi_event, "browsingContext.userPromptOpened", event} ->
+      {:v2_event, "browsingContext.userPromptOpened", event} ->
         msg = get_in(event, ["params", "message"]) || ""
         default = get_in(event, ["params", "defaultValue"])
         {msg, default}

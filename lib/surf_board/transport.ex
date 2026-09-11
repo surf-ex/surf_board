@@ -170,10 +170,8 @@ defmodule SurfBoard.Transport do
     }
 
     config = %Actor.Config{
-      socket: {:shared, ws_pid},
-      send: :inline,
+      socket: {:remote, WebSocket, ws_pid},
       load: :buffer,
-      subscribe: :passive,
       wire: Wire
     }
 

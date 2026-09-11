@@ -4,14 +4,21 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   #
   # The Mint connect/upgrade/encode/decode plumbing lives in
   # `SurfBoard.Transport.WireSocket`, shared with `SurfBoard.WebSocket`
-  # (used by `SurfBoard.Transport.Actor`'s `{:shared, pid}` mode for
-  # Chrome CDP) and `Transport.Actor`'s own `{:fused, ws_url}` mode
-  # (Lightpanda) — this module supplies the BiDi-specific policy on
-  # top: the subscriber table, the pending-calls-keyed-by-caller map,
-  # and the `send_command_flat`/`cast_command_flat` variants CDP's
-  # flat-session protocol needs when driven over a BiDi socket. A
-  # `Transport.Actor` (BiDi mode: `send: :spawn_link`) is the sole
-  # caller in practice.
+  # (Chrome CDP's shared-socket owner). This module speaks the exact
+  # same owner protocol `SurfBoard.WebSocket` does — `cast_send/5`
+  # returns a wire id immediately and delivers the reply later via
+  # `{:v2_response, wire_id, result}` sent to the given owner pid;
+  # events broadcast as `{:v2_event, method, event}` to subscribers —
+  # so `Transport.Actor` can treat this exactly like a `:remote`
+  # socket owner, with no BiDi-specific dispatch of its own. Only the
+  # cardinality differs (one session per WebSocketClient, vs. many
+  # sessions sharing one `SurfBoard.WebSocket`), which `Actor` doesn't
+  # need to know about.
+  #
+  # `send_command`/`send_command_flat` stay as a synchronous
+  # convenience (mirrors `SurfBoard.WebSocket.send_sync/4`) for callers
+  # without a Session actor of their own to correlate through — e.g.
+  # `Clients.BiDi.Dialogs`, session-bootstrap handshake code.
 
   use GenServer
   require Logger
@@ -32,14 +39,40 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
     GenServer.start_link(__MODULE__, ws_url)
   end
 
+  @doc """
+  Asynchronously send a BiDi command. The response (or transport
+  failure) will be delivered to `owner_pid` as
+  `{:v2_response, wire_id, result}`.
+
+  Returns the wire id assigned to this call so the caller can stash
+  it in its own pending-calls map. Same contract as
+  `SurfBoard.WebSocket.cast_send/5`.
+  """
+  @spec cast_send(pid, pid, String.t(), map, keyword) :: non_neg_integer()
+  def cast_send(pid, owner_pid, method, params, opts \\ []) do
+    GenServer.call(pid, {:assign_id_and_send, owner_pid, method, params, opts})
+  end
+
+  @doc """
+  Synchronous convenience around `cast_send/5` for callers without a
+  Session actor to correlate through (e.g. dialog handling, handshake
+  code). Consumes the next `:v2_response` matching this call's wire id
+  from the calling process's mailbox — don't use it from a process
+  that has other in-flight calls.
+  """
   def send_command(pid, method, params, timeout \\ @default_timeout) do
-    GenServer.call(pid, {:send_command, method, params}, timeout)
+    wire_id = cast_send(pid, self(), method, params)
+
+    receive do
+      {:v2_response, ^wire_id, result} -> result
+    after
+      timeout -> {:error, :timeout}
+    end
   catch
     :exit, {:noproc, _} -> {:error, :session_closed}
     :exit, {:normal, _} -> {:error, :session_closed}
     :exit, {:shutdown, _} -> {:error, :session_closed}
     :exit, :shutdown -> {:error, :session_closed}
-    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @doc """
@@ -47,7 +80,14 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   message (required by Chrome's CDP). The sessionId is NOT included in params.
   """
   def send_command_flat(pid, method, params, session_id, timeout \\ @default_timeout) do
-    GenServer.call(pid, {:send_command_flat, method, params, session_id}, timeout)
+    wire_id =
+      cast_send(pid, self(), method, params, flat_session_id: true, session_id: session_id)
+
+    receive do
+      {:v2_response, ^wire_id, result} -> result
+    after
+      timeout -> {:error, :timeout}
+    end
   catch
     :exit, {:noproc, _} -> {:error, :session_closed}
     :exit, {:normal, _} -> {:error, :session_closed}
@@ -55,33 +95,24 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
     :exit, :shutdown -> {:error, :session_closed}
   end
 
-  @doc "Fire-and-forget: send a BiDi command without waiting for the response."
-  def cast_command(pid, method, params) do
-    GenServer.cast(pid, {:cast_command, method, params})
-  end
-
-  def cast_command_flat(pid, method, params, session_id) do
-    GenServer.cast(pid, {:cast_command_flat, method, params, session_id})
-  end
-
   @doc """
   Subscribe `subscriber` (default: caller) to events matching `event_method`.
 
-  When a shared WebSocket carries events for multiple CDP sessions, pass
-  `session_id` to scope delivery: only events whose top-level `"sessionId"`
-  matches will be forwarded. Omit `session_id` (or pass `:global`) to
-  receive events regardless of session — this is the default for BiDi and
-  for per-connection CDP setups.
+  Same argument order as `SurfBoard.WebSocket.subscribe/4` — `routing_key`
+  before `subscriber` — so `Transport.Actor` can call either socket
+  owner identically. Pass `routing_key` to scope delivery: only events
+  whose context/session id matches will be forwarded. Omit it (or pass
+  `:global`) to receive events regardless of session.
   """
-  def subscribe(pid, event_method, subscriber \\ nil, session_id \\ :global) do
-    GenServer.call(pid, {:subscribe, event_method, subscriber, session_id})
+  def subscribe(pid, event_method, routing_key \\ :global, subscriber \\ nil) do
+    GenServer.call(pid, {:subscribe, event_method, subscriber, routing_key})
   catch
     :exit, _ -> :ok
   end
 
   @doc "Remove a subscriber registered via `subscribe/4`."
-  def unsubscribe(pid, event_method, subscriber, session_id \\ :global) do
-    GenServer.call(pid, {:unsubscribe, event_method, subscriber, session_id})
+  def unsubscribe(pid, event_method, routing_key, subscriber) do
+    GenServer.call(pid, {:unsubscribe, event_method, subscriber, routing_key})
   catch
     :exit, _ -> :ok
   end
@@ -126,7 +157,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   end
 
   @impl true
-  def handle_call({:send_command, method, params}, from, state) do
+  def handle_call({:assign_id_and_send, owner_pid, method, params, opts}, _from, state) do
     if System.get_env("SURF_BOARD_TRACE_QUEUE") == "1" do
       {:message_queue_len, qlen} = Process.info(self(), :message_queue_len)
 
@@ -134,16 +165,9 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
         do: IO.puts(">>> SEND #{method} qlen=#{qlen} pending=#{map_size(state.pending)}")
     end
 
-    {wire_id, wire} = WireSocket.send(state.wire, method, params)
-    pending = Map.put(state.pending, wire_id, from)
-    {:noreply, %{state | wire: wire, pending: pending}}
-  end
-
-  def handle_call({:send_command_flat, method, params, session_id}, from, state) do
-    opts = [flat_session_id: true, session_id: session_id]
     {wire_id, wire} = WireSocket.send(state.wire, method, params, opts)
-    pending = Map.put(state.pending, wire_id, from)
-    {:noreply, %{state | wire: wire, pending: pending}}
+    pending = Map.put(state.pending, wire_id, owner_pid)
+    {:reply, wire_id, %{state | wire: wire, pending: pending}}
   end
 
   def handle_call({:subscribe, event_method, subscriber, session_id}, {caller, _}, state) do
@@ -174,19 +198,6 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   def handle_call(:close, _from, state) do
     WireSocket.close(state.wire)
     {:stop, :normal, :ok, state}
-  end
-
-  @impl true
-  def handle_cast({:cast_command, method, params}, state) do
-    {_wire_id, wire} = WireSocket.send(state.wire, method, params)
-    {:noreply, %{state | wire: wire}}
-  end
-
-  @impl true
-  def handle_cast({:cast_command_flat, method, params, session_id}, state) do
-    opts = [flat_session_id: true, session_id: session_id]
-    {_wire_id, wire} = WireSocket.send(state.wire, method, params, opts)
-    {:noreply, %{state | wire: wire}}
   end
 
   @impl true
@@ -224,8 +235,8 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
       {nil, _pending} ->
         state
 
-      {from, pending} ->
-        GenServer.reply(from, result)
+      {owner_pid, pending} ->
+        send(owner_pid, {:v2_response, id, result})
         %{state | pending: pending}
     end
   end
@@ -256,7 +267,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
     global_pids = lookup_subs(table, {method, :global})
 
     Enum.each(session_pids ++ global_pids, fn pid ->
-      send(pid, {:bidi_event, method, event})
+      send(pid, {:v2_event, method, event})
     end)
 
     state
@@ -270,8 +281,8 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   end
 
   defp reply_all_pending(state, reply) do
-    Enum.each(state.pending, fn {_id, from} ->
-      GenServer.reply(from, reply)
+    Enum.each(state.pending, fn {id, owner_pid} ->
+      send(owner_pid, {:v2_response, id, reply})
     end)
 
     state

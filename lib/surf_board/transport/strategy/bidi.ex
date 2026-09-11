@@ -78,7 +78,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
          :ok <- subscribe_load_events(socket_pid, session.pid),
          {:ok, context_id} <- find_or_create_initial_context(session),
          :ok <- install_bootstrap(session) do
-      session = %{session | browsing_context: context_id}
+      session = %{session | browsing_context: context_id, bidi_pid: socket_pid}
 
       # Mirror the actor's session-struct view so subsequent reads
       # via :get_session also see the populated browsing_context.
@@ -117,10 +117,8 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
 
   defp start_actor(socket_pid, session_struct, teardown_fun, owner) do
     config = %Actor.Config{
-      socket: {:shared, socket_pid},
-      send: :spawn_link,
+      socket: {:remote, WebSocketClient, socket_pid},
       load: :wake_once,
-      subscribe: :active,
       wire: Wire
     }
 
@@ -163,7 +161,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
     ]
 
     Enum.each(events, fn ev ->
-      WebSocketClient.subscribe(socket_pid, ev, actor_pid, :global)
+      WebSocketClient.subscribe(socket_pid, ev, :global, actor_pid)
     end)
 
     # The first session.subscribe after browser launch can take a

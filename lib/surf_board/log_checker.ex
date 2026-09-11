@@ -69,20 +69,12 @@ defmodule SurfBoard.LogChecker do
 
   defp drain_log_events do
     receive do
-      {:bidi_event, "log.entryAdded", event} ->
+      {:v2_event, "log.entryAdded", event} ->
         case translate_log_entry(event) do
           :skip -> drain_log_events()
           entry -> [entry | drain_log_events()]
         end
 
-      {:bidi_event, "Runtime.consoleAPICalled", event} ->
-        [translate_cdp_console(event) | drain_log_events()]
-
-      {:bidi_event, "Runtime.exceptionThrown", event} ->
-        [translate_cdp_exception(event) | drain_log_events()]
-
-      # transport delivers events as `:v2_event` rather than
-      # `:bidi_event`. Same payload shape, different envelope.
       {:v2_event, "Runtime.consoleAPICalled", event} ->
         [translate_cdp_console(event) | drain_log_events()]
 

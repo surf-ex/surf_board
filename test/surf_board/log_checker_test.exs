@@ -47,7 +47,7 @@ defmodule SurfBoard.LogCheckerTest do
 
       send(
         self(),
-        {:bidi_event, "log.entryAdded",
+        {:v2_event, "log.entryAdded",
          %{
            "params" => %{
              "level" => "info",
@@ -70,7 +70,7 @@ defmodule SurfBoard.LogCheckerTest do
 
       send(
         self(),
-        {:bidi_event, "log.entryAdded",
+        {:v2_event, "log.entryAdded",
          %{
            "params" => %{
              "level" => "error",
@@ -96,7 +96,7 @@ defmodule SurfBoard.LogCheckerTest do
 
       send(
         self(),
-        {:bidi_event, "log.entryAdded",
+        {:v2_event, "log.entryAdded",
          %{
            "params" => %{
              "level" => "error",
@@ -115,7 +115,7 @@ defmodule SurfBoard.LogCheckerTest do
 
       send(
         self(),
-        {:bidi_event, "log.entryAdded",
+        {:v2_event, "log.entryAdded",
          %{
            "params" => %{
              "level" => "info",
@@ -137,7 +137,7 @@ defmodule SurfBoard.LogCheckerTest do
       for i <- 1..3 do
         send(
           self(),
-          {:bidi_event, "log.entryAdded",
+          {:v2_event, "log.entryAdded",
            %{
              "params" => %{
                "level" => "info",
@@ -164,7 +164,7 @@ defmodule SurfBoard.LogCheckerTest do
 
       send(
         self(),
-        {:bidi_event, "log.entryAdded",
+        {:v2_event, "log.entryAdded",
          %{
            "params" => %{
              "level" => "info",

@@ -63,9 +63,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
 
     actor_config = %Actor.Config{
       socket: {:fused, ws_url},
-      send: :inline,
       load: :buffer,
-      subscribe: :passive,
       wire: Wire
     }
 

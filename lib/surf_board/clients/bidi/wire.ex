@@ -3,7 +3,7 @@ defmodule SurfBoard.Clients.BiDi.Wire do
 
   # BiDi wire-level event decoder used by `SurfBoard.Transport.Actor`
   # (BiDi mode). BiDi events arrive pre-decoded as
-  # `{:bidi_event, method, event}` messages from the
+  # `{:v2_event, method, event}` messages from the
   # `Drivers.ChromeBiDi.WebSocketClient`.
   #
   # `handle_event/3` is a pure function over the actor's state map.
