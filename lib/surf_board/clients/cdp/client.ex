@@ -1002,11 +1002,20 @@ defmodule SurfBoard.Clients.CDP.Client do
     id_js = Jason.encode!(query_id)
     grab_js = "window.__w.queries[#{id_js}].elements"
 
+    # `cast_register/3` registered the query in the focused frame's
+    # own context (via `contextId`, when one is focused) — the
+    # `window.__w.queries[...]` array this reads back lives in that
+    # same context, not the top-level document, so the read must
+    # target it too or it comes back empty (page navigated / array
+    # gone fallback below), yielding handle-less placeholder elements.
+    eval_params =
+      case Protocol.current_context_id(session) do
+        nil -> %{expression: grab_js, returnByValue: false}
+        ctx -> %{expression: grab_js, returnByValue: false, contextId: ctx}
+      end
+
     with {:ok, eval_result} <-
-           cdp_send(session, "Runtime.evaluate", %{
-             expression: grab_js,
-             returnByValue: false
-           }),
+           cdp_send(session, "Runtime.evaluate", eval_params),
          {:ok, array_id} when is_binary(array_id) <-
            ResponseParser.extract_object_id({:ok, eval_result}),
          {get_method, get_params} = Commands.get_properties(array_id),
