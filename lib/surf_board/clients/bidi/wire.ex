@@ -28,6 +28,9 @@ defmodule SurfBoard.Clients.BiDi.Wire do
       fails every pending call immediately instead of leaving them to
       time out one by one against a context that will never reply
       again (see `Clients.CDP.Wire`'s identical CDP-side handling).
+      Exception: a destroyed context matching `state.closing_context`
+      is an intentional close (`Clients.BiDi.Windows.close_window/1`),
+      not a crash — that marker is consumed instead.
 
   Unknown methods are a no-op.
   """
@@ -38,10 +41,19 @@ defmodule SurfBoard.Clients.BiDi.Wire do
     destroyed_context = get_in(event, ["params", "context"])
     our_context = state.session.browsing_context
 
-    if is_binary(destroyed_context) and destroyed_context == our_context do
-      %{state | target_crashed?: true}
-    else
-      state
+    cond do
+      not (is_binary(destroyed_context) and destroyed_context == our_context) ->
+        state
+
+      # This session itself asked to close this exact context
+      # (Clients.BiDi.Windows.close_window/1) — not a crash. Consume
+      # the marker so it can't suppress a later, genuine crash of
+      # whatever context this id gets reused for.
+      state.closing_context == destroyed_context ->
+        %{state | closing_context: nil}
+
+      true ->
+        %{state | target_crashed?: true}
     end
   end
 

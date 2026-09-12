@@ -1,27 +1,27 @@
 defmodule SurfBoard.Clients.BiDi.Frames do
   @moduledoc false
 
+  # IFrame focus for Chrome over BiDi. Pushes/pops browsing-context id
+  # strings onto the transport actor's `frame_stack` — the same
+  # mechanism `Clients.CDP.Frames` uses (there it holds
+  # executionContextId integers instead), not per-process state.
+  # `Clients.BiDi.Client.ctx/1` reads the top of this stack (via
+  # `Protocol.current_context_id/1`), falling back to the session's own
+  # `browsing_context` (the currently *focused window*, managed
+  # separately by `Clients.BiDi.Windows`) when the stack is empty, to
+  # decide which context every BiDi wire op targets.
+
   @behaviour SurfBoard.Frames
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
+  alias SurfBoard.Transport.Protocol
 
   @impl true
   def focus_frame(%Session{} = session, %Element{} = iframe) do
     case BiDiClient.child_context_for_iframe(session, iframe) do
       {:ok, child_ctx} ->
-        # Push the current context onto the per-test frame stack so
-        # focus_parent_frame can pop back. The override is read by
-        # BiDiClient.ctx/1 on every BiDi op — find/click/evaluate
-        # all retarget to the focused iframe automatically.
-        stack = Process.get({:surf_board_bidi_v2_frame_stack, session.id}, [])
-        current = current_ctx(session)
-        Process.put({:surf_board_bidi_v2_frame_stack, session.id}, [current | stack])
-        Process.put({:surf_board_bidi_v2_frame, session.id}, child_ctx)
-        # Browser.in_frame? checks for this proc-dict key to skip the
-        # click_aware fast path (legacy behavior — frame-scoped
-        # clicks don't go through bootstrap).
-        Process.put({:surf_board_frame_context, session.id}, child_ctx)
+        :ok = Protocol.push_frame(session, child_ctx)
         {:ok, nil}
 
       _ ->
@@ -30,11 +30,10 @@ defmodule SurfBoard.Clients.BiDi.Frames do
   end
 
   # Browser.focus_default_frame/1 calls driver.focus_frame(session, nil)
-  # to escape all the way out — clear the frame stack + override.
-  def focus_frame(%Session{} = session, nil) do
-    Process.delete({:surf_board_bidi_v2_frame_stack, session.id})
-    Process.delete({:surf_board_bidi_v2_frame, session.id})
-    Process.delete({:surf_board_frame_context, session.id})
+  # to escape all the way out — clear the frame stack entirely, same
+  # as Clients.CDP.Frames does.
+  def focus_frame(%Session{pid: pid}, nil) when is_pid(pid) do
+    GenServer.call(pid, :reset_frame_stack)
     {:ok, nil}
   end
 
@@ -42,29 +41,9 @@ defmodule SurfBoard.Clients.BiDi.Frames do
 
   @impl true
   def focus_parent_frame(%Session{} = session) do
-    case Process.get({:surf_board_bidi_v2_frame_stack, session.id}, []) do
-      [] ->
-        # Already at root.
-        {:ok, nil}
-
-      [parent_ctx | rest] ->
-        Process.put({:surf_board_bidi_v2_frame_stack, session.id}, rest)
-
-        if rest == [] and parent_ctx == session.browsing_context do
-          Process.delete({:surf_board_bidi_v2_frame, session.id})
-          Process.delete({:surf_board_frame_context, session.id})
-        else
-          Process.put({:surf_board_bidi_v2_frame, session.id}, parent_ctx)
-          Process.put({:surf_board_frame_context, session.id}, parent_ctx)
-        end
-
-        {:ok, nil}
-    end
+    :ok = Protocol.pop_frame(session)
+    {:ok, nil}
   end
 
   def focus_parent_frame(_), do: {:ok, nil}
-
-  defp current_ctx(%Session{id: id, browsing_context: root}) do
-    Process.get({:surf_board_bidi_v2_frame, id}, root)
-  end
 end

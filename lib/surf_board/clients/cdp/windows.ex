@@ -12,6 +12,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Transport.Protocol
   alias SurfBoard.WebSocket
 
   @impl true
@@ -72,8 +73,10 @@ defmodule SurfBoard.Clients.CDP.Windows do
       {:ok, %{"sessionId" => session_id}} ->
         # Update session struct in the GenServer (the caller's struct
         # may be stale; window_handle/1 re-fetches via :get_session).
+        # `:focus_window` (not `:update_browsing_context`) so this
+        # marks the session as switched — see Protocol.focus_window/3.
         if session.pid do
-          GenServer.call(session.pid, {:update_browsing_context, session_id, target_id})
+          GenServer.call(session.pid, {:focus_window, session_id, target_id})
         end
 
         new_session = %{
@@ -123,6 +126,11 @@ defmodule SurfBoard.Clients.CDP.Windows do
       end
 
     target_id = get_in(current.capabilities, [:target_id])
+    # Mark this exact flat sessionId as an intentional close before
+    # asking Chrome to close it — Target.detachedFromTarget for it is
+    # about to fire, and would otherwise look identical to that target
+    # crashing (see Clients.CDP.Wire).
+    :ok = Protocol.closing_window(current, current.browsing_context)
     ws_pid = session.bidi_pid
     _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
     {:ok, nil}

@@ -8,6 +8,7 @@ defmodule SurfBoard.Browser.Internal do
 
   alias SurfBoard.Element
   alias SurfBoard.Session
+  alias SurfBoard.Transport.Protocol
 
   @default_max_wait_time 3_000
 
@@ -76,17 +77,15 @@ defmodule SurfBoard.Browser.Internal do
   def remote_session?(%Session{}), do: true
   def remote_session?(_), do: false
 
+  # Actor-state reads (not per-process — both CDP and BiDi now push
+  # frame focus onto the transport actor's `frame_stack`, and window
+  # focus onto its `switched_window?` flag; see
+  # Clients.{CDP,BiDi}.Frames / Windows).
   @doc false
-  def in_frame?(%Session{} = session) do
-    Process.get({:cdp_frame_stack, session.id}, []) != [] or
-      Process.get({:surf_board_frame_context, session.id}) != nil
-  end
+  def in_frame?(%Session{} = session), do: Protocol.current_context_id(session) != nil
 
   @doc false
-  def in_switched_window?(%Session{} = session) do
-    Process.get({:cdp_current_target, session.id}) != nil or
-      Process.get({:surf_board_focused_context, session.id}) != nil
-  end
+  def in_switched_window?(%Session{} = session), do: Protocol.switched_window?(session)
 
   @doc false
   def current_time do

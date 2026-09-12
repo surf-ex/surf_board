@@ -109,6 +109,27 @@ defmodule SurfBoard.Transport.Actor do
     frame_stack: [],
     frame_contexts: %{},
     nav_pending: false,
+    # Set true the first time `{:focus_window, ...}` fires — i.e.
+    # `Clients.{CDP,BiDi}.Windows.focus_window/2` moved focus off the
+    # target this session started on. Distinct from
+    # `{:update_browsing_context, ...}`, which strategies also send
+    # during ordinary session bring-up (before any user action) to
+    # assign the session's initial context. Read by
+    # `Browser.Internal.in_switched_window?/1` to gate the fast-path
+    # find/click/eval pipeline, which doesn't yet support cross-window
+    # targeting.
+    switched_window?: false,
+    # Set by `Clients.{CDP,BiDi}.Windows.close_window/1` right before
+    # it asks the browser to close a target/context, to the CDP
+    # sessionId or BiDi context id being closed. A window closing
+    # produces the exact same wire event (`Target.detachedFromTarget`
+    # / `browsingContext.contextDestroyed`) as that same target
+    # genuinely crashing — `wire_mod.handle_event/3` checks this
+    # before setting `target_crashed?` so an intentional close
+    # doesn't kill the whole session, only an unrequested one does.
+    # Cleared as soon as it's matched (a stale value should never
+    # suppress a LATER, genuine crash of a target that reused the id).
+    closing_context: nil,
     # Set true by `wire_mod.handle_event/3` on a fatal, session-ending
     # event (CDP: `Inspector.targetCrashed`/`Target.detachedFromTarget`;
     # a future BiDi equivalent could set the same flag). Checked right
@@ -216,13 +237,27 @@ defmodule SurfBoard.Transport.Actor do
   end
 
   def handle_call({:update_browsing_context, session_id, target_id}, _from, state) do
-    new_session = %{
-      state.session
-      | browsing_context: session_id,
-        capabilities: Map.put(state.session.capabilities, :target_id, target_id)
-    }
+    {:reply, :ok, put_browsing_context(state, session_id, target_id)}
+  end
 
-    {:reply, :ok, %{state | session: new_session}}
+  # Distinct from `:update_browsing_context`: that message is also used
+  # during ordinary session bring-up (PerSession/BiDi strategies assign
+  # the session's initial context this way, before any user action) —
+  # reusing it to also flag "the user switched windows" would make
+  # every freshly-started session look switched. `:focus_window` is
+  # sent only by `Clients.{CDP,BiDi}.Windows.focus_window/2`, the
+  # actual user-facing operation `in_switched_window?/1` cares about.
+  def handle_call({:focus_window, session_id, target_id}, _from, state) do
+    state = put_browsing_context(state, session_id, target_id)
+    {:reply, :ok, %{state | switched_window?: true}}
+  end
+
+  def handle_call(:switched_window?, _from, state) do
+    {:reply, state.switched_window?, state}
+  end
+
+  def handle_call({:closing_window, context_id}, _from, state) do
+    {:reply, :ok, %{state | closing_context: context_id}}
   end
 
   def handle_call(:reset_frame_stack, _from, state) do
@@ -490,6 +525,16 @@ defmodule SurfBoard.Transport.Actor do
     catch
       :exit, _ -> {:error, state, :session_closed}
     end
+  end
+
+  defp put_browsing_context(state, session_id, target_id) do
+    new_session = %{
+      state.session
+      | browsing_context: session_id,
+        capabilities: Map.put(state.session.capabilities, :target_id, target_id)
+    }
+
+    %{state | session: new_session}
   end
 
   defp override_session_id(opts, state) do

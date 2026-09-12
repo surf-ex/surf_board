@@ -49,7 +49,23 @@ defmodule SurfBoard.Transport.Protocol do
   #     the caller wants to ensure prior in-flight messages have
   #     drained.
   #   * `{:update_browsing_context, session_id, target_id}` →
-  #     mutates the actor's session struct (used by focus_window).
+  #     mutates the actor's session struct. Sent during ordinary
+  #     session bring-up (PerSession/BiDi strategies assign the
+  #     session's initial context this way) — does NOT set
+  #     `switched_window?`.
+  #   * `{:focus_window, session_id, target_id}` → same struct
+  #     mutation as `:update_browsing_context`, but also sets
+  #     `switched_window?: true`. Sent only by
+  #     `Clients.{CDP,BiDi}.Windows.focus_window/2` — the user-facing
+  #     "switch to a different window/tab" operation. `target_id` is
+  #     `nil` for drivers with no separate target-id concept (BiDi —
+  #     only browsing-context ids exist there).
+  #   * `:switched_window?` → `true` once `:focus_window` has fired at
+  #     least once for this session.
+  #   * `{:closing_window, context_id}` → records that this session
+  #     itself is about to close `context_id`, so the crash-detection
+  #     event it produces isn't mistaken for a real crash. Sent only by
+  #     `Clients.{CDP,BiDi}.Windows.close_window/1`.
   #
   # ### Asynchronous (`GenServer.cast`)
   #
@@ -180,7 +196,7 @@ defmodule SurfBoard.Transport.Protocol do
 
   # ----- Frame stack -----
 
-  @spec current_context_id(Session.t()) :: integer | nil
+  @spec current_context_id(Session.t()) :: integer | String.t() | nil
   def current_context_id(%Session{pid: pid}) when is_pid(pid) do
     GenServer.call(pid, :current_context_id)
   catch
@@ -194,8 +210,9 @@ defmodule SurfBoard.Transport.Protocol do
     :exit, _ -> nil
   end
 
-  @spec push_frame(Session.t(), integer) :: :ok
-  def push_frame(%Session{pid: pid}, context_id) when is_integer(context_id) do
+  @spec push_frame(Session.t(), integer | String.t()) :: :ok
+  def push_frame(%Session{pid: pid}, context_id)
+      when is_integer(context_id) or is_binary(context_id) do
     GenServer.call(pid, {:push_frame, context_id})
   catch
     :exit, _ -> :ok
@@ -219,6 +236,60 @@ defmodule SurfBoard.Transport.Protocol do
     GenServer.call(pid, {:lookup_frame_context, frame_id})
   catch
     :exit, _ -> nil
+  end
+
+  # ----- Window focus -----
+
+  @doc """
+  Mutates the actor's session struct's context/target-id. Used during
+  ordinary session bring-up to assign the session's initial context —
+  does NOT mark this session as having switched windows. For the
+  user-facing "focus a different window" operation, use
+  `focus_window/3` instead.
+  """
+  @spec update_browsing_context(Session.t(), String.t(), String.t() | nil) :: :ok
+  def update_browsing_context(%Session{pid: pid}, session_id, target_id)
+      when is_pid(pid) and is_binary(session_id) do
+    GenServer.call(pid, {:update_browsing_context, session_id, target_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc """
+  Same struct mutation as `update_browsing_context/3`, but also marks
+  this session as having switched windows (see `switched_window?/1`).
+  `target_id` is `nil` for drivers with no separate target-id concept
+  (BiDi — the browsing-context id in `session_id` is the only handle).
+  """
+  @spec focus_window(Session.t(), String.t(), String.t() | nil) :: :ok
+  def focus_window(%Session{pid: pid}, session_id, target_id)
+      when is_pid(pid) and is_binary(session_id) do
+    GenServer.call(pid, {:focus_window, session_id, target_id})
+  catch
+    :exit, _ -> :ok
+  end
+
+  @doc "Has this session's window focus ever moved off its starting target?"
+  @spec switched_window?(Session.t()) :: boolean
+  def switched_window?(%Session{pid: pid}) when is_pid(pid) do
+    GenServer.call(pid, :switched_window?)
+  catch
+    :exit, _ -> false
+  end
+
+  @doc """
+  Call right before asking the browser to close `context_id` (the CDP
+  sessionId or BiDi context id being closed). An intentional close
+  produces the exact same wire event as that target genuinely
+  crashing — `wire_mod.handle_event/3` checks this so it doesn't set
+  `target_crashed?` for a close this session itself requested.
+  """
+  @spec closing_window(Session.t(), String.t()) :: :ok
+  def closing_window(%Session{pid: pid}, context_id)
+      when is_pid(pid) and is_binary(context_id) do
+    GenServer.call(pid, {:closing_window, context_id})
+  catch
+    :exit, _ -> :ok
   end
 
   # ----- Misc -----

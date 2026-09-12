@@ -31,7 +31,10 @@ defmodule SurfBoard.Clients.CDP.Wire do
       `target_crashed?: true`; `Transport.Actor` checks this after
       every event dispatch and fails every pending call immediately
       instead of leaving them to time out one by one against a target
-      that will never reply again.
+      that will never reply again. Exception: `Target.detachedFromTarget`
+      for the exact sessionId `state.closing_context` names is an
+      intentional close (`Clients.CDP.Windows.close_window/1`), not a
+      crash — that marker is consumed instead.
 
   Unknown methods are a no-op.
   """
@@ -47,10 +50,19 @@ defmodule SurfBoard.Clients.CDP.Wire do
     detached_session_id = params["sessionId"]
     our_session_id = state.session.browsing_context
 
-    if is_binary(detached_session_id) and detached_session_id == our_session_id do
-      %{state | target_crashed?: true}
-    else
-      state
+    cond do
+      not (is_binary(detached_session_id) and detached_session_id == our_session_id) ->
+        state
+
+      # This session itself asked to close this exact target
+      # (Clients.CDP.Windows.close_window/1) — not a crash. Consume
+      # the marker so it can't suppress a later, genuine crash of
+      # whatever target this sessionId gets reused for.
+      state.closing_context == detached_session_id ->
+        %{state | closing_context: nil}
+
+      true ->
+        %{state | target_crashed?: true}
     end
   end
 

@@ -33,16 +33,26 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # for the wire layer.
   use SurfBoard.OpsShared
 
-  # Frame focus stores an override in the test process dictionary
-  # (BiDi V2BiDiDriver.focus_frame writes it). When set, subsequent
-  # BiDi commands target the focused iframe's browsing context
-  # instead of the session struct's root one. Per-process so that
-  # concurrent tests don't interfere.
-  defp ctx(%Session{id: id, browsing_context: root}) do
-    case Process.get({:surf_board_bidi_v2_frame, id}) do
-      nil -> root
-      override when is_binary(override) -> override
+  # The context every BiDi wire op targets: the top of the transport
+  # actor's frame_stack (set by `Clients.BiDi.Frames.focus_frame/2`)
+  # when focused on an iframe, else the session's own `browsing_context`
+  # (the currently focused window, set by `Clients.BiDi.Windows.focus_window/2`).
+  # Actor state, not per-process — re-fetched fresh here since the
+  # caller's struct may be stale (either kind of focus change mutates
+  # the live actor, not the struct in hand).
+  defp ctx(%Session{pid: pid} = session) when is_pid(pid) do
+    Protocol.current_context_id(session) || live_browsing_context(session)
+  end
+
+  defp ctx(%Session{browsing_context: root}), do: root
+
+  defp live_browsing_context(%Session{pid: pid, browsing_context: root}) do
+    case GenServer.call(pid, :get_session) do
+      %Session{browsing_context: ctx} -> ctx
+      _ -> root
     end
+  catch
+    :exit, _ -> root
   end
 
   # ----- Navigation -----
