@@ -2,7 +2,7 @@ defmodule SurfBoard.Transport.WireSocket do
   @moduledoc false
 
   # Generic Mint-WebSocket connect/upgrade/encode/decode plumbing, shared
-  # by `SurfBoard.WebSocket` (one socket, many sessions multiplexed by a
+  # by `SurfBoard.Transport.WebSocket` (one socket, many sessions multiplexed by a
   # subscriber table — used by `SurfBoard.Transport.Actor`'s
   # `{:shared, pid}` mode) and `Transport.Actor`'s own `{:fused, ws_url}`
   # mode (one socket per session, owned directly by the actor's own

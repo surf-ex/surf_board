@@ -1,4 +1,4 @@
-defmodule SurfBoard.Bench.Timing do
+defmodule SurfBoard.Transport.Timing do
   @moduledoc false
 
   # Opt-in CDP send/recv gap accumulator. Enabled when the
@@ -7,7 +7,7 @@ defmodule SurfBoard.Bench.Timing do
   #
   # Usage:
   #   1. Call `setup/0` once at app boot.
-  #   2. Transport.Actor / SurfBoard.WebSocket call `mark_now/0` on
+  #   2. Transport.Actor / SurfBoard.Transport.WebSocket call `mark_now/0` on
   #      send and pass the timestamp to `record/1` once the matching
   #      response arrives.
   #   3. At end of run, call `report/0` to print totals.

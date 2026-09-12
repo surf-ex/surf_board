@@ -152,7 +152,7 @@ defmodule SurfBoard.Clients.CDP.Client do
     cdp_cast(session, "Runtime.addBinding", %{name: "__surfboard"})
 
     cdp_cast(session, "Page.addScriptToEvaluateOnNewDocument", %{
-      source: SurfBoard.Bootstrap.cdp_iife(session.live_view_aware?)
+      source: SurfBoard.Clients.Bootstrap.cdp_iife(session.live_view_aware?)
     })
 
     case cdp_send(session, "Page.getFrameTree", %{}) do
@@ -1121,7 +1121,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   def cookies(%Session{} = session) do
     case cdp_send(session, "Network.getCookies", %{}) do
       {:ok, %{"cookies" => cookies}} when is_list(cookies) ->
-        {:ok, Enum.map(cookies, &SurfBoard.Cookies.normalize_returned_cookie/1)}
+        {:ok, Enum.map(cookies, &SurfBoard.Clients.Cookies.normalize_returned_cookie/1)}
 
       {:ok, _} ->
         {:ok, []}
@@ -1134,7 +1134,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   @doc """
   Sets a cookie. `attrs` accepts the standard WebDriver attribute
   keys (`:domain`, `:path`, `:secure`, `:httpOnly`, `:expiry`,
-  `:sameSite`) — `SurfBoard.Cookies` translates `:expiry` to
+  `:sameSite`) — `SurfBoard.Clients.Cookies` translates `:expiry` to
   CDP's `:expires` and normalises `:sameSite` to PascalCase. A
   `:url` may also be supplied; when neither `:url` nor `:domain` is
   given, the current page URL is used.
@@ -1155,7 +1155,7 @@ defmodule SurfBoard.Clients.CDP.Client do
       end
 
     attrs =
-      case SurfBoard.Cookies.same_site(attrs, :pascal) do
+      case SurfBoard.Clients.Cookies.same_site(attrs, :pascal) do
         nil ->
           attrs
 

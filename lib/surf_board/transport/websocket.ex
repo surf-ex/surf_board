@@ -1,4 +1,4 @@
-defmodule SurfBoard.WebSocket do
+defmodule SurfBoard.Transport.WebSocket do
   @moduledoc false
 
   # Transport layer (the "plexer/demuxer") for CDP and BiDi WebSocket
@@ -164,7 +164,7 @@ defmodule SurfBoard.WebSocket do
         _from,
         state
       ) do
-    t0 = SurfBoard.Bench.Timing.mark_now()
+    t0 = SurfBoard.Transport.Timing.mark_now()
     {id, wire} = WireSocket.send(state.wire, method, params, opts)
     pending = Map.put(state.pending, id, {owner_pid, t0})
     {:reply, id, %{state | wire: wire, pending: pending}}
@@ -240,7 +240,7 @@ defmodule SurfBoard.WebSocket do
         state
 
       {{owner_pid, t0}, pending} ->
-        SurfBoard.Bench.Timing.record(t0)
+        SurfBoard.Transport.Timing.record(t0)
         send(owner_pid, {:v2_response, id, result})
         %{state | pending: pending}
     end

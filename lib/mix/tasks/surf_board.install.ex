@@ -8,7 +8,7 @@ defmodule Mix.Tasks.SurfBoard.Install do
   `.browsers/`, downloads the Lightpanda binary into
   `.browsers/lightpanda/`, and runs `npm install` in `priv/bidi-server/`
   to fetch the chromium-bidi Node package and its peer deps. Writes the
-  resolved binary paths to `.browsers/PATHS` so `SurfBoard.BrowserPaths`
+  resolved binary paths to `.browsers/PATHS` so `SurfBoard.Launcher.BrowserPaths`
   can find them.
 
   ## Usage

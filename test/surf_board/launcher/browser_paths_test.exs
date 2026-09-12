@@ -1,7 +1,7 @@
 defmodule SurfBoard.BrowserPathsTest do
   use ExUnit.Case, async: false
 
-  alias SurfBoard.BrowserPaths
+  alias SurfBoard.Launcher.BrowserPaths
 
   @env "SURF_BOARD_LIGHTPANDA_PATH"
 

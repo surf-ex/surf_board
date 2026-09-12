@@ -56,7 +56,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.Server do
 
     chrome_path =
       Keyword.get_lazy(opts, :chrome_path, fn ->
-        SurfBoard.BrowserPaths.chrome_path!()
+        SurfBoard.Launcher.BrowserPaths.chrome_path!()
       end)
 
     tcp_port = Keyword.get(opts, :tcp_port, find_available_port())

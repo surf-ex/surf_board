@@ -10,7 +10,7 @@ defmodule SurfBoard.Clients.CDP.Dialogs do
 
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Dialogs.Flow
-  alias SurfBoard.WebSocket
+  alias SurfBoard.Transport.WebSocket
   alias SurfBoard.Session
 
   @impl true

@@ -1,4 +1,4 @@
-defmodule SurfBoard.LiveViewAware do
+defmodule SurfBoard.LiveView.Aware do
   @moduledoc false
 
   # LiveView-aware operations that work across all BiDi/CDP drivers.

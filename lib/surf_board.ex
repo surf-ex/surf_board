@@ -23,7 +23,7 @@ defmodule SurfBoard do
 
   @doc false
   def start(_type, _args) do
-    SurfBoard.Bench.Timing.setup()
+    SurfBoard.Transport.Timing.setup()
 
     # No spec's default launcher is started here — a session's spec
     # isn't known until `start_session/1` is called, so its launcher
@@ -32,7 +32,7 @@ defmodule SurfBoard do
     # installed.
     children = [
       {DynamicSupervisor, name: SurfBoard.DriverSupervisor, strategy: :one_for_one},
-      {SurfBoard.SessionStore, [name: SurfBoard.SessionStore]}
+      {SurfBoard.Transport.SessionStore, [name: SurfBoard.Transport.SessionStore]}
     ]
 
     opts = [strategy: :one_for_one, name: SurfBoard.Supervisor]

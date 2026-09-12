@@ -39,7 +39,7 @@ defmodule SurfBoard.Browser.Navigation do
     # something every remote-spec visit should pay for. Best-effort:
     # the result is advisory, downstream actions still auto-wait.
     if session.live_view_aware? and Internal.remote_session?(session) do
-      _ = SurfBoard.LiveViewAware.await_liveview_connected(session)
+      _ = SurfBoard.LiveView.Aware.await_liveview_connected(session)
     end
 
     session
@@ -58,12 +58,12 @@ defmodule SurfBoard.Browser.Navigation do
       result = spec.wire_protocol.visit(session, url)
 
       if session.live_view_aware?,
-        do: _ = SurfBoard.LiveViewAware.await_liveview_connected(session)
+        do: _ = SurfBoard.LiveView.Aware.await_liveview_connected(session)
 
       result
     end
 
-    SurfBoard.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
+    SurfBoard.Browser.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, flow)
   end
 
   @spec current_url(Session.t()) :: String.t()

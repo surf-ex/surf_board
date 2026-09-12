@@ -249,7 +249,7 @@ defmodule SurfBoard.Clients.BiDi.Commands do
     ]
   end
 
-  # Key code mappings matching SurfBoard.Helpers.KeyCodes
+  # Key code mappings matching SurfBoard.KeyCodes
   defp key_code(:null), do: "\uE000"
   defp key_code(:cancel), do: "\uE001"
   defp key_code(:help), do: "\uE002"

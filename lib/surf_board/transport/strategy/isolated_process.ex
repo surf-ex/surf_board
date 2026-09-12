@@ -13,7 +13,7 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
   @behaviour SurfBoard.Transport.Strategy
 
   alias SurfBoard.{Launcher, Transport}
-  alias SurfBoard.WebSocket
+  alias SurfBoard.Transport.WebSocket
 
   defmodule Config do
     @moduledoc false

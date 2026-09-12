@@ -1,4 +1,4 @@
-defmodule SurfBoard.Cookies do
+defmodule SurfBoard.Clients.Cookies do
   @moduledoc false
 
   # Shared helpers for cookie-attribute normalization across CDP and BiDi.

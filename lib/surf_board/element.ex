@@ -135,7 +135,7 @@ defmodule SurfBoard.Element do
     session = root_session(element)
     spec = spec(element)
 
-    SurfBoard.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, fn ->
+    SurfBoard.Browser.LogChecker.maybe_check_logs(spec.log_check_interactions?, session, fn ->
       click_via_wire(spec, session, element)
     end)
   end

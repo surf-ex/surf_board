@@ -13,7 +13,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Transport.Protocol
-  alias SurfBoard.WebSocket
+  alias SurfBoard.Transport.WebSocket
 
   @impl true
   def window_handle(%Session{pid: pid} = session) when is_pid(pid) do
@@ -101,7 +101,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
         # inline against the current document so subsequent finds
         # work without needing a reload.
         CDPClient.cdp_cast(new_session, "Runtime.evaluate", %{
-          expression: SurfBoard.Bootstrap.cdp_iife(),
+          expression: SurfBoard.Clients.Bootstrap.cdp_iife(),
           returnByValue: true
         })
 

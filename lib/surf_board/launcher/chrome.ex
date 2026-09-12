@@ -40,8 +40,9 @@ defmodule SurfBoard.Launcher.Chrome do
   # any other one. Pass your own `:build_template`/`:post_start` to
   # override these defaults entirely.
 
-  alias SurfBoard.{DependencyError, Metadata, UserAgent}
+  alias SurfBoard.{DependencyError, Metadata}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.SpecModule.ChromeCDP
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Launcher
@@ -116,7 +117,7 @@ defmodule SurfBoard.Launcher.Chrome do
   """
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    if match?({:ok, _}, SurfBoard.BrowserPaths.chrome_path()) do
+    if match?({:ok, _}, SurfBoard.Launcher.BrowserPaths.chrome_path()) do
       :ok
     else
       {:error,
@@ -180,9 +181,9 @@ defmodule SurfBoard.Launcher.Chrome do
     caller = Keyword.get(opts, :owner, self())
 
     # Forward console + exception events to the test caller's mailbox
-    # so LogChecker.check_logs! can drain them after each operation.
+    # so Browser.LogChecker.check_logs! can drain them after each operation.
     _ =
-      SurfBoard.WebSocket.subscribe(
+      SurfBoard.Transport.WebSocket.subscribe(
         session.ws_pid,
         "Runtime.consoleAPICalled",
         session.browsing_context,
@@ -190,7 +191,7 @@ defmodule SurfBoard.Launcher.Chrome do
       )
 
     _ =
-      SurfBoard.WebSocket.subscribe(
+      SurfBoard.Transport.WebSocket.subscribe(
         session.ws_pid,
         "Runtime.exceptionThrown",
         session.browsing_context,

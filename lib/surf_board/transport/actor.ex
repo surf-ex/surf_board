@@ -19,7 +19,7 @@ defmodule SurfBoard.Transport.Actor do
   #                hop — Lightpanda's per-session model), or
   #                `{:remote, module, pid}` when it routes commands
   #                through an already-running socket-owner process
-  #                elsewhere (`SurfBoard.WebSocket` for CDP's shared-WS
+  #                elsewhere (`SurfBoard.Transport.WebSocket` for CDP's shared-WS
   #                and isolated-process models — genuinely serving many
   #                sessions; `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
   #                for BiDi — always 1:1 with its session, but still a
@@ -47,10 +47,10 @@ defmodule SurfBoard.Transport.Actor do
   # `:spawn_link` mode spawned a linked helper to make a blocking
   # `WebSocketClient.send_command/4` call on this actor's behalf. That
   # wasn't a genuine BiDi wire constraint — `WebSocketClient`'s own
-  # `handle_call` never blocked its mailbox, same as `SurfBoard.WebSocket`;
+  # `handle_call` never blocked its mailbox, same as `SurfBoard.Transport.WebSocket`;
   # the only thing blocking was this actor calling it via a synchronous
   # `GenServer.call` instead of the cast_send-and-correlate-later shape
-  # `SurfBoard.WebSocket` already used. Giving `WebSocketClient` the
+  # `SurfBoard.Transport.WebSocket` already used. Giving `WebSocketClient` the
   # identical `cast_send/5` contract removed the need for the shim
   # entirely — every remote socket is sent to the same way.
   #
@@ -208,7 +208,7 @@ defmodule SurfBoard.Transport.Actor do
     session = %{session | pid: self()}
 
     try do
-      SurfBoard.SessionStore.register(session, owner)
+      SurfBoard.Transport.SessionStore.register(session, owner)
     catch
       :exit, _ -> :ok
     end
@@ -266,7 +266,7 @@ defmodule SurfBoard.Transport.Actor do
 
   def handle_call({:cdp_send, method, params, opts}, from, state) do
     opts = override_session_id(opts, state)
-    t0 = SurfBoard.Bench.Timing.mark_now()
+    t0 = SurfBoard.Transport.Timing.mark_now()
 
     case send_inline(state, method, params, opts) do
       {:ok, wire_id, state} ->
@@ -450,7 +450,7 @@ defmodule SurfBoard.Transport.Actor do
         state
 
       {{from, t0, method}, pending} ->
-        SurfBoard.Bench.Timing.record(t0, method)
+        SurfBoard.Transport.Timing.record(t0, method)
         GenServer.reply(from, result)
         %{state | pending_calls: pending}
     end
@@ -469,7 +469,7 @@ defmodule SurfBoard.Transport.Actor do
 
   defp finish_terminate(state) do
     try do
-      SurfBoard.SessionStore.unregister(state.session)
+      SurfBoard.Transport.SessionStore.unregister(state.session)
     catch
       :exit, _ -> :ok
     end

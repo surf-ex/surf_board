@@ -39,8 +39,9 @@ defmodule SurfBoard.Launcher.Lightpanda do
   # Pass your own `:build_template`/`:post_start` to override these
   # defaults entirely.
 
-  alias SurfBoard.{DependencyError, Metadata, UserAgent}
+  alias SurfBoard.{DependencyError, Metadata}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.SpecModule.LightpandaCDP
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
@@ -208,7 +209,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
     end
   end
 
-  # Make `SurfBoard.BrowserPaths` authoritative for Lightpanda's binary
+  # Make `SurfBoard.Launcher.BrowserPaths` authoritative for Lightpanda's binary
   # location, mirroring how the Chrome drivers resolve through it. We
   # translate the resolved path into `config :lightpanda, :path`, which
   # `Lightpanda.bin_path/0` honors at the top of its precedence.
@@ -221,7 +222,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
   @doc false
   def resolve_binary_path do
     if is_nil(Application.get_env(:lightpanda, :path)) do
-      case SurfBoard.BrowserPaths.lightpanda_path() do
+      case SurfBoard.Launcher.BrowserPaths.lightpanda_path() do
         {:ok, path} -> Application.put_env(:lightpanda, :path, path)
         :error -> :ok
       end

@@ -41,7 +41,7 @@ defmodule SurfBoard.LiveView do
   with `live_view_aware: true`.
   """
 
-  alias SurfBoard.LiveViewAware
+  alias SurfBoard.LiveView.Aware
   alias SurfBoard.Protocol
   alias SurfBoard.Transport.Protocol, as: TransportProtocol
   alias SurfBoard.Session
@@ -172,12 +172,12 @@ defmodule SurfBoard.LiveView do
         %{session | pending_await: nil}
 
       :armed ->
-        _ = LiveViewAware.await_patch(session, timeout)
+        _ = Aware.await_patch(session, timeout)
         %{session | pending_await: nil}
 
       nil ->
         # No deferred wait: arm a fresh promise and wait for the next patch.
-        _ = LiveViewAware.arm_and_await(session, timeout)
+        _ = Aware.arm_and_await(session, timeout)
         session
     end
   end
@@ -217,7 +217,7 @@ defmodule SurfBoard.LiveView do
   @spec arm_next_patch(Session.t()) :: Session.t()
   def arm_next_patch(%Session{} = session) do
     if remote?(session) do
-      case LiveViewAware.prepare_patch(session) do
+      case Aware.prepare_patch(session) do
         :prepared -> %{session | pending_await: :armed}
         :no_liveview -> session
       end

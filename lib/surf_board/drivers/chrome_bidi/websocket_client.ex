@@ -3,20 +3,20 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   # GenServer managing a single WebSocket connection per session.
   #
   # The Mint connect/upgrade/encode/decode plumbing lives in
-  # `SurfBoard.Transport.WireSocket`, shared with `SurfBoard.WebSocket`
+  # `SurfBoard.Transport.WireSocket`, shared with `SurfBoard.Transport.WebSocket`
   # (Chrome CDP's shared-socket owner). This module speaks the exact
-  # same owner protocol `SurfBoard.WebSocket` does — `cast_send/5`
+  # same owner protocol `SurfBoard.Transport.WebSocket` does — `cast_send/5`
   # returns a wire id immediately and delivers the reply later via
   # `{:v2_response, wire_id, result}` sent to the given owner pid;
   # events broadcast as `{:v2_event, method, event}` to subscribers —
   # so `Transport.Actor` can treat this exactly like a `:remote`
   # socket owner, with no BiDi-specific dispatch of its own. Only the
   # cardinality differs (one session per WebSocketClient, vs. many
-  # sessions sharing one `SurfBoard.WebSocket`), which `Actor` doesn't
+  # sessions sharing one `SurfBoard.Transport.WebSocket`), which `Actor` doesn't
   # need to know about.
   #
   # `send_command`/`send_command_flat` stay as a synchronous
-  # convenience (mirrors `SurfBoard.WebSocket.send_sync/4`) for callers
+  # convenience (mirrors `SurfBoard.Transport.WebSocket.send_sync/4`) for callers
   # without a Session actor of their own to correlate through — e.g.
   # `Clients.BiDi.Dialogs`, session-bootstrap handshake code.
 
@@ -46,7 +46,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
 
   Returns the wire id assigned to this call so the caller can stash
   it in its own pending-calls map. Same contract as
-  `SurfBoard.WebSocket.cast_send/5`.
+  `SurfBoard.Transport.WebSocket.cast_send/5`.
   """
   @spec cast_send(pid, pid, String.t(), map, keyword) :: non_neg_integer()
   def cast_send(pid, owner_pid, method, params, opts \\ []) do
@@ -98,7 +98,7 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
   @doc """
   Subscribe `subscriber` (default: caller) to events matching `event_method`.
 
-  Same argument order as `SurfBoard.WebSocket.subscribe/4` — `routing_key`
+  Same argument order as `SurfBoard.Transport.WebSocket.subscribe/4` — `routing_key`
   before `subscriber` — so `Transport.Actor` can call either socket
   owner identically. Pass `routing_key` to scope delivery: only events
   whose context/session id matches will be forwarded. Omit it (or pass

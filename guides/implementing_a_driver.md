@@ -320,7 +320,7 @@ strategy for an existing vendor).
      separate process, no extra hop (Lightpanda's model — see
      `Transport.Strategy.PerSession.start_session/1`). `{:shared, socket_pid}`
      if the socket is (or might be) shared with other sessions, or already
-     started by something else — pass the pid of a `SurfBoard.WebSocket` or
+     started by something else — pass the pid of a `SurfBoard.Transport.WebSocket` or
      your protocol's equivalent (Chrome CDP's `Strategy.SharedWS`/
      `Strategy.IsolatedProcess` both use this; see
      `Transport.start_session_from/3`). `{:shared, _}` is the only option
@@ -328,7 +328,7 @@ strategy for an existing vendor).
      actor's mailbox belongs to exactly one session.
    * **`send`** — `:inline` if your protocol client replies asynchronously
      without blocking on the wire round-trip (true of both `WireSocket` and
-     `SurfBoard.WebSocket` — this is what CDP uses). `:spawn_link` if your
+     `SurfBoard.Transport.WebSocket` — this is what CDP uses). `:spawn_link` if your
      client's send function is itself a blocking `GenServer.call` (BiDi's
      `WebSocketClient.send_command/4` is) — otherwise a slow call would
      stall the actor's mailbox and delay every concurrent event it needs to

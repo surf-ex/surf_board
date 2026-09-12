@@ -1,4 +1,4 @@
-defmodule SurfBoard.Helpers.KeyCodes do
+defmodule SurfBoard.KeyCodes do
   @moduledoc """
   Shortcuts for various keys.
 

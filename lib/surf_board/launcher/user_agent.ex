@@ -1,4 +1,4 @@
-defmodule SurfBoard.UserAgent do
+defmodule SurfBoard.Launcher.UserAgent do
   @moduledoc false
 
   # Resolves the User-Agent a session should report, from (highest priority

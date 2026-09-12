@@ -504,7 +504,7 @@ defmodule SurfBoard.OpsShared do
   #     run W.run synchronously for the count-shape-mismatch fallback
   #     so callers see the actual element count for error messaging.
 
-  alias SurfBoard.Bootstrap
+  alias SurfBoard.Clients.Bootstrap
   alias SurfBoard.Clients.CDP.Ops
   alias SurfBoard.Transport.Protocol
 

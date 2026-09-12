@@ -1,7 +1,7 @@
 defmodule SurfBoard.SessionStoreTest do
   @moduledoc false
   use ExUnit.Case
-  alias SurfBoard.SessionStore
+  alias SurfBoard.Transport.SessionStore
   alias SurfBoard.Session
 
   setup do

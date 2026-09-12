@@ -158,7 +158,7 @@ defmodule SurfBoard.SpecModule.ChromeCDP do
 
   @doc false
   def remote_url do
-    SurfBoard.BrowserPaths.chrome_url() ||
+    SurfBoard.Launcher.BrowserPaths.chrome_url() ||
       Application.get_env(:surf_board, :chrome_cdp, []) |> Keyword.get(:remote_url)
   end
 end

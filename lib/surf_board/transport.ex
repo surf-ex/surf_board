@@ -61,7 +61,7 @@ defmodule SurfBoard.Transport do
 
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Clients.CDP.Wire
-  alias SurfBoard.WebSocket
+  alias SurfBoard.Transport.WebSocket
 
   @typedoc """
   What a `Strategy.SharedWS`/`Strategy.IsolatedProcess` connection

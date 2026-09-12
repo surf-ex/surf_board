@@ -217,7 +217,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
         :full_page ->
           result = fun.()
           SurfBoard.Transport.Protocol.await_next_page_load(session)
-          SurfBoard.LiveViewAware.await_liveview_connected(session)
+          SurfBoard.LiveView.Aware.await_liveview_connected(session)
           result
 
         :none ->
@@ -232,11 +232,11 @@ defmodule SurfBoard.Browser.LiveViewPatch do
 
   # Classify the interaction: :patch, :navigate, :full_page, or :none.
   defp do_patch_await(session, fun) do
-    case SurfBoard.LiveViewAware.prepare_patch(session) do
+    case SurfBoard.LiveView.Aware.prepare_patch(session) do
       :prepared ->
         result = fun.()
 
-        case SurfBoard.LiveViewAware.await_patch(session) do
+        case SurfBoard.LiveView.Aware.await_patch(session) do
           :ok ->
             result
 
@@ -248,7 +248,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
 
           :page_navigated ->
             SurfBoard.Transport.Protocol.await_next_page_load(session)
-            SurfBoard.LiveViewAware.await_liveview_connected(session)
+            SurfBoard.LiveView.Aware.await_liveview_connected(session)
             result
         end
 
@@ -265,7 +265,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
     # for the URL to change first via the pre_url check).
     {:ok, pre_url} = SurfBoard.Protocol.current_url(session)
     result = fun.()
-    SurfBoard.LiveViewAware.await_liveview_connected(session, pre_url: pre_url)
+    SurfBoard.LiveView.Aware.await_liveview_connected(session, pre_url: pre_url)
     result
   end
 

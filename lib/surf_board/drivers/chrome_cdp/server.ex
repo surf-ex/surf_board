@@ -44,7 +44,7 @@ defmodule SurfBoard.Drivers.ChromeCDP.Server do
   def init(opts) do
     chrome_path =
       Keyword.get_lazy(opts, :chrome_path, fn ->
-        SurfBoard.BrowserPaths.chrome_path!()
+        SurfBoard.Launcher.BrowserPaths.chrome_path!()
       end)
 
     args = chrome_args(opts)

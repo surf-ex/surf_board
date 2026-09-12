@@ -1,4 +1,4 @@
-defmodule SurfBoard.SessionStore do
+defmodule SurfBoard.Transport.SessionStore do
   @moduledoc false
 
   # Lightweight registry mapping owning-process pids to their active

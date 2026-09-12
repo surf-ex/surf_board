@@ -1,4 +1,4 @@
-defmodule SurfBoard.BrowserPaths do
+defmodule SurfBoard.Launcher.BrowserPaths do
   @moduledoc """
   Finds browser binaries — either a local binary to launch or a remote
   URL to connect to.

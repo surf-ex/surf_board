@@ -5,14 +5,14 @@ defmodule SurfBoard.Installer do
   #
   # Downloads browser binaries into a single project-local `.browsers/`
   # dir and records their resolved paths in `.browsers/PATHS` so
-  # `SurfBoard.BrowserPaths` (and the test config) can find them.
+  # `SurfBoard.Launcher.BrowserPaths` (and the test config) can find them.
   #
   # Each browser writes its own line in PATHS; installs merge into the
   # existing file rather than clobbering it, so `install.chrome` and
   # `install.lightpanda` can run independently without wiping each
   # other's entry.
 
-  alias SurfBoard.BrowserPaths
+  alias SurfBoard.Launcher.BrowserPaths
 
   @install_dir ".browsers"
   @paths_file Path.join(@install_dir, "PATHS")

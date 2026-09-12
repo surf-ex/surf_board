@@ -4,7 +4,7 @@ defmodule SurfBoard.WebSocketHostHeaderTest do
   require Logger
 
   # Verifies that the WebSocket upgrade request sent by
-  # SurfBoard.WebSocket carries `Host: localhost`.
+  # SurfBoard.Transport.WebSocket carries `Host: localhost`.
   #
   # Chromium 148 tightened DevTools' host allowlist: the WS upgrade is
   # rejected with a 500 unless the Host header is `localhost` or an IP
@@ -13,7 +13,7 @@ defmodule SurfBoard.WebSocketHostHeaderTest do
   # behavior of sending `Host: chrome:9222` triggers that rejection.
 
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
-  alias SurfBoard.WebSocket
+  alias SurfBoard.Transport.WebSocket
 
   # The fake server replies 500, which the WS process logs at :error.
   # Suppress globally for this module — the 500 is intentional.

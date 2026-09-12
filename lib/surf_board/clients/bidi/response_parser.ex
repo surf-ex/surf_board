@@ -184,7 +184,7 @@ defmodule SurfBoard.Clients.BiDi.ResponseParser do
   Extracts cookies from a getCookies response.
   """
   def extract_cookies(%{"cookies" => cookies}) when is_list(cookies) do
-    {:ok, Enum.map(cookies, &SurfBoard.Cookies.normalize_returned_cookie/1)}
+    {:ok, Enum.map(cookies, &SurfBoard.Clients.Cookies.normalize_returned_cookie/1)}
   end
 
   def extract_cookies(other), do: {:error, {:unexpected_cookies_response, other}}

@@ -112,7 +112,7 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
 
     query_id = "q1"
     ops_json = ~s'[["query", "css", ".item"]]'
-    register_snippet = SurfBoard.Bootstrap.register_js(query_id, ops_json, "null", "null")
+    register_snippet = SurfBoard.Clients.Bootstrap.register_js(query_id, ops_json, "null", "null")
 
     fn_decl = "() => { #{register_snippet} }"
 

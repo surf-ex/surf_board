@@ -1,7 +1,7 @@
-defmodule SurfBoard.Helpers.KeyCodesTest do
+defmodule SurfBoard.KeyCodesTest do
   use ExUnit.Case, async: true
 
-  import SurfBoard.Helpers.KeyCodes
+  import SurfBoard.KeyCodes
 
   test "encoding unicode values as JSON" do
     assert json([:enter]) == "{\"value\": [\"\\uE007\"]}"

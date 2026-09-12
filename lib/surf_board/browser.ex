@@ -529,7 +529,7 @@ defmodule SurfBoard.Browser do
   list of atoms, which are automatically converted into the corresponding key
   codes.
 
-  For a list of available key codes see `SurfBoard.Helpers.KeyCodes`.
+  For a list of available key codes see `SurfBoard.KeyCodes`.
 
   ## Example
 

@@ -21,7 +21,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
 
   alias SurfBoard.Element
   alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
-  alias SurfBoard.Bootstrap
+  alias SurfBoard.Clients.Bootstrap
   alias SurfBoard.OpsShared
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Session
@@ -906,7 +906,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   Sets a cookie scoped to the session's browsing context. `attrs`
   accepts the standard WebDriver attribute keys (`:domain`, `:path`,
   `:secure`, `:httpOnly`, `:expiry`, `:sameSite`) —
-  `SurfBoard.Cookies` normalises `:sameSite` to BiDi's
+  `SurfBoard.Clients.Cookies` normalises `:sameSite` to BiDi's
   lowercase form. Defaults `:domain` to `"localhost"` and `:path` to
   `"/"` when not provided.
   """
@@ -920,8 +920,8 @@ defmodule SurfBoard.Clients.BiDi.Client do
       %{
         name: name,
         value: %{type: "string", value: value},
-        domain: SurfBoard.Cookies.attr(attrs, :domain, "localhost"),
-        path: SurfBoard.Cookies.attr(attrs, :path, "/")
+        domain: SurfBoard.Clients.Cookies.attr(attrs, :domain, "localhost"),
+        path: SurfBoard.Clients.Cookies.attr(attrs, :path, "/")
       }
       |> maybe_put_attr(:secure, attrs)
       |> maybe_put_attr(:httpOnly, attrs)
@@ -938,14 +938,14 @@ defmodule SurfBoard.Clients.BiDi.Client do
   end
 
   defp maybe_put_attr(cookie, key, attrs) do
-    case SurfBoard.Cookies.attr(attrs, key) do
+    case SurfBoard.Clients.Cookies.attr(attrs, key) do
       nil -> cookie
       v -> Map.put(cookie, key, v)
     end
   end
 
   defp maybe_put_same_site(cookie, attrs) do
-    case SurfBoard.Cookies.same_site(attrs, :lower) do
+    case SurfBoard.Clients.Cookies.same_site(attrs, :lower) do
       nil -> cookie
       v -> Map.put(cookie, :sameSite, v)
     end

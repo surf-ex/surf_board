@@ -33,7 +33,8 @@ defmodule SurfBoard.Launcher.BiDi do
   # module, not the other way around. Pass your own
   # `:build_template`/`:post_start` to override these defaults entirely.
 
-  alias SurfBoard.{Metadata, UserAgent}
+  alias SurfBoard.Metadata
+  alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
