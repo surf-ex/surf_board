@@ -6,7 +6,7 @@ defmodule SurfBoard.Integration.ChromeBiDiSmokeTest do
   priv/bidi-server), which needs `npm install` in that directory.
 
   `SurfBoard.start_session(driver: :chrome)` starts the sidecar lazily,
-  the first time it's called (`Specs.ChromeBiDi.default_launcher_spec/0`,
+  the first time it's called (`SpecModule.ChromeBiDi.default_launcher_spec/0`,
   under `SurfBoard.DriverSupervisor`) — no manual setup needed here,
   same as chrome_cdp/lightpanda's SessionCase-driven tests.
   """

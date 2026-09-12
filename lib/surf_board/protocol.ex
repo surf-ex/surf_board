@@ -17,10 +17,10 @@ defmodule SurfBoard.Protocol do
   """
   @spec eval(Session.t(), String.t()) :: result
   def eval(%Session{spec_module: spec_module} = session, js)
-      when spec_module in [SurfBoard.Specs.LightpandaCDP, SurfBoard.Specs.ChromeCDP],
+      when spec_module in [SurfBoard.SpecModule.LightpandaCDP, SurfBoard.SpecModule.ChromeCDP],
       do: SurfBoard.Clients.CDP.Client.evaluate(session, js)
 
-  def eval(%Session{spec_module: SurfBoard.Specs.ChromeBiDi} = session, js),
+  def eval(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi} = session, js),
     do: SurfBoard.Clients.BiDi.Client.evaluate(session, js)
 
   @doc """
@@ -31,18 +31,18 @@ defmodule SurfBoard.Protocol do
   def eval_async(session, js, timeout \\ 10_000)
 
   def eval_async(%Session{spec_module: spec_module} = session, js, _timeout)
-      when spec_module in [SurfBoard.Specs.LightpandaCDP, SurfBoard.Specs.ChromeCDP],
+      when spec_module in [SurfBoard.SpecModule.LightpandaCDP, SurfBoard.SpecModule.ChromeCDP],
       do: SurfBoard.Clients.CDP.Client.evaluate_async(session, js)
 
-  def eval_async(%Session{spec_module: SurfBoard.Specs.ChromeBiDi} = session, js, _timeout),
+  def eval_async(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi} = session, js, _timeout),
     do: SurfBoard.Clients.BiDi.Client.evaluate_async(session, js)
 
   @doc "Returns the current page URL as a string."
   @spec current_url(Session.t()) :: result
   def current_url(%Session{spec_module: spec_module} = session)
-      when spec_module in [SurfBoard.Specs.LightpandaCDP, SurfBoard.Specs.ChromeCDP],
+      when spec_module in [SurfBoard.SpecModule.LightpandaCDP, SurfBoard.SpecModule.ChromeCDP],
       do: SurfBoard.Clients.CDP.Client.current_url(session)
 
-  def current_url(%Session{spec_module: SurfBoard.Specs.ChromeBiDi} = session),
+  def current_url(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi} = session),
     do: SurfBoard.Clients.BiDi.Client.current_url(session)
 end

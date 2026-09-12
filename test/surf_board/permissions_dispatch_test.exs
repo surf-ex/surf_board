@@ -11,7 +11,7 @@ defmodule SurfBoard.PermissionsDispatchTest do
   # ChromeCDP points it at the real Clients.CDP.Client implementation.
 
   alias SurfBoard.Browser
-  alias SurfBoard.Specs.{ChromeBiDi, LightpandaCDP}
+  alias SurfBoard.SpecModule.{ChromeBiDi, LightpandaCDP}
   alias SurfBoard.Session
 
   describe "LightpandaCDP" do

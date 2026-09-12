@@ -1,4 +1,4 @@
-defmodule SurfBoard.Specs.ChromeBiDi do
+defmodule SurfBoard.SpecModule.ChromeBiDi do
   @moduledoc false
 
   # Chrome protocol-variant spec speaking WebDriver-BiDi against a

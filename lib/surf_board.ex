@@ -91,13 +91,13 @@ defmodule SurfBoard do
       shared binary is already running, else `:isolated`). An explicit
       value that isn't actually available returns `{:error, reason}`
       rather than silently falling back — see
-      `SurfBoard.Specs.LightpandaCDP.start_session/1`. Chrome CDP has
+      `SurfBoard.SpecModule.LightpandaCDP.start_session/1`. Chrome CDP has
       the analogous `:shared`/`:external` choice too, but it's fixed
       once for the life of the BEAM (the default launcher starts lazily
       on first use and is never restarted per session) — set it via
       `config :surf_board, :chrome_cdp, connection: :shared | :external`,
       not as a `start_session/1` opt. See
-      `SurfBoard.Specs.ChromeCDP.default_launcher_spec/0`.
+      `SurfBoard.SpecModule.ChromeCDP.default_launcher_spec/0`.
     * `:user_agent` — replace this session's User-Agent. Chrome only; see
       below.
     * `:window_size` — `[width: w, height: h]`.
@@ -223,10 +223,10 @@ defmodule SurfBoard do
   @doc false
   def driver_module_for(driver) do
     case driver do
-      :lightpanda -> SurfBoard.Specs.LightpandaCDP
-      :chrome_cdp -> SurfBoard.Specs.ChromeCDP
-      :chrome -> SurfBoard.Specs.ChromeBiDi
-      _ -> SurfBoard.Specs.ChromeCDP
+      :lightpanda -> SurfBoard.SpecModule.LightpandaCDP
+      :chrome_cdp -> SurfBoard.SpecModule.ChromeCDP
+      :chrome -> SurfBoard.SpecModule.ChromeBiDi
+      _ -> SurfBoard.SpecModule.ChromeCDP
     end
   end
 

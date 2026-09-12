@@ -18,7 +18,7 @@ defmodule SurfBoard.SpecModule do
   # `start_session/1` still lives here, per spec module, rather than
   # being hoisted into shared code: most spec modules' implementation
   # is the generic one-liner `Launcher.start_session(default_launcher, opts)`,
-  # but that's not universal — Specs.ChromeBiDi's strategy caches no
+  # but that's not universal — SpecModule.ChromeBiDi's strategy caches no
   # connection state, so it builds a fresh, transient launcher per
   # call instead. One uniform callback, vendor-specific bodies — this
   # is what lets a common pattern (SpecModule) support different

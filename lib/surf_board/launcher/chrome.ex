@@ -14,7 +14,7 @@ defmodule SurfBoard.Launcher.Chrome do
   #     is a Supervisor (not the launcher itself): it owns a
   #     `Drivers.ChromeCDP.Server` and a `Launcher` as its two
   #     children, giving the spawned Chrome the same crash-restart
-  #     guarantee `Specs.ChromeCDP`'s own default launcher gets. The
+  #     guarantee `SpecModule.ChromeCDP`'s own default launcher gets. The
   #     launcher child is registered under the `:name` you asked for —
   #     that name (not this Supervisor's pid) is what you use afterward:
   #
@@ -31,9 +31,9 @@ defmodule SurfBoard.Launcher.Chrome do
   #
   # Both build a real, working Chrome session on their own — this is
   # the one place a %SurfBoard.Session{} template for
-  # Specs.ChromeCDP gets built (`build_template/1`) and finished
+  # SpecModule.ChromeCDP gets built (`build_template/1`) and finished
   # (`post_start/2`: UA override, window size, console/exception log
-  # subscription). `Specs.ChromeCDP` itself is built on top of this
+  # subscription). `SpecModule.ChromeCDP` itself is built on top of this
   # module, not the other way around: its `default_launcher_spec/0`
   # just decides which of `start_link/1`/`connect/1` to use for its own
   # default launcher, the same choice this module's caller makes for
@@ -42,7 +42,7 @@ defmodule SurfBoard.Launcher.Chrome do
 
   alias SurfBoard.{DependencyError, Metadata, UserAgent}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Specs.ChromeCDP
+  alias SurfBoard.SpecModule.ChromeCDP
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.SharedWS
@@ -148,7 +148,7 @@ defmodule SurfBoard.Launcher.Chrome do
 
   @doc """
   Builds the `%SharedWS.Config{}` `connect/1` uses, without starting
-  anything — for a caller (like `Specs.ChromeCDP.default_launcher_spec/0`)
+  anything — for a caller (like `SpecModule.ChromeCDP.default_launcher_spec/0`)
   that needs to fold a "connect to this url" launcher into a child spec
   rather than start it immediately.
   """
@@ -216,7 +216,7 @@ defmodule SurfBoard.Launcher.Chrome do
   # `url` is either a literal ws(s):// DevTools URL, or a bare HTTP
   # endpoint (host:port) that needs /json/version discovery to find
   # the actual webSocketDebuggerUrl. Mirrors
-  # Specs.ChromeCDP.remote_url/0's own callers — kept as a separate copy
+  # SpecModule.ChromeCDP.remote_url/0's own callers — kept as a separate copy
   # (not a shared helper) since it's small and each side's error
   # messages reference a different caller.
   defp resolve_remote_ws_url("ws://" <> _ = url), do: url

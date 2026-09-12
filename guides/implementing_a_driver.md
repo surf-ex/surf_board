@@ -33,9 +33,9 @@ This code splits along three independent axes:
   `Drivers.ChromeBiDi.WebSocketClient` (the per-session WS connection
   GenServer) — but never protocol semantics: method names, param shapes,
   response parsing all live in `Clients`, not here.
-* **Spec** (`lib/surf_board/specs/`) — the thin capability-dispatch layer that
-  ties a protocol client and a launcher together: `SurfBoard.Specs.ChromeCDP`,
-  `SurfBoard.Specs.ChromeBiDi`, `SurfBoard.Specs.LightpandaCDP`. A spec module
+* **Spec** (`lib/surf_board/spec_module/`) — the thin capability-dispatch layer that
+  ties a protocol client and a launcher together: `SurfBoard.SpecModule.ChromeCDP`,
+  `SurfBoard.SpecModule.ChromeBiDi`, `SurfBoard.SpecModule.LightpandaCDP`. A spec module
   picks one protocol client and one launcher. That's the whole shape:
   `spec = client + launcher`.
 
@@ -70,7 +70,7 @@ SurfBoard.start_session(driver: :chrome_cdp, launcher: MyApp.TestChrome)
 
 `SurfBoard.Launcher.Chrome` is the reusable convenience for standing up a
 `Strategy.SharedWS` launcher talking to Chrome — the same thing
-`Specs.ChromeCDP` itself uses for its own default launcher (see
+`SpecModule.ChromeCDP` itself uses for its own default launcher (see
 [What a spec module actually does](#what-a-spec-module-actually-does)).
 Building a `Launcher` directly, by hand, with your own `Config` (as shown
 below) is the lower-level path — reach for it only when you're writing a
@@ -124,7 +124,7 @@ the launcher.
 (session template, UA override, window size, log-event subscription/
 UA-unsupported warning as appropriate per vendor) — every spec module's
 `start_session/1` just resolves which launcher to use and calls
-`Launcher.start_session/2`; see `Specs.ChromeCDP.start_session/1` for the
+`Launcher.start_session/2`; see `SpecModule.ChromeCDP.start_session/1` for the
 smallest example: it's three lines. `SurfBoard.start_session(driver: ...)`
 stays the entry point when you don't already have a launcher in hand (most
 callers, most of the time) — the hooks exist so that once you *do* have
@@ -168,10 +168,10 @@ them and your Spec; `Browser`/`Element` never call
   `Launcher.start_session/2` (see
   [Launchers](#launchers-started-instances-of-a-strategy)). Stays a real
   per-module callback rather than shared logic, because process models
-  genuinely differ underneath — `Specs.ChromeBiDi`'s implementation
+  genuinely differ underneath — `SpecModule.ChromeBiDi`'s implementation
   resolves a base_url and builds a fresh, transient launcher per call,
-  since `Strategy.BiDi` caches no connection state; `Specs.ChromeCDP`/
-  `Specs.LightpandaCDP`'s is the generic one-liner. One uniform callback,
+  since `Strategy.BiDi` caches no connection state; `SpecModule.ChromeCDP`/
+  `SpecModule.LightpandaCDP`'s is the generic one-liner. One uniform callback,
   vendor-specific bodies underneath.
 * `validate/0` — a pre-flight dependency check, called once before your
   spec's default launcher starts (see `ensure_spec_started/1` in
@@ -188,13 +188,13 @@ This is the common case: a new way to run/connect-to a browser that already
 speaks CDP or BiDi (e.g. a different Chromium-based browser, or a new connection
 strategy for an existing vendor).
 
-1. **Create `lib/surf_board/specs/<your_spec>.ex`.** Look at
-   `lib/surf_board/specs/lightpanda_cdp.ex` for the smaller of the two existing
+1. **Create `lib/surf_board/spec_module/<your_spec>.ex`.** Look at
+   `lib/surf_board/spec_module/lightpanda_cdp.ex` for the smaller of the two existing
    examples (`chrome_cdp.ex` is the shared-connection one; `chrome_bidi.ex` is
    the BiDi one). Your module:
 
    ```elixir
-   defmodule SurfBoard.Specs.YourSpec do
+   defmodule SurfBoard.SpecModule.YourSpec do
      @behaviour SurfBoard.SpecModule
 
      alias SurfBoard.Spec
@@ -441,7 +441,7 @@ BiDi support doesn't need that sidecar; it needs a `Server`-equivalent that
 launches the vendor's browser directly and hands back its WebSocket URL. If
 the protocol client turns out to have Chrome-specific assumptions baked in
 after all, fix those in place — `Clients.BiDi` is meant to be shared by
-`Specs.ChromeBiDi` and your new spec, not duplicated per vendor.
+`SpecModule.ChromeBiDi` and your new spec, not duplicated per vendor.
 
 Adding a genuinely new wire protocol (neither CDP nor BiDi) is a much bigger
 undertaking — you'd be writing the `Clients.<Protocol>.*` analogue of

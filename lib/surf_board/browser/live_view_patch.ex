@@ -42,7 +42,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
     # Chrome CDP / BiDi: Element.click's own classify + patch-await +
     # navigation/page-ready logic already handles this.
     # No outer with_patch_await needed — wrapping it would double-wait.
-    if session && session.spec_module == SurfBoard.Specs.LightpandaCDP &&
+    if session && session.spec_module == SurfBoard.SpecModule.LightpandaCDP &&
          not Internal.in_frame?(session) && not Internal.in_switched_window?(session) do
       click_with_page_await(parent, query)
     else
@@ -171,7 +171,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
   # Pick the client module that owns a given session's transport.
   # CDP and BiDi expose the same `click_aware/2` shape, so callers
   # can invoke `mod.click_aware(...)` uniformly.
-  defp click_aware_client(%Session{spec_module: SurfBoard.Specs.ChromeBiDi}),
+  defp click_aware_client(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi}),
     do: SurfBoard.Clients.BiDi.Client
 
   defp click_aware_client(_), do: SurfBoard.Clients.CDP.Client

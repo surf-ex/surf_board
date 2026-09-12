@@ -19,7 +19,7 @@ defmodule SurfBoard.Launcher.BiDi do
   #   {:ok, session} = Launcher.start_session(launcher)
   #
   # `Supervised` owns the chromium-bidi Node sidecar
-  # (`Drivers.ChromeBiDi.Server`) — `Specs.ChromeBiDi`'s default
+  # (`Drivers.ChromeBiDi.Server`) — `SpecModule.ChromeBiDi`'s default
   # launcher spec, started once, lazily, under `SurfBoard.DriverSupervisor`.
   # Every session still connects via the plain `connect/1` shape above
   # (transient, no state to keep); the sidecar just needs somewhere to
@@ -27,9 +27,9 @@ defmodule SurfBoard.Launcher.BiDi do
   #
   # `connect/1` builds a real, working Chrome session on its own — this
   # is the one place a %SurfBoard.Session{} template for
-  # Specs.ChromeBiDi gets built (`build_template/1`) and finished
+  # SpecModule.ChromeBiDi gets built (`build_template/1`) and finished
   # (`post_start/2`: UA override, window size, log.entryAdded
-  # subscription). `Specs.ChromeBiDi` itself is built on top of this
+  # subscription). `SpecModule.ChromeBiDi` itself is built on top of this
   # module, not the other way around. Pass your own
   # `:build_template`/`:post_start` to override these defaults entirely.
 
@@ -38,7 +38,7 @@ defmodule SurfBoard.Launcher.BiDi do
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
   alias SurfBoard.Launcher
-  alias SurfBoard.Specs.ChromeBiDi
+  alias SurfBoard.SpecModule.ChromeBiDi
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Transport.Strategy.BiDi, as: BiDiStrategy
 
@@ -71,7 +71,7 @@ defmodule SurfBoard.Launcher.BiDi do
   @doc false
   def bidi_server_name(name), do: Module.concat(name, BidiServer)
   @doc false
-  def default_name, do: SurfBoard.Specs.ChromeBiDi.DefaultLauncher
+  def default_name, do: SurfBoard.SpecModule.ChromeBiDi.DefaultLauncher
 
   @doc """
   Connects to a chromium-bidi HTTP endpoint, wrapped in a `Launcher` —

@@ -1,4 +1,4 @@
-defmodule SurfBoard.Specs.LightpandaCDP do
+defmodule SurfBoard.SpecModule.LightpandaCDP do
   @moduledoc false
 
   # Lightpanda protocol-variant spec speaking CDP over the surf_board

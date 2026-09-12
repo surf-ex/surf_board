@@ -1,4 +1,4 @@
-defmodule SurfBoard.Specs.ChromeCDP do
+defmodule SurfBoard.SpecModule.ChromeCDP do
   @moduledoc false
 
   # Chrome protocol-variant spec over the transport stack — a

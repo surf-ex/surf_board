@@ -10,7 +10,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
   #     shared binary, one fresh WebSocket per session). This is a
   #     Supervisor (not the launcher itself): it owns a
   #     `Lightpanda.Server` and a `Launcher` as its two children, same
-  #     crash-restart guarantee `Specs.LightpandaCDP`'s own default
+  #     crash-restart guarantee `SpecModule.LightpandaCDP`'s own default
   #     launcher gets. The launcher child is registered under the
   #     `:name` you asked for — that name (not this Supervisor's pid)
   #     is what you use afterward:
@@ -31,17 +31,17 @@ defmodule SurfBoard.Launcher.Lightpanda do
   #
   # Both `start_link/1` and `connect/1` build a real, working
   # Lightpanda session on their own — this is the one place a
-  # %SurfBoard.Session{} template for Specs.LightpandaCDP gets built
+  # %SurfBoard.Session{} template for SpecModule.LightpandaCDP gets built
   # (`build_template/1`) and finished (`post_start/2`: the BEAM sandbox
   # metadata UA, window size, :user_agent-unsupported warning).
-  # `Specs.LightpandaCDP` itself is built on top of this module for
+  # `SpecModule.LightpandaCDP` itself is built on top of this module for
   # its :shared/:external opts, not the other way around.
   # Pass your own `:build_template`/`:post_start` to override these
   # defaults entirely.
 
   alias SurfBoard.{DependencyError, Metadata, UserAgent}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Specs.LightpandaCDP
+  alias SurfBoard.SpecModule.LightpandaCDP
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
 
