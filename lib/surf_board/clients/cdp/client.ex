@@ -84,6 +84,34 @@ defmodule SurfBoard.Clients.CDP.Client do
     # the subscription is in place before the first navigation.
     :ok = Protocol.subscribe(session, "Network.responseReceived")
     cdp_cast(session, "Network.enable", %{})
+
+    # Without this, a renderer crash or an unexpectedly-detached target
+    # leaves every subsequent call against this session silently
+    # pending forever — the wire send always "succeeds" from the
+    # actor's point of view, but Chrome never replies to a sessionId it
+    # no longer recognizes. `Inspector.targetCrashed` fires on a real
+    # renderer crash; `Target.detachedFromTarget` covers the broader
+    # "this target is gone" case (closed, crashed, or otherwise torn
+    # down) for the specific flat-session sessionId this session owns.
+    # `Wire.handle_event/3` sets `target_crashed?` on either; the actor
+    # fails every pending call immediately once it sees that flag
+    # instead of waiting for each one's own timeout to expire in turn.
+    :ok = Protocol.subscribe(session, "Inspector.targetCrashed")
+    cdp_cast(session, "Inspector.enable", %{})
+
+    # Target.detachedFromTarget is a browser-level notification: Chrome
+    # only emits it to a connection that has target discovery enabled
+    # on the BROWSER session (no sessionId). Sending
+    # Target.setDiscoverTargets/setAutoAttach scoped to this session's
+    # own flat sessionId (as any command carrying one is) only affects
+    # that target's own children, not notifications about the target
+    # itself — so the one-time, connection-level enable call lives in
+    # `Transport.Strategy.SharedWS.start_session/1`, sent on the raw
+    # ws_pid right after the shared connection comes up. Every session
+    # sharing that connection then receives detachedFromTarget for its
+    # own target and filters by sessionId here in Wire.handle_event/3.
+    :ok = Protocol.subscribe(session, "Target.detachedFromTarget")
+
     :ok
   end
 

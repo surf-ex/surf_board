@@ -36,6 +36,13 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
          {:ok, %{"targetId" => target_id}} <-
            WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
          {:ok, session_id} <- Transport.attach_to_target(ws_pid, target_id) do
+      # Note: unlike SharedWS (real Chrome), this strategy is Lightpanda-
+      # only, whose partial CDP implementation may not support
+      # Target.setDiscoverTargets — not sent here, so
+      # Target.detachedFromTarget won't fire for Lightpanda sessions.
+      # Inspector.targetCrashed detection (subscribed in
+      # enable_page_lifecycle_events/1) still applies if Lightpanda
+      # ever emits it; harmless no-op subscription if it doesn't.
       teardown = fn _session ->
         Transport.close_ws(ws_pid)
         if is_pid(server_pid), do: stop_server(server_pid)

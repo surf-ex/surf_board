@@ -22,11 +22,28 @@ defmodule SurfBoard.Clients.BiDi.Wire do
       `Common.route_bootstrap_payload/2` when the channel name matches.
     * `network.responseCompleted` — record the document's HTTP status and
       headers for `SurfBoard.Browser.status/1`.
+    * `browsingContext.contextDestroyed` — the browsing context this
+      session was attached to is gone. Sets `target_crashed?: true`;
+      `Transport.Actor` checks this after every event dispatch and
+      fails every pending call immediately instead of leaving them to
+      time out one by one against a context that will never reply
+      again (see `Clients.CDP.Wire`'s identical CDP-side handling).
 
   Unknown methods are a no-op.
   """
   @spec handle_event(map(), String.t(), map()) :: map()
   def handle_event(state, method, event)
+
+  def handle_event(state, "browsingContext.contextDestroyed", event) do
+    destroyed_context = get_in(event, ["params", "context"])
+    our_context = state.session.browsing_context
+
+    if is_binary(destroyed_context) and destroyed_context == our_context do
+      %{state | target_crashed?: true}
+    else
+      state
+    end
+  end
 
   def handle_event(state, "browsingContext.load", event) do
     record_milestone(state, event, "load")

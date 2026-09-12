@@ -25,11 +25,34 @@ defmodule SurfBoard.Clients.CDP.Wire do
       headers, keyed by loaderId, for `SurfBoard.Browser.status/1`.
     * `Runtime.executionContextCreated` — record `frameId → contextId`.
     * `Runtime.executionContextDestroyed` — purge the destroyed context.
+    * `Inspector.targetCrashed` / `Target.detachedFromTarget` — the
+      renderer this session was attached to is gone (crash, OOM kill,
+      or the target otherwise disappearing from under us). Sets
+      `target_crashed?: true`; `Transport.Actor` checks this after
+      every event dispatch and fails every pending call immediately
+      instead of leaving them to time out one by one against a target
+      that will never reply again.
 
   Unknown methods are a no-op.
   """
   @spec handle_event(map(), String.t(), map()) :: map()
   def handle_event(state, method, event)
+
+  def handle_event(state, "Inspector.targetCrashed", _event) do
+    %{state | target_crashed?: true}
+  end
+
+  def handle_event(state, "Target.detachedFromTarget", event) do
+    params = Map.get(event, "params", %{})
+    detached_session_id = params["sessionId"]
+    our_session_id = state.session.browsing_context
+
+    if is_binary(detached_session_id) and detached_session_id == our_session_id do
+      %{state | target_crashed?: true}
+    else
+      state
+    end
+  end
 
   def handle_event(state, "Page.lifecycleEvent", event) do
     params = Map.get(event, "params", %{})

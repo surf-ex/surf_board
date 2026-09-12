@@ -250,6 +250,11 @@ defmodule SurfBoard.WebSocket do
     keys =
       [
         event["sessionId"],
+        # Target.detachedFromTarget (and other Target.* domain events)
+        # are browser-level dispatches — no top-level `sessionId` — so
+        # the affected flat-session id instead arrives as a *parameter*
+        # identifying which attached session detached.
+        get_in(event, ["params", "sessionId"]),
         get_in(event, ["params", "context"]),
         get_in(event, ["params", "source", "context"])
       ]

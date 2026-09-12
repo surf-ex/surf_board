@@ -52,6 +52,13 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
           # each session's owner exits. Use `start/1` for an unlinked
           # process whose lifetime is tied to the launcher instead.
           {:ok, pid} = WebSocket.start(resolve_ws_url.())
+
+          # Target.detachedFromTarget only reaches a connection that
+          # has target discovery enabled on the BROWSER session (no
+          # sessionId) — done once here, covering every session
+          # subsequently attached over this shared connection.
+          {:ok, _} = WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{discover: true})
+
           pid
         end,
         &Process.alive?/1

@@ -157,7 +157,11 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
       "script.message",
       "log.entryAdded",
       # Supplies the document's HTTP status for `Browser.status/1`.
-      "network.responseCompleted"
+      "network.responseCompleted",
+      # Lets Wire.handle_event/3 fail every pending call immediately
+      # if this session's context disappears, instead of each one
+      # timing out on its own — see Clients.BiDi.Wire's moduledoc.
+      "browsingContext.contextDestroyed"
     ]
 
     Enum.each(events, fn ev ->

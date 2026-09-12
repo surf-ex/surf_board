@@ -108,7 +108,14 @@ defmodule SurfBoard.Transport.Actor do
     find_waiters: %{},
     frame_stack: [],
     frame_contexts: %{},
-    nav_pending: false
+    nav_pending: false,
+    # Set true by `wire_mod.handle_event/3` on a fatal, session-ending
+    # event (CDP: `Inspector.targetCrashed`/`Target.detachedFromTarget`;
+    # a future BiDi equivalent could set the same flag). Checked right
+    # after every event dispatch so a dead target fails every pending
+    # call immediately instead of leaving them to expire one by one —
+    # see `maybe_handle_target_crash/1`.
+    target_crashed?: false
   ]
 
   # ----- Lifecycle -----
@@ -327,7 +334,7 @@ defmodule SurfBoard.Transport.Actor do
   def handle_info(message, %{config: %{socket: {:fused, _}}} = state) do
     case WireSocket.handle_message(state.wire_socket, message, state, wire_callbacks(state)) do
       {:ok, state, wire_socket} ->
-        {:noreply, %{state | wire_socket: wire_socket}}
+        maybe_handle_target_crash(%{state | wire_socket: wire_socket})
 
       {:error, reason, state, wire_socket} ->
         Logger.debug(
@@ -353,7 +360,7 @@ defmodule SurfBoard.Transport.Actor do
         {:v2_event, method, event},
         %{config: %{socket: {:remote, _mod, _pid}, wire: wire_mod}} = state
       ) do
-    {:noreply, wire_mod.handle_event(state, method, event)}
+    maybe_handle_target_crash(wire_mod.handle_event(state, method, event))
   end
 
   def handle_info({:common_load_timeout, from}, state) do
@@ -505,4 +512,20 @@ defmodule SurfBoard.Transport.Actor do
 
     state
   end
+
+  # `wire_mod.handle_event/3` sets `target_crashed?: true` on a fatal,
+  # session-ending event (CDP: `Inspector.targetCrashed`,
+  # `Target.detachedFromTarget`). Without this, a dead target leaves
+  # every subsequent call silently pending forever — the wire byte
+  # send always "succeeds" (nothing downstream knows the target is
+  # gone), so nothing ever completes the pending_calls entry, and each
+  # caller's own GenServer.call timeout is the only thing that ever
+  # fires, one call at a time, looking like an ever-worsening hang
+  # rather than one clean failure the moment the target actually died.
+  defp maybe_handle_target_crash(%{target_crashed?: true} = state) do
+    state = notify_all_pending(state, {:error, :target_crashed})
+    {:stop, {:shutdown, :target_crashed}, state}
+  end
+
+  defp maybe_handle_target_crash(state), do: {:noreply, state}
 end
