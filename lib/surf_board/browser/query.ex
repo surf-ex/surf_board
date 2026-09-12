@@ -349,9 +349,8 @@ defmodule SurfBoard.Browser.Query do
     Internal.retry(fn ->
       try do
         with {:ok, query} <- Query.validate(query),
-             compiled_query <- Query.compile(query),
              {:ok, elements} <-
-               Internal.spec(parent).wire_protocol.find_elements(parent, compiled_query),
+               Internal.spec(parent).wire_protocol.find_elements(parent, query),
              {:ok, elements} <- validate_visibility(query, elements),
              {:ok, elements} <- validate_text(query, elements),
              {:ok, elements} <- validate_selected(query, elements),
