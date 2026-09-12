@@ -74,10 +74,16 @@ defmodule SurfBoard.Transport.Protocol do
   #
   # ### Inbound (sent by the transport's connection layer)
   #
-  #   * `{:v2_response, wire_id, result}` → response to a previously
-  #     issued `cdp_send`/`cdp_cast`.
-  #   * `{:v2_event, method, event_map}` → wire-level event the
-  #     actor previously subscribed to.
+  #   * `{:v2_response, wire_id, result}` (`t:v2_response/0`) →
+  #     response to a previously issued `cdp_send`/`cdp_cast`.
+  #   * `{:v2_event, method, event_map}` (`t:v2_event/0`) →
+  #     wire-level event the actor previously subscribed to.
+  #
+  # Every producer (`Transport.WebSocket`, `Drivers.ChromeBiDi.WebSocketClient`)
+  # and every consumer (`Transport.Actor`, `Clients.{CDP,BiDi}.Dialogs`,
+  # `Browser.LogChecker`, `SurfBoard.end_session/1`) matches these two
+  # tuple shapes independently — `t:v2_response/0`/`t:v2_event/0` exist so
+  # that shape is written down once, not re-derived at each call site.
   #
   # Lifecycle:
   #
@@ -93,6 +99,23 @@ defmodule SurfBoard.Transport.Protocol do
   #   * `stop/1` triggers an orderly shutdown.
 
   alias SurfBoard.Session
+
+  @typedoc """
+  A reply to a previously issued `cdp_send`/`cdp_cast`, sent by the
+  transport's connection layer (`Transport.WebSocket`,
+  `Drivers.ChromeBiDi.WebSocketClient`) to the actor pid that made the
+  call. `wire_id` matches the id that send returned; `result` is the
+  decoded wire response.
+  """
+  @type v2_response ::
+          {:v2_response, wire_id :: non_neg_integer(), result :: {:ok, term} | {:error, term}}
+
+  @typedoc """
+  A wire-level event delivered to every pid subscribed to `method` via
+  `subscribe/3`. `event` is the decoded JSON event payload (CDP
+  `params`, or the whole BiDi event map).
+  """
+  @type v2_event :: {:v2_event, method :: String.t(), event :: map}
 
   @default_timeout 30_000
 

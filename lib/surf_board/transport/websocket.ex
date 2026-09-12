@@ -70,8 +70,8 @@ defmodule SurfBoard.Transport.WebSocket do
 
   @doc """
   Asynchronously send a CDP/BiDi command. The response (or transport
-  failure) will be delivered to `owner_pid` as
-  `{:v2_response, wire_id, result}`.
+  failure) will be delivered to `owner_pid` as a
+  `t:SurfBoard.Transport.Protocol.v2_response/0` message.
 
   Returns the wire id assigned to this call so the caller can stash
   it in its pending-calls map.
@@ -92,10 +92,11 @@ defmodule SurfBoard.Transport.WebSocket do
 
   Convenience wrapper around `cast_send/5` for callers without a
   Session GenServer (e.g. session bootstrap that runs before the
-  Session exists). The caller's mailbox receives the `:v2_response`
-  message; this function pulls it out and returns the result.
+  Session exists). The caller's mailbox receives a
+  `t:SurfBoard.Transport.Protocol.v2_response/0` message; this
+  function pulls it out and returns the result.
 
-  Caveat: this consumes the next `:v2_response` matching `wire_id`
+  Caveat: this consumes the next `v2_response` matching `wire_id`
   from the calling process's mailbox. Don't use it from a process
   that has other in-flight calls.
   """

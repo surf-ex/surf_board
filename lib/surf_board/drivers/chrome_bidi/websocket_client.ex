@@ -41,8 +41,8 @@ defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
 
   @doc """
   Asynchronously send a BiDi command. The response (or transport
-  failure) will be delivered to `owner_pid` as
-  `{:v2_response, wire_id, result}`.
+  failure) will be delivered to `owner_pid` as a
+  `t:SurfBoard.Transport.Protocol.v2_response/0` message.
 
   Returns the wire id assigned to this call so the caller can stash
   it in its own pending-calls map. Same contract as
