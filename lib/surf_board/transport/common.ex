@@ -200,25 +200,52 @@ defmodule SurfBoard.Transport.Common do
 
   Used by `Clients.CDP.Wire` for `Page.lifecycleEvent`. BiDi has different
   semantics (`record_load_or_wake_once/3`).
+
+  `frame_id`, when given (CDP always supplies one — `Page.lifecycleEvent`
+  carries it), re-keys any waiter still registered against *this same
+  frame* under a *different* loader_id: a redirect (server or
+  client-side) can supersede the original navigation before its
+  loader_id ever produces a single lifecycle event of its own — so
+  there's no earlier "known loader_id for this frame" to compare
+  against, only the waiter's own recorded frame_id. Once re-keyed, the
+  waiter resolves against the loader_id that actually reaches
+  DOMContentLoaded/load instead of expiring against one that never
+  will.
   """
-  @spec record_load_milestone(map(), term(), String.t()) :: map()
-  def record_load_milestone(state, loader_id, name) do
+  @spec record_load_milestone(map(), term(), String.t(), String.t() | nil) :: map()
+  def record_load_milestone(state, loader_id, name, frame_id \\ nil) do
     loads = Map.update(state.loads, loader_id, %{name => true}, &Map.put(&1, name, true))
     state = %{state | loads: loads}
+    state = migrate_redirected_waiters(state, frame_id, loader_id)
 
     {ready, pending} =
       Enum.split_with(state.load_waiters, fn
-        {_from, ^loader_id, ^name, _ref} -> true
-        {_from, :any, ^name, _ref} -> true
+        {_from, ^loader_id, ^name, _ref, _fid} -> true
+        {_from, :any, ^name, _ref, _fid} -> true
         _ -> false
       end)
 
-    Enum.each(ready, fn {from, _l, _n, ref} ->
+    Enum.each(ready, fn {from, _l, _n, ref, _fid} ->
       Process.cancel_timer(ref)
       GenServer.reply(from, :ok)
     end)
 
     %{state | load_waiters: pending}
+  end
+
+  defp migrate_redirected_waiters(state, nil, _new_loader_id), do: state
+
+  defp migrate_redirected_waiters(state, frame_id, new_loader_id) do
+    waiters =
+      Enum.map(state.load_waiters, fn
+        {from, loader_id, name, ref, ^frame_id} when loader_id != new_loader_id ->
+          {from, new_loader_id, name, ref, frame_id}
+
+        waiter ->
+          waiter
+      end)
+
+    %{state | load_waiters: waiters}
   end
 
   @doc """
@@ -229,7 +256,7 @@ defmodule SurfBoard.Transport.Common do
   @spec record_load_or_wake_once(map(), term(), String.t()) :: map()
   def record_load_or_wake_once(state, loader_id, name) do
     {matching, rest} =
-      Enum.split_with(state.load_waiters, fn {_from, lid, n, _ref} ->
+      Enum.split_with(state.load_waiters, fn {_from, lid, n, _ref, _fid} ->
         (lid == loader_id or lid == :any) and n == name
       end)
 
@@ -239,7 +266,7 @@ defmodule SurfBoard.Transport.Common do
         %{state | loads: Map.put(state.loads, loader_id, inner)}
 
       _ ->
-        Enum.each(matching, fn {from, _, _, ref} ->
+        Enum.each(matching, fn {from, _, _, ref, _fid} ->
           Process.cancel_timer(ref)
           GenServer.reply(from, :ok)
         end)
@@ -276,6 +303,7 @@ defmodule SurfBoard.Transport.Common do
           {:reply, :ok, map()} | {:noreply, map()}
   def await_page_load(state, loader_id, name, timeout_ms, from, opts \\ []) do
     drop_on_consume? = Keyword.get(opts, :drop_on_consume?, false)
+    frame_id = Keyword.get(opts, :frame_id)
 
     case get_in(state.loads, [loader_id, name]) do
       true when drop_on_consume? ->
@@ -286,7 +314,7 @@ defmodule SurfBoard.Transport.Common do
 
       _ ->
         timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
-        waiter = {from, loader_id, name, timer_ref}
+        waiter = {from, loader_id, name, timer_ref, frame_id}
         {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
     end
   end
@@ -308,7 +336,7 @@ defmodule SurfBoard.Transport.Common do
       {:reply, :ok, %{state | loads: %{}}}
     else
       timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
-      waiter = {from, :any, name, timer_ref}
+      waiter = {from, :any, name, timer_ref, nil}
       {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
     end
   end
@@ -320,11 +348,11 @@ defmodule SurfBoard.Transport.Common do
   """
   @spec handle_load_timeout(map(), GenServer.from()) :: map()
   def handle_load_timeout(state, from) do
-    case Enum.split_with(state.load_waiters, fn {f, _, _, _} -> f == from end) do
+    case Enum.split_with(state.load_waiters, fn {f, _, _, _, _} -> f == from end) do
       {[], _} ->
         state
 
-      {[{^from, _l, _n, _ref} | _], rest} ->
+      {[{^from, _l, _n, _ref, _fid} | _], rest} ->
         GenServer.reply(from, :timeout)
         %{state | load_waiters: rest}
     end

@@ -57,10 +57,11 @@ defmodule SurfBoard.Clients.CDP.Wire do
   def handle_event(state, "Page.lifecycleEvent", event) do
     params = Map.get(event, "params", %{})
     loader_id = params["loaderId"]
+    frame_id = params["frameId"]
     name = params["name"]
 
     if is_binary(loader_id) and name in ["load", "DOMContentLoaded"] do
-      Common.record_load_milestone(state, loader_id, name)
+      Common.record_load_milestone(state, loader_id, name, frame_id)
     else
       state
     end

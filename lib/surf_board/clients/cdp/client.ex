@@ -167,13 +167,16 @@ defmodule SurfBoard.Clients.CDP.Client do
 
   @doc """
   Navigates the session's target to `url`. Returns
-  `{:ok, %{loader_id: id_or_nil}}` on a successful nav — the loader id
-  is the correlation key the caller passes to
-  `Transport.Protocol.await_page_load/4`.
+  `{:ok, %{loader_id: id_or_nil, frame_id: id_or_nil}}` on a successful
+  nav — the loader id is the correlation key the caller passes to
+  `Transport.Protocol.await_page_load/5`; the frame id lets that same
+  wait transparently follow a same-frame redirect (which swaps in a
+  new loader_id on the same frame before the original navigation's own
+  load milestone ever fires).
 
   Note: this is a blocking *send* — it returns once Chrome has
   acknowledged the navigation request, NOT once the page has finished
-  loading. To wait for `loadEventFired`, layer `await_page_load/4`
+  loading. To wait for `loadEventFired`, layer `await_page_load/5`
   on top (or use the higher-level `visit/3` from `OpsShared`).
 
   Errors:
@@ -182,14 +185,14 @@ defmodule SurfBoard.Clients.CDP.Client do
     * `{:error, term}` for transport/timeouts
   """
   @spec navigate(Session.t(), String.t()) ::
-          {:ok, %{loader_id: String.t() | nil}} | {:error, term}
+          {:ok, %{loader_id: String.t() | nil, frame_id: String.t() | nil}} | {:error, term}
   def navigate(%Session{} = session, url) when is_binary(url) do
     case cdp_send(session, "Page.navigate", %{url: url}) do
       {:ok, %{"errorText" => msg}} when is_binary(msg) and msg != "" ->
         {:error, {:navigate_failed, msg}}
 
       {:ok, result} when is_map(result) ->
-        {:ok, %{loader_id: result["loaderId"]}}
+        {:ok, %{loader_id: result["loaderId"], frame_id: result["frameId"]}}
 
       error ->
         error

@@ -49,16 +49,22 @@ defmodule SurfBoard.Clients.BiDi.Client do
 
   @doc """
   Navigate the session's browsing context to `url`. Returns
-  `{:ok, %{loader_id: id_or_nil}}` — the BiDi `navigation` id is the
-  correlation key the caller passes to
-  `Transport.Protocol.await_page_load/4`.
+  `{:ok, %{loader_id: id_or_nil, frame_id: nil}}` — the BiDi
+  `navigation` id is the correlation key the caller passes to
+  `Transport.Protocol.await_page_load/5`. `frame_id` is always `nil`
+  here (unlike the CDP client): BiDi's `navigation` id already stays
+  stable across a same-context redirect per spec, so there's no
+  same-frame loader_id swap for `visit/3`'s redirect-following logic
+  to key off of — the `frame_id` key only needs to exist so
+  `OpsShared.visit/3`'s pattern match (shared with the CDP client)
+  succeeds.
 
   Uses `wait: "none"` so the call returns as soon as the navigation
   is committed. Awaiting load milestones is the caller's job — see
   the higher-level `visit/3` from `OpsShared`.
   """
   @spec navigate(Session.t(), String.t()) ::
-          {:ok, %{loader_id: String.t() | nil}} | {:error, term}
+          {:ok, %{loader_id: String.t() | nil, frame_id: nil}} | {:error, term}
   def navigate(%Session{} = session, url) when is_binary(url) do
     case Protocol.cdp_send(
            session,
@@ -67,7 +73,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
            []
          ) do
       {:ok, %{"navigation" => nav}} ->
-        {:ok, %{loader_id: nav}}
+        {:ok, %{loader_id: nav, frame_id: nil}}
 
       {:ok, _} = unexpected ->
         {:error, {:unexpected_navigate_response, unexpected}}

@@ -268,9 +268,10 @@ defmodule SurfBoard.Transport.Actor do
     {:reply, :ok, state}
   end
 
-  def handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state) do
+  def handle_call({:await_page_load, loader_id, name, timeout_ms, frame_id}, from, state) do
     Common.await_page_load(state, loader_id, name, timeout_ms, from,
-      drop_on_consume?: state.config.load == :wake_once
+      drop_on_consume?: state.config.load == :wake_once,
+      frame_id: frame_id
     )
   end
 

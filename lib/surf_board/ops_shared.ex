@@ -384,10 +384,16 @@ defmodule SurfBoard.OpsShared do
       to restore the old behavior for a given call.
 
       The host module must export `navigate/2` returning
-      `{:ok, %{loader_id: id_or_nil}} | {:error, term}`. When the
-      navigation has no loader id (same-document / cached) we skip the
-      load wait. Browsers whose JS engine lacks a real
-      `document.evaluate` (Lightpanda) ask for the polyfill via
+      `{:ok, %{loader_id: id_or_nil, frame_id: id_or_nil}} | {:error, term}`.
+      When the navigation has no loader id (same-document / cached) we
+      skip the load wait. `frame_id` (CDP only; BiDi always returns
+      `nil`) lets the wait transparently follow a same-frame redirect
+      that swaps in a new loader_id before the original navigation's
+      own milestone fires (confirmed with a client-side/JS redirect —
+      a plain server-side 302 to a same-origin URL did NOT reproduce
+      the swap in testing) — see `Transport.Common.record_load_milestone/4`.
+      Browsers whose JS engine lacks a real `document.evaluate`
+      (Lightpanda) ask for the polyfill via
       `session.capabilities[:needs_xpath_polyfill] = true` and we
       inject wgxpath after the load completes.
       """
@@ -396,14 +402,15 @@ defmodule SurfBoard.OpsShared do
         timeout = Keyword.get(opts, :timeout, 10_000)
         wait_until = Keyword.get(opts, :wait_until, "DOMContentLoaded")
 
-        with {:ok, %{loader_id: loader_id}} <- navigate(session, url) do
+        with {:ok, %{loader_id: loader_id, frame_id: frame_id}} <- navigate(session, url) do
           result =
             if is_binary(loader_id) do
               case SurfBoard.Transport.Protocol.await_page_load(
                      session,
                      loader_id,
                      wait_until,
-                     timeout
+                     timeout,
+                     frame_id
                    ) do
                 :ok -> :ok
                 :timeout -> {:error, :timeout}

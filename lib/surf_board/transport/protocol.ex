@@ -119,10 +119,23 @@ defmodule SurfBoard.Transport.Protocol do
 
   # ----- Page-load & page-ready awaits -----
 
-  @spec await_page_load(Session.t(), String.t(), String.t(), timeout) :: :ok | :timeout
-  def await_page_load(%Session{pid: pid}, loader_id, name, timeout_ms \\ 10_000)
+  @doc """
+  `frame_id`, when given, lets the actor transparently follow a
+  same-frame redirect: if the frame's loader_id changes before the
+  awaited milestone fires (a redirect swaps in a new loader_id for the
+  same navigation), the wait is re-keyed to the new loader_id instead
+  of expiring against one that will never complete. See
+  `Transport.Common.record_load_milestone/4`.
+  """
+  @spec await_page_load(Session.t(), String.t(), String.t(), timeout, String.t() | nil) ::
+          :ok | :timeout
+  def await_page_load(%Session{pid: pid}, loader_id, name, timeout_ms \\ 10_000, frame_id \\ nil)
       when is_binary(loader_id) and is_binary(name) do
-    GenServer.call(pid, {:await_page_load, loader_id, name, timeout_ms}, timeout_ms + 2_000)
+    GenServer.call(
+      pid,
+      {:await_page_load, loader_id, name, timeout_ms, frame_id},
+      timeout_ms + 2_000
+    )
   catch
     :exit, _ -> :timeout
   end
