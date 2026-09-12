@@ -43,7 +43,7 @@ defmodule SurfBoard.Clients.CDP.Dialogs do
     # Page domain must be enabled for javascriptDialogOpening to fire.
     _ = CDPClient.cdp_send(session, "Page.enable", %{})
     ctx = session.browsing_context || :global
-    :ok = WebSocket.subscribe(session.bidi_pid, "Page.javascriptDialogOpening", ctx, self())
+    :ok = WebSocket.subscribe(session.ws_pid, "Page.javascriptDialogOpening", ctx, self())
   end
 
   defp await_event(%Session{}, timeout_ms) do

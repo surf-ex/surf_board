@@ -39,7 +39,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   @impl true
   def window_handles(parent) do
     session = Element.root_session(parent)
-    ws_pid = session.bidi_pid
+    ws_pid = session.ws_pid
     ctx_id = session.driver_state.browser_context_id
 
     case WebSocket.send_sync(ws_pid, "Target.getTargets", %{}) do
@@ -61,7 +61,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   @impl true
   def focus_window(parent, target_id) when is_binary(target_id) do
     session = Element.root_session(parent)
-    ws_pid = session.bidi_pid
+    ws_pid = session.ws_pid
 
     # Switch the Session's CDP target by re-attaching to the new
     # one (gets a new sessionId). Update session.browsing_context so
@@ -131,14 +131,14 @@ defmodule SurfBoard.Clients.CDP.Windows do
     # about to fire, and would otherwise look identical to that target
     # crashing (see Clients.CDP.Wire).
     :ok = Protocol.closing_window(current, current.browsing_context)
-    ws_pid = session.bidi_pid
+    ws_pid = session.ws_pid
     _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
     {:ok, nil}
   end
 
   def close_window(%Session{} = session) do
     target_id = session.driver_state.target_id
-    ws_pid = session.bidi_pid
+    ws_pid = session.ws_pid
     _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
     {:ok, nil}
   end

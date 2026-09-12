@@ -39,7 +39,7 @@ defmodule SurfBoard.Clients.BiDi.Dialogs do
     }
   end
 
-  defp subscribe(%Session{bidi_pid: ws_pid, browsing_context: ctx}) do
+  defp subscribe(%Session{ws_pid: ws_pid, browsing_context: ctx}) do
     # Scope to the session's browsing context so a sibling test's
     # dialog can't land in our handler. chromium-bidi makes the
     # session.subscribe call idempotent.
@@ -61,7 +61,7 @@ defmodule SurfBoard.Clients.BiDi.Dialogs do
     end
   end
 
-  defp reply(%Session{bidi_pid: ws_pid, browsing_context: ctx}, accept, effective_text) do
+  defp reply(%Session{ws_pid: ws_pid, browsing_context: ctx}, accept, effective_text) do
     {m, p} = Commands.handle_user_prompt(ctx, accept, effective_text)
     WebSocketClient.send_command(ws_pid, m, p) |> ResponseParser.check_error()
   end

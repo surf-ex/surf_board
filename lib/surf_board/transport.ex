@@ -12,7 +12,7 @@ defmodule SurfBoard.Transport do
   # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
   # callback, spec-agnostic — the caller supplies a `:session_struct`
   # template (id/spec_module/spec/live_view_aware?/base capabilities
-  # already filled in) and the strategy returns it with `bidi_pid`,
+  # already filled in) and the strategy returns it with `ws_pid`,
   # `browsing_context`, and `capabilities` populated and the session
   # GenServer already up.
   #
@@ -165,7 +165,7 @@ defmodule SurfBoard.Transport do
 
     session_struct = %{
       template
-      | bidi_pid: ws_pid,
+      | ws_pid: ws_pid,
         browsing_context: acquired.session_id,
         driver_state: Map.merge(template.driver_state, acquired.driver_state)
     }

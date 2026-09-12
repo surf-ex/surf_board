@@ -46,7 +46,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   Required opts:
     * `:launcher`       — a started `SurfBoard.Launcher` wrapping `%Config{base_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` template; this
-                          function fills in `pid`, `bidi_pid` and
+                          function fills in `pid`, `ws_pid` and
                           `browsing_context`.
 
   Optional:
@@ -78,7 +78,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
          :ok <- subscribe_load_events(socket_pid, session.pid),
          {:ok, context_id} <- find_or_create_initial_context(session),
          :ok <- install_bootstrap(session) do
-      session = %{session | browsing_context: context_id, bidi_pid: socket_pid}
+      session = %{session | browsing_context: context_id, ws_pid: socket_pid}
 
       # Mirror the actor's session-struct view so subsequent reads
       # via :get_session also see the populated browsing_context —

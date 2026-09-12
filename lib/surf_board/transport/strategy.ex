@@ -9,7 +9,7 @@ defmodule SurfBoard.Transport.Strategy do
   #
   #   * `:session_struct` — the spec's `%SurfBoard.Session{}` template
   #     (id/spec_module/spec/live_view_aware?/base capabilities filled
-  #     in; bidi_pid/browsing_context left for the strategy to set).
+  #     in; ws_pid/browsing_context left for the strategy to set).
   #   * `:launcher` — a `SurfBoard.Launcher.ref` — the started launcher
   #     instance this session connects through. Every strategy reads its
   #     own `Config` off `Launcher.info(launcher).config` rather than

@@ -38,7 +38,7 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
     assert is_binary(session.browsing_context)
     assert session.browsing_context != ""
     assert is_pid(session.pid)
-    assert is_pid(session.bidi_pid)
+    assert is_pid(session.ws_pid)
   end
 
   test "navigate via Protocol.cdp_send reaches the page", %{base_url: base_url} do

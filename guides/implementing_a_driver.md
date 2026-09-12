@@ -263,7 +263,7 @@ strategy for an existing vendor).
          spec: @spec_data,
          live_view_aware?: Keyword.get(opts, :live_view_aware, false),
          capabilities: Keyword.get(opts, :capabilities, %{})
-         # bidi_pid/browsing_context stay unset — your strategy fills
+         # ws_pid/browsing_context stay unset — your strategy fills
          # those in.
        }
      end

@@ -183,7 +183,7 @@ defmodule SurfBoard.Launcher.Chrome do
     # so LogChecker.check_logs! can drain them after each operation.
     _ =
       SurfBoard.WebSocket.subscribe(
-        session.bidi_pid,
+        session.ws_pid,
         "Runtime.consoleAPICalled",
         session.browsing_context,
         caller
@@ -191,7 +191,7 @@ defmodule SurfBoard.Launcher.Chrome do
 
     _ =
       SurfBoard.WebSocket.subscribe(
-        session.bidi_pid,
+        session.ws_pid,
         "Runtime.exceptionThrown",
         session.browsing_context,
         caller
