@@ -18,8 +18,6 @@ defmodule SurfBoard.Clients.CDP.Client do
   # ref types, mouse/touch input model).
 
   @behaviour SurfBoard.WireProtocol
-  @behaviour SurfBoard.Permissions
-  @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.CDP.{Commands, ResponseParser}
@@ -706,99 +704,9 @@ defmodule SurfBoard.Clients.CDP.Client do
       # events so :tab, :enter etc. fire. Requires a CDP browser that
       # implements Input.dispatchKeyEvent (Chrome does; Lightpanda doesn't).
       _ = call_on_element(session, element, OpsShared.dispatch_fn(), [[["focus"]]])
-      send_keys_to_session(session, keys)
+      SurfBoard.Clients.CDP.SendKeysSession.send_keys_to_session(session, keys)
     end
   end
-
-  @doc """
-  Send keys to whatever element currently has focus on the page.
-  Atoms like `:tab`, `:enter` map to real key events via
-  `Input.dispatchKeyEvent`.
-  """
-  @spec send_keys_to_session(Session.t(), [String.t() | atom]) :: {:ok, nil}
-  def send_keys_to_session(%Session{} = session, keys) when is_list(keys) do
-    # Build the full ordered list of CDP commands first, then send all
-    # but the last as `cdp_cast` (fire-and-forget — pipelines on the
-    # wire) and the last as `cdp_send` (awaits, ensures the keystrokes
-    # have actually flushed before we return). For an N-char string
-    # this collapses 2N round-trips to 1.
-    cmds =
-      Enum.flat_map(keys, fn
-        key when is_atom(key) ->
-          {code, key_val} = key_mapping(key)
-          key_event_pair(code, key_val)
-
-        text when is_binary(text) ->
-          Enum.flat_map(String.graphemes(text), fn char ->
-            [
-              {"Input.dispatchKeyEvent", %{type: "keyDown", text: char}},
-              {"Input.dispatchKeyEvent", %{type: "keyUp", text: char}}
-            ]
-          end)
-      end)
-
-    pipeline_cdp(session, cmds)
-    {:ok, nil}
-  end
-
-  # Send a list of CDP commands with maximum pipelining: cast all but
-  # the last, sync-send the last so the caller sees a settled state.
-  defp pipeline_cdp(_session, []), do: {:ok, nil}
-
-  defp pipeline_cdp(session, [{method, params}]) do
-    cdp_send(session, method, params)
-  end
-
-  defp pipeline_cdp(session, [{method, params} | rest]) do
-    cdp_cast(session, method, params)
-    pipeline_cdp(session, rest)
-  end
-
-  # rawKeyDown + keyUp commands for a non-text key (Tab, Enter, etc.).
-  defp key_event_pair(code, key_val) do
-    [
-      {"Input.dispatchKeyEvent",
-       %{
-         type: "rawKeyDown",
-         key: key_val,
-         code: code,
-         windowsVirtualKeyCode: key_code(code)
-       }},
-      {"Input.dispatchKeyEvent",
-       %{
-         type: "keyUp",
-         key: key_val,
-         code: code,
-         windowsVirtualKeyCode: key_code(code)
-       }}
-    ]
-  end
-
-  defp key_mapping(:enter), do: {"Enter", "Enter"}
-  defp key_mapping(:tab), do: {"Tab", "Tab"}
-  defp key_mapping(:escape), do: {"Escape", "Escape"}
-  defp key_mapping(:backspace), do: {"Backspace", "Backspace"}
-  defp key_mapping(:delete), do: {"Delete", "Delete"}
-  defp key_mapping(:arrow_up), do: {"ArrowUp", "ArrowUp"}
-  defp key_mapping(:arrow_down), do: {"ArrowDown", "ArrowDown"}
-  defp key_mapping(:arrow_left), do: {"ArrowLeft", "ArrowLeft"}
-  defp key_mapping(:arrow_right), do: {"ArrowRight", "ArrowRight"}
-  defp key_mapping(:home), do: {"Home", "Home"}
-  defp key_mapping(:end_key), do: {"End", "End"}
-  defp key_mapping(:space), do: {"Space", " "}
-  defp key_mapping(other), do: {to_string(other), to_string(other)}
-
-  defp key_code("Enter"), do: 13
-  defp key_code("Tab"), do: 9
-  defp key_code("Escape"), do: 27
-  defp key_code("Backspace"), do: 8
-  defp key_code("Delete"), do: 46
-  defp key_code("ArrowUp"), do: 38
-  defp key_code("ArrowDown"), do: 40
-  defp key_code("ArrowLeft"), do: 37
-  defp key_code("ArrowRight"), do: 39
-  defp key_code("Space"), do: 32
-  defp key_code(_), do: 0
 
   # classify/3 — provided by SurfBoard.OpsShared. Returns
   # "patch" / "navigate" / "full_page" / "none" based on phx-* attrs
@@ -1276,52 +1184,6 @@ defmodule SurfBoard.Clients.CDP.Client do
     case cdp_send(session, "Network.setCookie", params) do
       {:ok, %{"success" => false}} -> {:error, :set_cookie_failed}
       {:ok, _} -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  # ----- Media permissions -----
-
-  @permission_types %{camera: "videoCapture", microphone: "audioCapture"}
-
-  @doc """
-  Grants media permissions (`:camera`, `:microphone`) for the session's
-  browser context, so `getUserMedia`/`getDisplayMedia` calls in the page
-  succeed without a real permission prompt — headless Chrome has no UI
-  surface to show or auto-accept one.
-
-  Applies to every origin in the session's browser context (CDP's
-  `Browser.grantPermissions` with no `origin` given), since a session
-  navigating between origins — or joining a call on a domain not known in
-  advance — is the common case here, not a single already-known origin.
-
-  Pairs with launching Chrome with a fake camera/mic (`--use-fake-device-for-media-stream`,
-  optionally with `--use-file-for-fake-video-capture=`/`--use-file-for-fake-audio-capture=`)
-  — this call satisfies the permission prompt; the launch flags are what
-  give `getUserMedia` an actual (synthetic) device to open. SurfBoard
-  doesn't manage Chrome's launch flags; see the
-  [Recording guide](recording.html) for a Chrome image built for this.
-  """
-  @spec grant_permissions(Session.t(), [:camera | :microphone]) :: :ok | {:error, term}
-  def grant_permissions(%Session{} = session, permissions) when is_list(permissions) do
-    cdp_permissions =
-      Enum.map(permissions, fn permission ->
-        Map.get(@permission_types, permission) ||
-          raise ArgumentError,
-                "unknown permission #{inspect(permission)} — expected one of #{inspect(Map.keys(@permission_types))}"
-      end)
-
-    browser_context_id = get_in(session.capabilities, [:browser_context_id])
-
-    params =
-      if browser_context_id do
-        %{permissions: cdp_permissions, browserContextId: browser_context_id}
-      else
-        %{permissions: cdp_permissions}
-      end
-
-    case cdp_send(session, "Browser.grantPermissions", params) do
-      {:ok, _} -> :ok
       error -> error
     end
   end

@@ -22,7 +22,7 @@ defmodule SurfBoard.SpecModule.ChromeBiDi do
   alias SurfBoard.Launcher
   alias SurfBoard.Launcher.BiDi, as: LauncherBiDi
   alias SurfBoard.Browser
-  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, Windows}
+  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, SendKeysSession, Windows}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Spec
   alias SurfBoard.Permissions
@@ -34,7 +34,7 @@ defmodule SurfBoard.SpecModule.ChromeBiDi do
     windows: Windows,
     frames: Frames,
     grant_permissions: Permissions.Unsupported,
-    send_keys_session: BiDiClient,
+    send_keys_session: SendKeysSession,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }

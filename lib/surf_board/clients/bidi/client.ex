@@ -18,7 +18,6 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # ref types, mouse/touch input model).
 
   @behaviour SurfBoard.WireProtocol
-  @behaviour SurfBoard.SendKeysSession
 
   alias SurfBoard.Element
   alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
@@ -787,24 +786,8 @@ defmodule SurfBoard.Clients.BiDi.Client do
       # dispatch a key-source action sequence via input.performActions.
       with {:ok, _} <-
              call_on_element(session, element, OpsShared.dispatch_fn(), [[["focus"]]]) do
-        send_keys_to_session(session, keys)
+        SurfBoard.Clients.BiDi.SendKeysSession.send_keys_to_session(session, keys)
       end
-    end
-  end
-
-  @doc """
-  Send a key sequence (text + special atoms like :tab, :enter) to
-  whatever element currently has focus. BiDi's input.performActions
-  with a key-source sequence handles this in one call.
-  """
-  @spec send_keys_to_session(Session.t(), list) :: {:ok, nil} | {:error, term}
-  def send_keys_to_session(%Session{browsing_context: ctx} = session, keys) when is_list(keys) do
-    actions = Commands.key_type_actions(keys)
-    {method, params} = Commands.perform_actions(ctx, actions)
-
-    case Protocol.cdp_send(session, method, params, []) do
-      {:ok, _} -> {:ok, nil}
-      error -> error
     end
   end
 

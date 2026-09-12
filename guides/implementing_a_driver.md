@@ -205,8 +205,8 @@ strategy for an existing vendor).
        dialogs: SurfBoard.Clients.CDP.Dialogs,  # reuse, or write your own — see below
        windows: SurfBoard.Clients.CDP.Windows,  # reuse, or write your own
        frames: SurfBoard.Clients.CDP.Frames,    # reuse, or write your own
-       grant_permissions: SurfBoard.Clients.CDP.Client, # reuse, or Permissions.Unsupported
-       send_keys_session: SurfBoard.Clients.CDP.Client, # reuse, or SendKeysSession.Unsupported
+       grant_permissions: SurfBoard.Clients.CDP.Permissions, # reuse, or Permissions.Unsupported
+       send_keys_session: SurfBoard.Clients.CDP.SendKeysSession, # reuse, or SendKeysSession.Unsupported
        touch_scroll: &__MODULE__.touch_scroll_impl/3,
        log_check_interactions?: true
      }
@@ -390,18 +390,19 @@ one place: the module your Spec names.
   protocol genuinely differs here (e.g. a real BiDi vendor needs
   `Clients.BiDi.{Dialogs,Windows,Frames}`'s BiDi equivalents, not
   these CDP ones).
-* **`grant_permissions`** — implements `SurfBoard.Permissions`. Point at your
-  `wire_protocol` module directly if it has a real implementation (e.g.
-  `SurfBoard.Clients.CDP.Client`, which both `ChromeCDP` and `LightpandaCDP`
-  could point at — but only `ChromeCDP` does, because Lightpanda's browser
-  engine doesn't actually support it). Otherwise point at
-  `SurfBoard.Permissions.Unsupported`, which raises
-  `SurfBoard.DriverError.not_supported/2` rather than silently no-opping — a
-  caller granting camera/mic access needs to know it didn't happen.
+* **`grant_permissions`** — implements `SurfBoard.Permissions`, in its own
+  `Clients.<protocol>.Permissions` module (e.g. `SurfBoard.Clients.CDP.Permissions`,
+  which both `ChromeCDP` and `LightpandaCDP` could point at — but only
+  `ChromeCDP` does, because Lightpanda's browser engine doesn't actually
+  support it). Otherwise point at `SurfBoard.Permissions.Unsupported`, which
+  raises `SurfBoard.DriverError.not_supported/2` rather than silently
+  no-opping — a caller granting camera/mic access needs to know it didn't
+  happen.
 * **`send_keys_session`** — implements `SurfBoard.SendKeysSession` (session-
   scoped key dispatch; element-scoped `send_keys` is a plain `wire_protocol`
-  call and needs no separate dimension). Same reuse-or-`Unsupported` choice
-  as `grant_permissions`.
+  call and needs no separate dimension), in its own
+  `Clients.<protocol>.SendKeysSession` module. Same reuse-or-`Unsupported`
+  choice as `grant_permissions`.
 * **`touch_scroll`** — there's no shared behaviour for this; it's a bare
   3-arity function on `%Spec{}` because the three existing implementations
   (CDP's `Input.synthesizeScrollGesture`, BiDi's JS `scrollBy` workaround,
@@ -418,15 +419,23 @@ they're the same protocol. That sharing means a capability check keyed off
 `spec.wire_protocol` (e.g. `function_exported?/3`, or just calling it
 unconditionally) can't distinguish the two specs — it's the same module
 either way. `grant_permissions` and `send_keys_session` both hit this for
-real: `Clients.CDP.Client` has working implementations of both, but
-Lightpanda's browser engine doesn't actually support either one. The fix
-isn't a per-spec override (that used to exist, via a `Driver.Generic`
-dispatch layer that's since been removed) — it's giving the capability its
-own `%Spec{}` field, so each spec's Spec states directly whether it
-supports the capability, independent of which `wire_protocol` it shares.
-If you add a new capability that might have this same shared-client problem,
-give it its own Spec field from the start rather than dispatching through
-`wire_protocol`.
+real: CDP has a working implementation of both, but Lightpanda's browser
+engine doesn't actually support either one. The fix isn't a per-spec
+override (that used to exist, via a `Driver.Generic` dispatch layer that's
+since been removed) — it's giving the capability its own `%Spec{}` field, so
+each spec's Spec states directly whether it supports the capability,
+independent of which `wire_protocol` it shares.
+
+Each of `grant_permissions`/`send_keys_session` also gets its own dedicated
+module (`Clients.CDP.Permissions`, `Clients.CDP.SendKeysSession`,
+`Clients.BiDi.SendKeysSession`, ...) rather than living as extra functions
+on the already-large `Clients.<protocol>.Client` — same reasoning as
+`dialogs`/`windows`/`frames` each getting their own file: it makes the
+`%Spec{}` table read as a direct map from capability name to the module that
+implements it, and keeps `Client` itself scoped to `WireProtocol`. If you add
+a new capability that might have this same shared-client problem, give it
+its own Spec field *and* its own file from the start, rather than
+dispatching through `wire_protocol` or bolting it onto `Client`.
 
 ## Adding a new protocol (or a second BiDi vendor)
 

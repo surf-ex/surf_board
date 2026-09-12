@@ -29,7 +29,7 @@ defmodule SurfBoard.SpecModule.ChromeCDP do
   alias SurfBoard.Launcher
   alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Clients.CDP.{Dialogs, Frames, Windows}
+  alias SurfBoard.Clients.CDP.{Dialogs, Frames, Permissions, SendKeysSession, Windows}
   alias SurfBoard.Spec
   alias SurfBoard.Launcher.Chrome, as: LauncherChrome
   alias SurfBoard.Transport.Strategy.SharedWS
@@ -40,8 +40,8 @@ defmodule SurfBoard.SpecModule.ChromeCDP do
     dialogs: Dialogs,
     windows: Windows,
     frames: Frames,
-    grant_permissions: CDPClient,
-    send_keys_session: CDPClient,
+    grant_permissions: Permissions,
+    send_keys_session: SendKeysSession,
     touch_scroll: &__MODULE__.touch_scroll_impl/3,
     log_check_interactions?: true
   }
