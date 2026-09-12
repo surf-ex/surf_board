@@ -36,7 +36,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   """
   @spec send_opts(Session.t()) :: keyword
   def send_opts(%Session{} = session) do
-    if session.capabilities[:flat_session_id] do
+    if session.driver_state.flat_session_id? do
       [flat_session_id: true, session_id: session.browsing_context]
     else
       [session_id: session.browsing_context]

@@ -41,7 +41,7 @@ defmodule SurfBoard.Clients.CDP.Permissions do
                 "unknown permission #{inspect(permission)} — expected one of #{inspect(Map.keys(@permission_types))}"
       end)
 
-    browser_context_id = get_in(session.capabilities, [:browser_context_id])
+    browser_context_id = session.driver_state.browser_context_id
 
     params =
       if browser_context_id do

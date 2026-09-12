@@ -40,7 +40,7 @@ defmodule SurfBoard.OpsShared do
   # Returns the wgxpath polyfill JS bundle. Lightpanda (and any other
   # browser that doesn't ship a real `document.evaluate`) needs this
   # injected after each page load. Callers gate this on
-  # `session.capabilities[:needs_xpath_polyfill]`.
+  # `session.driver_state.needs_xpath_polyfill?`.
   def xpath_polyfill_js, do: @xpath_polyfill
 
   # Single dispatch function — the Elixir side never ships per-op JS
@@ -394,7 +394,7 @@ defmodule SurfBoard.OpsShared do
       the swap in testing) — see `Transport.Common.record_load_milestone/4`.
       Browsers whose JS engine lacks a real `document.evaluate`
       (Lightpanda) ask for the polyfill via
-      `session.capabilities[:needs_xpath_polyfill] = true` and we
+      `session.driver_state.needs_xpath_polyfill? = true` and we
       inject wgxpath after the load completes.
       """
       @spec visit(Session.t(), String.t(), keyword) :: :ok | {:error, term}
@@ -419,7 +419,7 @@ defmodule SurfBoard.OpsShared do
               :ok
             end
 
-          if result == :ok and session.capabilities[:needs_xpath_polyfill] do
+          if result == :ok and session.driver_state.needs_xpath_polyfill? do
             _ = evaluate(session, unquote(__MODULE__).xpath_polyfill_js())
             :ok
           end

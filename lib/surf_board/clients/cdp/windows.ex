@@ -21,15 +21,15 @@ defmodule SurfBoard.Clients.CDP.Windows do
     # target_id (focus_window/2 mutates the live state in the
     # GenServer). Re-fetch the current state.
     case GenServer.call(pid, :get_session) do
-      %Session{capabilities: caps} -> {:ok, caps[:target_id]}
-      _ -> {:ok, get_in(session.capabilities, [:target_id])}
+      %Session{driver_state: driver_state} -> {:ok, driver_state.target_id}
+      _ -> {:ok, session.driver_state.target_id}
     end
   catch
-    :exit, _ -> {:ok, get_in(session.capabilities, [:target_id])}
+    :exit, _ -> {:ok, session.driver_state.target_id}
   end
 
   def window_handle(%Session{} = session) do
-    {:ok, get_in(session.capabilities, [:target_id])}
+    {:ok, session.driver_state.target_id}
   end
 
   def window_handle(%Element{} = element) do
@@ -40,7 +40,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   def window_handles(parent) do
     session = Element.root_session(parent)
     ws_pid = session.bidi_pid
-    ctx_id = get_in(session.capabilities, [:browser_context_id])
+    ctx_id = session.driver_state.browser_context_id
 
     case WebSocket.send_sync(ws_pid, "Target.getTargets", %{}) do
       {:ok, %{"targetInfos" => targets}} ->
@@ -54,7 +54,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
         {:ok, handles}
 
       _ ->
-        {:ok, [get_in(session.capabilities, [:target_id])]}
+        {:ok, [session.driver_state.target_id]}
     end
   end
 
@@ -82,7 +82,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
         new_session = %{
           session
           | browsing_context: session_id,
-            capabilities: Map.put(session.capabilities, :target_id, target_id)
+            driver_state: %{session.driver_state | target_id: target_id}
         }
 
         # All four setup commands fire-and-forget so they pipeline on
@@ -125,7 +125,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
         :exit, _ -> session
       end
 
-    target_id = get_in(current.capabilities, [:target_id])
+    target_id = current.driver_state.target_id
     # Mark this exact flat sessionId as an intentional close before
     # asking Chrome to close it — Target.detachedFromTarget for it is
     # about to fire, and would otherwise look identical to that target
@@ -137,7 +137,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   end
 
   def close_window(%Session{} = session) do
-    target_id = get_in(session.capabilities, [:target_id])
+    target_id = session.driver_state.target_id
     ws_pid = session.bidi_pid
     _ = WebSocket.send_sync(ws_pid, "Target.closeTarget", %{targetId: target_id})
     {:ok, nil}

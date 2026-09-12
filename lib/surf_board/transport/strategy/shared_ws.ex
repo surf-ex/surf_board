@@ -80,11 +80,11 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
         session_id: session_id,
         browser_context_id: ctx_id,
         teardown_fun: teardown,
-        capabilities: %{
+        driver_state: %SurfBoard.DriverState{
           target_id: target_id,
           browser_context_id: ctx_id,
-          flat_session_id: true,
-          shared_connection: true
+          flat_session_id?: true,
+          shared_connection?: true
         }
       }
 

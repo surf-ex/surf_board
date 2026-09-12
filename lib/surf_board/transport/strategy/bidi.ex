@@ -33,9 +33,9 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
     # `base_url` — the chromium-bidi server's HTTP base URL (e.g.
     # `http://localhost:12345`).
     # `capabilities` — WebDriver session-creation capabilities for the
-    # POST /session body (distinct from `session_struct.capabilities`,
-    # which is SurfBoard's own session bookkeeping) — nil uses
-    # Handshake's default.
+    # POST /session body (this Config's own copy, used before any
+    # `%Session{}` exists — not read from `session_struct.capabilities`)
+    # — nil uses Handshake's default.
     @enforce_keys [:base_url]
     defstruct [:base_url, :capabilities]
   end

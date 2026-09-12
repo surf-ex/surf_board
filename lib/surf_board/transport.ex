@@ -77,7 +77,7 @@ defmodule SurfBoard.Transport do
                         disposes this rather than closing the WS
     * `:teardown_fun` — 1-arity called from Session.terminate/2;
                         receives the session struct
-    * `:capabilities` — opaque map merged into the session capabilities
+    * `:driver_state` — becomes the session's `driver_state`
   """
   @type acquired :: %{
           ws_pid: pid,
@@ -85,7 +85,7 @@ defmodule SurfBoard.Transport do
           session_id: String.t() | nil,
           browser_context_id: String.t() | nil,
           teardown_fun: (SurfBoard.Session.t() -> any),
-          capabilities: map
+          driver_state: SurfBoard.DriverState.t()
         }
 
   # ----- Default implementations of common teardown shapes -----
@@ -150,10 +150,11 @@ defmodule SurfBoard.Transport do
   standard CDP init sequence (page lifecycle, bootstrap, frame
   tracking).
 
-  `template.capabilities` is treated as the driver's base capabilities
-  (e.g. user-supplied ones); `acquired.capabilities` is merged on top,
-  winning on conflicts — mirroring what each of those strategies needs
-  from its own acquisition step (target id, flat-session routing, …).
+  `template.capabilities` (user-supplied) is left untouched.
+  `template.driver_state` is treated as the driver's fixed, vendor-level
+  defaults (e.g. Lightpanda's `needs_xpath_polyfill?`); `acquired.driver_state`
+  is merged on top, winning on conflicts — this per-session acquisition
+  step's own findings (target id, flat-session routing, …).
 
   Returns `{:ok, %SurfBoard.Session{}}` ready for callers to use.
   """
@@ -166,7 +167,7 @@ defmodule SurfBoard.Transport do
       template
       | bidi_pid: ws_pid,
         browsing_context: acquired.session_id,
-        capabilities: Map.merge(template.capabilities || %{}, acquired.capabilities)
+        driver_state: Map.merge(template.driver_state, acquired.driver_state)
     }
 
     config = %Actor.Config{

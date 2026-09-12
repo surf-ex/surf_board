@@ -55,9 +55,9 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
         session_id: session_id,
         browser_context_id: nil,
         teardown_fun: teardown,
-        capabilities: %{
+        driver_state: %SurfBoard.DriverState{
           target_id: target_id,
-          flat_session_id: true,
+          flat_session_id?: true,
           server_pid: server_pid
         }
       }

@@ -531,7 +531,7 @@ defmodule SurfBoard.Transport.Actor do
     new_session = %{
       state.session
       | browsing_context: session_id,
-        capabilities: Map.put(state.session.capabilities, :target_id, target_id)
+        driver_state: %{state.session.driver_state | target_id: target_id}
     }
 
     %{state | session: new_session}

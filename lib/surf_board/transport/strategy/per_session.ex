@@ -44,7 +44,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
   Required opts:
     * `:launcher` — a started `SurfBoard.Launcher` wrapping `%Config{resolve_ws_url: ...}`
     * `:session_struct` — `%SurfBoard.Session{}` to back the session
-      with (driver fills in id/url/capabilities/etc.)
+      with (driver fills in id/url/driver_state/etc.)
 
   Optional:
     * `:owner`        — process to monitor; defaults to `self()`
@@ -101,7 +101,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
     %{
       session
       | browsing_context: session_id,
-        capabilities: Map.put(session.capabilities, :target_id, target_id)
+        driver_state: %{session.driver_state | target_id: target_id}
     }
   end
 end
