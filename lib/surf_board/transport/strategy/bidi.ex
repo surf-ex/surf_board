@@ -81,8 +81,12 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
       session = %{session | browsing_context: context_id, bidi_pid: socket_pid}
 
       # Mirror the actor's session-struct view so subsequent reads
-      # via :get_session also see the populated browsing_context.
-      :ok = GenServer.call(session.pid, {:update_browsing_context, nil, context_id})
+      # via :get_session also see the populated browsing_context —
+      # ctx/1 now depends on this being correct (previously nothing
+      # read the actor's copy, only the struct returned below, so this
+      # call's argument order went unnoticed: session_id is the
+      # context id, BiDi has no separate target_id concept).
+      :ok = GenServer.call(session.pid, {:update_browsing_context, context_id, nil})
 
       {:ok, session}
     else
