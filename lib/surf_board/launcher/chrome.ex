@@ -40,9 +40,9 @@ defmodule SurfBoard.Launcher.Chrome do
   # any other one. Pass your own `:build_template`/`:post_start` to
   # override these defaults entirely.
 
-  alias SurfBoard.{DependencyError, Metadata}
+  alias SurfBoard.DependencyError
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Launcher.UserAgent
+  alias SurfBoard.Launcher.{Metadata, UserAgent}
   alias SurfBoard.SpecModule.ChromeCDP
   alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
   alias SurfBoard.Launcher

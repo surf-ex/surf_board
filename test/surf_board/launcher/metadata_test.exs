@@ -1,7 +1,7 @@
 defmodule SurfBoard.MetadataTest do
   use ExUnit.Case, async: true
 
-  alias SurfBoard.Metadata
+  alias SurfBoard.Launcher.Metadata
 
   test "append/2 with nil metadata returns the user agent unchanged" do
     assert Metadata.append("MyAgent/1.0", nil) == "MyAgent/1.0"

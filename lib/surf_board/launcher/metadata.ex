@@ -1,4 +1,4 @@
-defmodule SurfBoard.Metadata do
+defmodule SurfBoard.Launcher.Metadata do
   @moduledoc false
 
   # Metadata is used to encode information about the browser and test. This
