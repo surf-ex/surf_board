@@ -104,12 +104,12 @@ defmodule SurfBoard.Browser.Internal do
   @doc false
   def max_wait_time(session) do
     Keyword.get(session_opts(session), :max_wait_time) ||
-      SurfBoard.Config.get(:max_wait_time, @default_max_wait_time)
+      SurfBoard.Browser.Config.get(:max_wait_time, @default_max_wait_time)
   end
 
   # Per-session overrides passed to start_session/1 win over config, so an
   # application's scraping session isn't governed by whatever the test
-  # suite configured (or vice versa). See `SurfBoard.Config`.
+  # suite configured (or vice versa). See `SurfBoard.Browser.Config`.
   @doc false
   def session_opts(%Session{session_opts: opts}) when is_list(opts), do: opts
   def session_opts(_), do: []
@@ -125,6 +125,6 @@ defmodule SurfBoard.Browser.Internal do
   @doc false
   def base_url(session) do
     Keyword.get(session_opts(session), :base_url) ||
-      SurfBoard.Config.get(:base_url) || ""
+      SurfBoard.Browser.Config.get(:base_url) || ""
   end
 end

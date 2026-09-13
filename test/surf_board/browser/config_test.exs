@@ -1,7 +1,7 @@
 defmodule SurfBoard.ConfigTest do
   use ExUnit.Case, async: false
 
-  alias SurfBoard.Config
+  alias SurfBoard.Browser.Config
 
   setup do
     original = Application.get_env(:surf_board, :some_setting)
