@@ -79,7 +79,7 @@ defmodule SurfBoard.Transport.Protocol do
   #   * `{:v2_event, method, event_map}` (`t:v2_event/0`) →
   #     wire-level event the actor previously subscribed to.
   #
-  # Every producer (`Transport.WebSocket`, `Drivers.ChromeBiDi.WebSocketClient`)
+  # Every producer (`Transport.WebSocket`, `Transport.WebSocketClient`)
   # and every consumer (`Transport.Actor`, `Clients.{CDP,BiDi}.Dialogs`,
   # `Browser.LogChecker`, `SurfBoard.end_session/1`) matches these two
   # tuple shapes independently — `t:v2_response/0`/`t:v2_event/0` exist so
@@ -103,7 +103,7 @@ defmodule SurfBoard.Transport.Protocol do
   @typedoc """
   A reply to a previously issued `cdp_send`/`cdp_cast`, sent by the
   transport's connection layer (`Transport.WebSocket`,
-  `Drivers.ChromeBiDi.WebSocketClient`) to the actor pid that made the
+  `Transport.WebSocketClient`) to the actor pid that made the
   call. `wire_id` matches the id that send returned; `result` is the
   decoded wire response.
   """

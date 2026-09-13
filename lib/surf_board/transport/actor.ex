@@ -21,7 +21,7 @@ defmodule SurfBoard.Transport.Actor do
   #                through an already-running socket-owner process
   #                elsewhere (`SurfBoard.Transport.WebSocket` for CDP's shared-WS
   #                and isolated-process models — genuinely serving many
-  #                sessions; `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
+  #                sessions; `SurfBoard.Transport.WebSocketClient`
   #                for BiDi — always 1:1 with its session, but still a
   #                separate process since chromium-bidi's session comes
   #                up via an HTTP handshake before any actor exists to

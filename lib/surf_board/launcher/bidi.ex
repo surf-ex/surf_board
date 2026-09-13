@@ -37,7 +37,7 @@ defmodule SurfBoard.Launcher.BiDi do
   alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Transport.WebSocketClient
   alias SurfBoard.Launcher
   alias SurfBoard.SpecModule.ChromeBiDi
   alias SurfBoard.Transport.Protocol

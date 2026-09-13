@@ -1,17 +1,23 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.WebSocketClient do
+defmodule SurfBoard.Transport.WebSocketClient do
   @moduledoc false
-  # GenServer managing a single WebSocket connection per session.
+  # GenServer managing a single WebSocket connection per session —
+  # BiDi's connection owner. Despite once living under
+  # `Drivers.ChromeBiDi`, nothing here is Chrome- or chromium-bidi-
+  # sidecar-specific: it's plain BiDi wire framing over
+  # `Transport.WireSocket`, indifferent to what's on the other end of
+  # the socket (a real Firefox BiDi endpoint would use this same
+  # module unchanged).
   #
   # The Mint connect/upgrade/encode/decode plumbing lives in
   # `SurfBoard.Transport.WireSocket`, shared with `SurfBoard.Transport.WebSocket`
-  # (Chrome CDP's shared-socket owner). This module speaks the exact
+  # (CDP's shared-socket owner). This module speaks the exact
   # same owner protocol `SurfBoard.Transport.WebSocket` does — `cast_send/5`
   # returns a wire id immediately and delivers the reply later via
   # `{:v2_response, wire_id, result}` sent to the given owner pid;
   # events broadcast as `{:v2_event, method, event}` to subscribers —
   # so `Transport.Actor` can treat this exactly like a `:remote`
-  # socket owner, with no BiDi-specific dispatch of its own. Only the
-  # cardinality differs (one session per WebSocketClient, vs. many
+  # socket owner, with no protocol-specific dispatch of its own. Only
+  # the cardinality differs (one session per WebSocketClient, vs. many
   # sessions sharing one `SurfBoard.Transport.WebSocket`), which `Actor` doesn't
   # need to know about.
   #

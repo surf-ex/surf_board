@@ -2,7 +2,7 @@ defmodule SurfBoard.Transport.WebSocket do
   @moduledoc false
 
   # Transport layer (the "plexer/demuxer") for CDP and BiDi WebSocket
-  # protocols. Replaces `SurfBoard.Drivers.ChromeBiDi.WebSocketClient`
+  # protocols. Replaces `SurfBoard.Transport.WebSocketClient`
   # by being deliberately dumber:
   #
   #   * outbound = encode JSON, write bytes, register correlation

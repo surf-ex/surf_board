@@ -12,7 +12,7 @@ defmodule SurfBoard.WebSocketHostHeaderTest do
   # container by docker hostname (e.g. `chrome:9222`), the default
   # behavior of sending `Host: chrome:9222` triggers that rejection.
 
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Transport.WebSocketClient
   alias SurfBoard.Transport.WebSocket
 
   # The fake server replies 500, which the WS process logs at :error.

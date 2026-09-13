@@ -25,7 +25,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi do
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Clients.BiDi.Wire
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Transport.WebSocketClient
   alias SurfBoard.{Launcher, Session}
 
   defmodule Config do

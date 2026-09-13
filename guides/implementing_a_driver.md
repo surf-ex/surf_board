@@ -29,9 +29,11 @@ This code splits along three independent axes:
   selecting one through a generic interface, because nothing actually needs
   to swap strategies under one vendor at runtime. A launcher module owns
   whatever process supervision its connection strategy needs — e.g.
-  `Launcher.BiDi.Supervised` (the chromium-bidi Node sidecar) and
-  `Drivers.ChromeBiDi.WebSocketClient` (the per-session WS connection
-  GenServer) — but never protocol semantics: method names, param shapes,
+  `Launcher.BiDi.Supervised` supervises the chromium-bidi Node sidecar
+  (`Drivers.ChromeBiDi.Server`); `Transport.WebSocketClient` (the
+  per-session BiDi WS connection GenServer, started by `Strategy.BiDi`
+  itself, not supervised by the launcher) is unrelated to that sidecar
+  — but never protocol semantics: method names, param shapes,
   response parsing all live in `Clients`, not here.
 * **Spec** (`lib/surf_board/spec_module/`) — the thin capability-dispatch layer that
   ties a protocol client and a launcher together: `SurfBoard.SpecModule.ChromeCDP`,

@@ -3,7 +3,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi.HandshakeTest do
 
   alias SurfBoard.Transport.Strategy.BiDi.Handshake
   alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
-  alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
+  alias SurfBoard.Transport.WebSocketClient
 
   @moduletag :browser
 
