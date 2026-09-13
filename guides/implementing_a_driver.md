@@ -30,7 +30,7 @@ This code splits along three independent axes:
   to swap strategies under one vendor at runtime. A launcher module owns
   whatever process supervision its connection strategy needs — e.g.
   `Launcher.BiDi.Supervised` supervises the chromium-bidi Node sidecar
-  (`Drivers.ChromeBiDi.Server`); `Transport.WebSocketClient` (the
+  (`BiDi.Server`); `Transport.WebSocketClient` (the
   per-session BiDi WS connection GenServer, started by `Strategy.BiDi`
   itself, not supervised by the launcher) is unrelated to that sidecar
   — but never protocol semantics: method names, param shapes,

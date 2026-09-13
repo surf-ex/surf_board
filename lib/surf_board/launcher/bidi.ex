@@ -19,7 +19,7 @@ defmodule SurfBoard.Launcher.BiDi do
   #   {:ok, session} = Launcher.start_session(launcher)
   #
   # `Supervised` owns the chromium-bidi Node sidecar
-  # (`Drivers.ChromeBiDi.Server`) — `SpecModule.ChromeBiDi`'s default
+  # (`BiDi.Server`) — `SpecModule.ChromeBiDi`'s default
   # launcher spec, started once, lazily, under `SurfBoard.DriverSupervisor`.
   # Every session still connects via the plain `connect/1` shape above
   # (transient, no state to keep); the sidecar just needs somewhere to
@@ -36,7 +36,7 @@ defmodule SurfBoard.Launcher.BiDi do
   alias SurfBoard.Launcher.Metadata
   alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
-  alias SurfBoard.Drivers.ChromeBiDi.Server, as: BidiServer
+  alias SurfBoard.Launcher.BiDi.Server, as: BidiServer
   alias SurfBoard.Transport.WebSocketClient
   alias SurfBoard.Launcher
   alias SurfBoard.SpecModule.ChromeBiDi
@@ -48,7 +48,7 @@ defmodule SurfBoard.Launcher.BiDi do
 
   defmodule Supervised do
     @moduledoc false
-    # Owns the chromium-bidi Node sidecar (`Drivers.ChromeBiDi.Server`)
+    # Owns the chromium-bidi Node sidecar (`BiDi.Server`)
     # as its one child — same pattern as `Launcher.Chrome.Supervised`,
     # except there's no `Launcher` child here: `Strategy.BiDi` caches
     # no connection state, so every session dials the sidecar fresh via

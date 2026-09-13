@@ -12,7 +12,7 @@ defmodule SurfBoard.Launcher.Chrome do
   #
   #   * `start_link/1` — launches and owns a local Chrome process. This
   #     is a Supervisor (not the launcher itself): it owns a
-  #     `Drivers.ChromeCDP.Server` and a `Launcher` as its two
+  #     `Chrome.Server` and a `Launcher` as its two
   #     children, giving the spawned Chrome the same crash-restart
   #     guarantee `SpecModule.ChromeCDP`'s own default launcher gets. The
   #     launcher child is registered under the `:name` you asked for —
@@ -44,7 +44,7 @@ defmodule SurfBoard.Launcher.Chrome do
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Launcher.{Metadata, UserAgent}
   alias SurfBoard.SpecModule.ChromeCDP
-  alias SurfBoard.Drivers.ChromeCDP.Server, as: ChromeServer
+  alias SurfBoard.Launcher.Chrome.Server, as: ChromeServer
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.SharedWS
 

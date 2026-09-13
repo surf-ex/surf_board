@@ -1,4 +1,4 @@
-defmodule SurfBoard.Drivers.ChromeBiDi.Server do
+defmodule SurfBoard.Launcher.BiDi.Server do
   @moduledoc false
 
   # Manages a chromium-bidi Node process that exposes a BiDi WebSocket
