@@ -100,6 +100,26 @@ defmodule SurfBoard.Clients.BiDi.CommandsTest do
       [action_source] = Commands.key_type_actions(["x", :tab])
       assert length(action_source.actions) == 4
     end
+
+    test "accepts the corrected :separator spelling" do
+      [action_source] = Commands.key_type_actions([:separator])
+      [down, _up] = action_source.actions
+      assert down.value == ""
+    end
+
+    test "accepts legacy CDP-only key names as aliases of the canonical vocabulary" do
+      assert down_value(:arrow_up) == down_value(:up_arrow)
+      assert down_value(:arrow_down) == down_value(:down_arrow)
+      assert down_value(:arrow_left) == down_value(:left_arrow)
+      assert down_value(:arrow_right) == down_value(:right_arrow)
+      assert down_value(:end_key) == down_value(:end)
+    end
+
+    defp down_value(key) do
+      [action_source] = Commands.key_type_actions([key])
+      [down, _up] = action_source.actions
+      down.value
+    end
   end
 
   describe "touch actions" do

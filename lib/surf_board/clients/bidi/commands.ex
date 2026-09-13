@@ -288,9 +288,17 @@ defmodule SurfBoard.Clients.BiDi.Commands do
   defp key_code(:num9), do: "\uE023"
   defp key_code(:multiply), do: "\uE024"
   defp key_code(:add), do: "\uE025"
-  defp key_code(:seperator), do: "\uE026"
+  defp key_code(:separator), do: "\uE026"
   defp key_code(:subtract), do: "\uE027"
   defp key_code(:decimal), do: "\uE028"
   defp key_code(:divide), do: "\uE029"
   defp key_code(:command), do: "\uE03D"
+  # Legacy CDP-only aliases predating this vocabulary \u2014 kept so
+  # existing callers using these names don't break. Matches
+  # Clients.CDP.SendKeysSession's equivalent aliases.
+  defp key_code(:arrow_up), do: key_code(:up_arrow)
+  defp key_code(:arrow_down), do: key_code(:down_arrow)
+  defp key_code(:arrow_left), do: key_code(:left_arrow)
+  defp key_code(:arrow_right), do: key_code(:right_arrow)
+  defp key_code(:end_key), do: key_code(:end)
 end

@@ -10,5 +10,16 @@
     </button>
     <p id="result">not clicked</p>
     <a id="the-link" href="/other.html">Other page</a>
+    <input id="the-input" type="text" />
+    <div id="the-key-log" tabindex="0"></div>
+    <script>
+      // Listens on window (not the element itself) so Tab moving
+      // focus away, or Escape/other keys' native side effects, can't
+      // stop events from being logged — this is a raw keydown log,
+      // not a focus/input-behavior test.
+      window.addEventListener('keydown', function (event) {
+        document.getElementById('the-key-log').textContent += '[' + event.key + ']';
+      });
+    </script>
   </body>
 </html>
