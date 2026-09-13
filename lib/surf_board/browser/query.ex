@@ -9,9 +9,9 @@ defmodule SurfBoard.Browser.Query do
   # every other Browser.* submodule depends on.
 
   alias SurfBoard.Browser.Internal
+  alias SurfBoard.Browser.Query.ErrorMessage
   alias SurfBoard.Element
   alias SurfBoard.Query
-  alias SurfBoard.Query.ErrorMessage
   alias SurfBoard.Session
   alias SurfBoard.StaleReferenceError
 

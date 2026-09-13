@@ -1,4 +1,4 @@
-defmodule SurfBoard.Query.ErrorMessage do
+defmodule SurfBoard.Browser.Query.ErrorMessage do
   @moduledoc false
 
   alias SurfBoard.Query

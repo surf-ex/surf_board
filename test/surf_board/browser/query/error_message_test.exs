@@ -1,8 +1,8 @@
-defmodule SurfBoard.Query.ErrorMessageTest do
+defmodule SurfBoard.Browser.Query.ErrorMessageTest do
   use ExUnit.Case, async: true
 
+  alias SurfBoard.Browser.Query.ErrorMessage
   alias SurfBoard.Query
-  alias SurfBoard.Query.ErrorMessage
 
   describe "message/1" do
     test "inclusion of binary 'text' condition when present in css query" do
