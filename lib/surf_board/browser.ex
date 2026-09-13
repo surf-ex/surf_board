@@ -379,76 +379,32 @@ defmodule SurfBoard.Browser do
     do: Windows.resize_window(session, width, height)
 
   @doc """
-  Maximizes the current window.
+  Raises — not supported.
 
-  The window is either an instance of a browser tab or another operating system window.
+  Maximizing, moving, or reading the OS-level position of a window
+  requires a real operating system window with a graphical window
+  manager. Every driver here always runs Chrome headless (there is no
+  non-headless launch path), so there is never a real window to
+  maximize — this always raises `SurfBoard.DriverError`.
 
-  For most browsers, this requires a graphical window manager to be running.
-
-  ## Usage
-
-  ```elixir
-  feature "maximizes the window to the full size of the display", %{session: session} do
-    %{"width" => width, "height" => height} =
-      session
-      |> visit("/home")
-      |> maximize_window()
-      |> window_size()
-
-    assert width == 1920
-    assert height == 1080
-  end
-  ```
+  See `window_size/1`/`resize_window/3` for the headless-safe
+  equivalent: they control the viewport (via CDP's
+  `Emulation.setDeviceMetricsOverride`), which works without a real
+  window.
   """
-  @spec maximize_window(session :: Session.t()) :: Session.t()
+  @spec maximize_window(session :: Session.t()) :: no_return
   def maximize_window(%Session{} = session), do: Windows.maximize_window(session)
 
   @doc """
-  Gets the position of the current window.
-
-  The window is either an instance of a browser tab or another operating system window.
-
-  ## Usage
-
-  ```elixir
-  feature "gets the current display position of the window", %{session: session} do
-    %{"x" => x, "y" => y} =
-      session
-      |> visit("/home")
-      |> window_position()
-
-    assert x == 200
-    assert y == 200
-  end
-  ```
+  Raises — not supported. See `maximize_window/1`.
   """
-  @spec window_position(session :: Session.t()) :: %{
-          String.t() => pos_integer,
-          String.t() => pos_integer
-        }
+  @spec window_position(session :: Session.t()) :: no_return
   def window_position(%Session{} = session), do: Windows.window_position(session)
 
   @doc """
-  Sets the position of the current window.
-
-  The window is either an instance of a browser tab or another operating system window.
-
-  ## Usage
-
-  ```elixir
-  feature "gets the current display position of the window", %{session: session} do
-    %{"x" => x, "y" => y} =
-      session
-      |> visit("/home")
-      |> move_window(500, 500)
-      |> window_position()
-
-    assert x == 500
-    assert y == 500
-  end
-  ```
+  Raises — not supported. See `maximize_window/1`.
   """
-  @spec move_window(session :: Session.t(), x :: pos_integer(), y :: pos_integer()) :: Session.t()
+  @spec move_window(session :: Session.t(), x :: pos_integer(), y :: pos_integer()) :: no_return
   def move_window(%Session{} = session, x, y), do: Windows.move_window(session, x, y)
 
   @doc """

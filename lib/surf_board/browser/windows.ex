@@ -54,14 +54,29 @@ defmodule SurfBoard.Browser.Windows do
     session
   end
 
-  @spec maximize_window(Session.t()) :: Session.t()
-  def maximize_window(%Session{} = session), do: session
+  # Every driver here always runs Chrome headless (`--headless`/
+  # `--headless=new`, hardcoded — no non-headless launch path exists),
+  # so there is never a real OS window to maximize, move, or report
+  # the position of. Raise rather than silently no-op — like
+  # `Permissions.Unsupported`, a caller that thinks it moved/maximized
+  # the window needs to know it didn't, rather than have code that
+  # assumes it did. `window_size`/`resize_window` are unaffected: they
+  # operate on the viewport via `Emulation.setDeviceMetricsOverride`,
+  # which works headless.
+  @spec maximize_window(Session.t()) :: no_return
+  def maximize_window(%Session{spec_module: spec_module}) do
+    raise SurfBoard.DriverError.not_supported("maximize_window/1", spec_module)
+  end
 
-  @spec window_position(Session.t()) :: %{String.t() => pos_integer, String.t() => pos_integer}
-  def window_position(%Session{}), do: %{"x" => 0, "y" => 0}
+  @spec window_position(Session.t()) :: no_return
+  def window_position(%Session{spec_module: spec_module}) do
+    raise SurfBoard.DriverError.not_supported("window_position/1", spec_module)
+  end
 
-  @spec move_window(Session.t(), pos_integer(), pos_integer()) :: Session.t()
-  def move_window(%Session{} = session, _x, _y), do: session
+  @spec move_window(Session.t(), pos_integer(), pos_integer()) :: no_return
+  def move_window(%Session{spec_module: spec_module}, _x, _y) do
+    raise SurfBoard.DriverError.not_supported("move_window/3", spec_module)
+  end
 
   @spec focus_frame(Query.parent(), SurfBoard.Query.t()) :: Query.parent()
   def focus_frame(%Session{} = session, %SurfBoard.Query{} = query) do
