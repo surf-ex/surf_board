@@ -323,11 +323,28 @@ defmodule SurfBoard.Clients.CDP.Client do
   """
   @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
-    case cdp_send(session, "Runtime.evaluate", %{
-           expression: expression,
-           awaitPromise: true,
-           returnByValue: true
-         }) do
+    evaluate_async_with_timeout(session, expression, nil)
+  end
+
+  @doc false
+  # Same as evaluate_async/2, but `timeout_ms` (when given) bounds the
+  # underlying GenServer.call directly, instead of the default
+  # Transport.Protocol timeout — used by Protocol.eval_async/3 so a
+  # caller's own deadline can fail the call before the JS-side promise
+  # it's awaiting would otherwise be assumed to still be pending.
+  @spec evaluate_async_with_timeout(Session.t(), String.t(), timeout() | nil) ::
+          {:ok, term} | {:error, term}
+  def evaluate_async_with_timeout(%Session{} = session, expression, timeout_ms)
+      when is_binary(expression) do
+    opts =
+      if timeout_ms, do: send_opts(session) ++ [timeout: timeout_ms], else: send_opts(session)
+
+    case Protocol.cdp_send(
+           session,
+           "Runtime.evaluate",
+           %{expression: expression, awaitPromise: true, returnByValue: true},
+           opts
+         ) do
       {:ok, %{"result" => %{"value" => v}}} -> {:ok, v}
       {:ok, %{"result" => %{"type" => "undefined"}}} -> {:ok, nil}
       {:ok, %{"exceptionDetails" => details}} -> {:error, {:js_exception, details}}

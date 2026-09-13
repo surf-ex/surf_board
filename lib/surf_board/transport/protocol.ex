@@ -121,12 +121,20 @@ defmodule SurfBoard.Transport.Protocol do
 
   # ----- Synchronous CDP RPC -----
 
+  @doc """
+  `opts` is forwarded to the wire send as-is (`:flat_session_id`,
+  `:session_id`), except `:timeout` — pulled out here to bound the
+  `GenServer.call` itself (default `#{@default_timeout}`ms) rather than
+  being sent over the wire.
+  """
   @spec cdp_send(Session.t(), String.t(), map, keyword) :: {:ok, term} | {:error, term}
   def cdp_send(%Session{pid: pid}, method, params, opts \\ []) when is_pid(pid) do
-    GenServer.call(pid, {:cdp_send, method, params, opts}, @default_timeout)
+    {timeout, opts} = Keyword.pop(opts, :timeout, @default_timeout)
+    GenServer.call(pid, {:cdp_send, method, params, opts}, timeout)
   catch
     :exit, {:noproc, _} -> {:error, :session_closed}
     :exit, {:normal, _} -> {:error, :session_closed}
+    :exit, {:timeout, {GenServer, :call, _}} -> {:error, :timeout}
   end
 
   @spec cdp_cast(Session.t(), String.t(), map, keyword) :: :ok

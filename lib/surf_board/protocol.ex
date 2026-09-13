@@ -25,17 +25,22 @@ defmodule SurfBoard.Protocol do
 
   @doc """
   Evaluates a JS expression that returns a Promise, awaits it, and
-  returns the resolved value.
+  returns the resolved value. `timeout` bounds the underlying wire
+  call directly — a caller relying on a JS-side timeout to resolve
+  the promise on its own (e.g. `LiveView.Aware`) needs this to fail
+  as `{:error, :timeout}` if the wire call itself stalls, rather than
+  block indefinitely (or until the driver's own unrelated default
+  timeout) past the caller's own deadline.
   """
   @spec eval_async(Session.t(), String.t(), timeout()) :: result
   def eval_async(session, js, timeout \\ 10_000)
 
-  def eval_async(%Session{spec_module: spec_module} = session, js, _timeout)
+  def eval_async(%Session{spec_module: spec_module} = session, js, timeout)
       when spec_module in [SurfBoard.SpecModule.LightpandaCDP, SurfBoard.SpecModule.ChromeCDP],
-      do: SurfBoard.Clients.CDP.Client.evaluate_async(session, js)
+      do: SurfBoard.Clients.CDP.Client.evaluate_async_with_timeout(session, js, timeout)
 
-  def eval_async(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi} = session, js, _timeout),
-    do: SurfBoard.Clients.BiDi.Client.evaluate_async(session, js)
+  def eval_async(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi} = session, js, timeout),
+    do: SurfBoard.Clients.BiDi.Client.evaluate_async_with_timeout(session, js, timeout)
 
   @doc "Returns the current page URL as a string."
   @spec current_url(Session.t()) :: result

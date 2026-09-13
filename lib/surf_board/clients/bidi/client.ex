@@ -163,13 +163,28 @@ defmodule SurfBoard.Clients.BiDi.Client do
   """
   @spec evaluate_async(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   def evaluate_async(%Session{} = session, expression) when is_binary(expression) do
+    evaluate_async_with_timeout(session, expression, nil)
+  end
+
+  @doc false
+  # Same as evaluate_async/2, but `timeout_ms` (when given) bounds the
+  # underlying GenServer.call directly, instead of the default
+  # Transport.Protocol timeout — used by Protocol.eval_async/3 so a
+  # caller's own deadline can fail the call before the JS-side promise
+  # it's awaiting would otherwise be assumed to still be pending.
+  @spec evaluate_async_with_timeout(Session.t(), String.t(), timeout() | nil) ::
+          {:ok, term} | {:error, term}
+  def evaluate_async_with_timeout(%Session{} = session, expression, timeout_ms)
+      when is_binary(expression) do
     params = %{
       "expression" => expression,
       "awaitPromise" => true,
       "target" => %{"context" => ctx(session)}
     }
 
-    case Protocol.cdp_send(session, "script.evaluate", params, []) do
+    opts = if timeout_ms, do: [timeout: timeout_ms], else: []
+
+    case Protocol.cdp_send(session, "script.evaluate", params, opts) do
       {:ok, result} -> decode_eval_result(result)
       error -> error
     end
