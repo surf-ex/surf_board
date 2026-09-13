@@ -34,15 +34,16 @@ defmodule SurfBoard.Browser.LiveViewPatch do
   defp click_auto(parent, query) do
     session = Internal.get_session(parent)
 
-    # Lightpanda: route through CDPClient.click_aware which captures
-    # pre_page_id, classifies, clicks, awaits page_ready — same shape
-    # as do_post_click but in one native call. Avoids the post-click
-    # `find` polling fallback that cost LP ~3s per submit-form click.
+    # native_click_await? (Lightpanda): route through wire_protocol's
+    # click_aware which captures pre_page_id, classifies, clicks, awaits
+    # page_ready — same shape as do_post_click but in one native call.
+    # Avoids the post-click `find` polling fallback that cost LP ~3s per
+    # submit-form click.
     #
     # Chrome CDP / BiDi: Element.click's own classify + patch-await +
     # navigation/page-ready logic already handles this.
     # No outer with_patch_await needed — wrapping it would double-wait.
-    if session && session.spec_module == SurfBoard.SpecModule.LightpandaCDP &&
+    if session && Internal.spec(session).native_click_await? &&
          not Internal.in_frame?(session) && not Internal.in_switched_window?(session) do
       click_with_page_await(parent, query)
     else
@@ -148,7 +149,9 @@ defmodule SurfBoard.Browser.LiveViewPatch do
     # spliced query+target ops in W.run).
     case Query.find_lazy(parent, query) do
       %Element{} = element ->
-        case click_aware_client(element.parent).click_aware(element.parent, element) do
+        wire = Internal.spec(element.parent).wire_protocol
+
+        case wire.click_aware(element.parent, element) do
           {:ok, _classification} ->
             parent
 
@@ -167,14 +170,6 @@ defmodule SurfBoard.Browser.LiveViewPatch do
         parent |> Query.find_lazy(query, &Element.click/1)
     end
   end
-
-  # Pick the client module that owns a given session's transport.
-  # CDP and BiDi expose the same `click_aware/2` shape, so callers
-  # can invoke `mod.click_aware(...)` uniformly.
-  defp click_aware_client(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi}),
-    do: SurfBoard.Clients.BiDi.Client
-
-  defp click_aware_client(_), do: SurfBoard.Clients.CDP.Client
 
   @doc """
   Waits for the next LiveView DOM patch.

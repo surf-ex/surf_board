@@ -1,10 +1,10 @@
-defmodule SurfBoard.SpecModule.Spec do
+defmodule SurfBoard.Driver.Spec do
   @moduledoc false
 
-  # A protocol variant as data: dimension modules plus per-variant
-  # cross-cutting flags. `Browser`/`Element` read from this struct
-  # directly to dispatch each capability to the right client module —
-  # there's no intermediary module between them and this Spec.
+  # A driver as data: dimension modules plus per-driver cross-cutting
+  # flags. `Browser`/`Element` read from this struct directly to
+  # dispatch each capability to the right client module — there's no
+  # intermediary module between them and this Spec.
   #
   # Stamped onto `Session.spec` at start_session time; from then
   # on, the session is fully described by its Spec.
@@ -24,9 +24,9 @@ defmodule SurfBoard.SpecModule.Spec do
   #
   # Each protocol client owns its own default pick for these five
   # (`Clients.CDP.Client.default_strategies/0`,
-  # `Clients.BiDi.Client.default_strategies/0`); a spec module starts
+  # `Clients.BiDi.Client.default_strategies/0`); a driver starts
   # from its client's defaults and overrides only where its vendor's
-  # engine genuinely diverges — see `SpecModule.LightpandaCDP`, which
+  # engine genuinely diverges — see `Driver.Lightpanda`, which
   # overrides every one of them.
 
   defstruct [
@@ -42,7 +42,13 @@ defmodule SurfBoard.SpecModule.Spec do
     :touch_scroll,
     # Wrap visit/click in check_logs! to drain console + exception events
     # into JSError raises. Both Chrome drivers set true; Lightpanda false.
-    log_check_interactions?: false
+    log_check_interactions?: false,
+    # A click pipeline choice: eager find + retry loop + log-check +
+    # Element.click (false — Chrome's own classify+patch-await handles
+    # this) vs. lazy find + one native click_aware round trip (true —
+    # Lightpanda, where post-click re-find polling is slow). See
+    # Browser.LiveViewPatch.click_auto/2.
+    native_click_await?: false
   ]
 
   @type t :: %__MODULE__{
@@ -54,6 +60,7 @@ defmodule SurfBoard.SpecModule.Spec do
           send_keys_session: module | nil,
           touch_scroll:
             (SurfBoard.Element.t(), number, number -> {:ok, nil} | {:error, term}) | nil,
-          log_check_interactions?: boolean
+          log_check_interactions?: boolean,
+          native_click_await?: boolean
         }
 end

@@ -41,6 +41,7 @@ defmodule SurfBoard.LiveView do
   with `live_view_aware: true`.
   """
 
+  alias SurfBoard.Browser.Internal
   alias SurfBoard.LiveView.Aware
   alias SurfBoard.Protocol
   alias SurfBoard.Transport.Protocol, as: TransportProtocol
@@ -64,7 +65,7 @@ defmodule SurfBoard.LiveView do
   @spec set_latency(Session.t(), non_neg_integer()) :: Session.t()
   def set_latency(%Session{} = session, latency_ms)
       when is_integer(latency_ms) and latency_ms >= 0 do
-    if remote?(session) do
+    if Internal.remote_session?(session) do
       # Report whether liveSocket was actually there: without this the call
       # is a silent no-op on a page that never booted LiveView, and a test
       # believes it is running under latency while running at full speed —
@@ -117,7 +118,7 @@ defmodule SurfBoard.LiveView do
   """
   @spec clear_latency(Session.t()) :: Session.t()
   def clear_latency(%Session{} = session) do
-    if remote?(session) do
+    if Internal.remote_session?(session) do
       _ = eval_silent(session, "window.liveSocket && window.liveSocket.disableLatencySim()")
     end
 
@@ -194,7 +195,7 @@ defmodule SurfBoard.LiveView do
   """
   @spec defer_next_patch(Session.t()) :: Session.t()
   def defer_next_patch(%Session{} = session) do
-    if remote?(session) do
+    if Internal.remote_session?(session) do
       case eval_silent(session, "window.__w && window.__w.pageId") do
         {:ok, id} when is_binary(id) ->
           %{session | pending_await: {:page_ready_after, id}}
@@ -216,7 +217,7 @@ defmodule SurfBoard.LiveView do
   """
   @spec arm_next_patch(Session.t()) :: Session.t()
   def arm_next_patch(%Session{} = session) do
-    if remote?(session) do
+    if Internal.remote_session?(session) do
       case Aware.prepare_patch(session) do
         :prepared -> %{session | pending_await: :armed}
         :no_liveview -> session
@@ -227,11 +228,6 @@ defmodule SurfBoard.LiveView do
   end
 
   # ----- Private -----
-
-  defp remote?(%Session{spec_module: SurfBoard.SpecModule.ChromeBiDi}), do: true
-  defp remote?(%Session{spec_module: SurfBoard.SpecModule.ChromeCDP}), do: true
-  defp remote?(%Session{spec_module: SurfBoard.SpecModule.LightpandaCDP}), do: true
-  defp remote?(_), do: false
 
   defp eval_silent(session, js) do
     Protocol.eval(session, js)

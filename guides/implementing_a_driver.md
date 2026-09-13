@@ -1,11 +1,15 @@
 # Implementing a Driver
 
-What used to be called a "driver" is now a **protocol-variant spec**: a small
-module naming which capability implementations this browser/protocol
-combination uses, plus a couple of vendor-specific hooks. It owns no process,
-no Supervisor, no session-bring-up logic — those live in `Launcher.<Vendor>`.
-This guide is for adding a new spec — a new vendor (e.g. Firefox), a new wire
-protocol, or a new connection strategy for an existing vendor.
+A **driver** is `SurfBoard.Driver.<Vendor>` — one (vendor, protocol,
+process-model) combination (`Driver.ChromeCDP`, `Driver.ChromeBiDi`,
+`Driver.Lightpanda`), as data (its capability-dispatch `Spec`) plus
+everything needed to actually get a session running against it:
+launching/connecting to a browser process, building the
+`%SurfBoard.Session{}` template, and finishing it off after the
+transport strategy hands back a live session (UA override, window
+size, log-event subscription). This guide is for adding a new driver —
+a new vendor (e.g. Firefox), a new wire protocol, or a new connection
+strategy for an existing vendor.
 
 ## The three layers
 
@@ -19,64 +23,59 @@ This code splits along three independent axes:
   namespace being Chrome-free today is somewhat aspirational still — see
   [Adding a new protocol](#adding-a-new-protocol-or-a-second-bidi-vendor)
   if you're bringing a second BiDi vendor and need to confirm it).
-* **Launcher** (`lib/surf_board/launcher/`) — one vendor's whole strategy for
-  getting and holding a live connection: which browser process, how many
+* **Process model** (`lib/surf_board/transport/strategy/`) — how many
   sessions share one socket, whether the socket and the session's domain
-  state live in the same process or two, and building a real, working
-  `%SurfBoard.Session{}` (the template plus post-start work — UA override,
-  window size, log-event subscription). `Launcher.Chrome`, `Launcher.Lightpanda`,
-  and `Launcher.BiDi` each hardcode their own transport strategy rather than
-  selecting one through a generic interface, because nothing actually needs
-  to swap strategies under one vendor at runtime. A launcher module owns
-  whatever process supervision its connection strategy needs — e.g.
-  `Launcher.BiDi.Supervised` supervises the chromium-bidi Node sidecar
-  (`BiDi.Server`); `Transport.WebSocketClient` (the
-  per-session BiDi WS connection GenServer, started by `Strategy.BiDi`
-  itself, not supervised by the launcher) is unrelated to that sidecar
-  — but never protocol semantics: method names, param shapes,
-  response parsing all live in `Clients`, not here.
-* **Spec** (`lib/surf_board/spec_module/`) — the thin capability-dispatch layer that
-  ties a protocol client and a launcher together: `SurfBoard.SpecModule.ChromeCDP`,
-  `SurfBoard.SpecModule.ChromeBiDi`, `SurfBoard.SpecModule.LightpandaCDP`. A spec module
-  picks one protocol client and one launcher. That's the whole shape:
-  `spec = client + launcher`.
+  state live in the same process or two: `Strategy.SharedWS`,
+  `Strategy.PerSession`, `Strategy.IsolatedProcess`, `Strategy.BiDi`. This
+  genuinely varies independently of vendor — `SharedWS` backs both spawned
+  and connected Chrome, `IsolatedProcess` backs both Lightpanda's isolated
+  mode and its own connect path.
+* **Driver** (`lib/surf_board/driver/`) — `SurfBoard.Driver.ChromeCDP`,
+  `SurfBoard.Driver.ChromeBiDi`, `SurfBoard.Driver.Lightpanda`. Each names
+  one protocol client, picks a process-model strategy (possibly more than
+  one, offered as connection modes), and owns everything vendor-specific:
+  the capability-dispatch `Spec`, named constructors for getting a
+  connection (`start_link/1`/`connect/1`), the session template, and
+  post-start work. A driver is a sink — nothing below it (`Launcher`,
+  `Strategy.*`, `Clients.*`) references it by name.
 
 Underneath all three, `SurfBoard.Transport.WireSocket` is shared low-level Mint
 WebSocket plumbing (connect, upgrade, encode/decode, frame dispatch) — it knows
-neither the protocol, the launcher, nor the spec, and you generally don't need
-to touch it.
+neither the protocol, the process model, nor the driver, and you generally
+don't need to touch it.
 
 ## Launchers: started instances of a strategy
 
 `SurfBoard.Launcher` is the started, independently-addressable instance of
 one `Transport.Strategy` + its `Config` — the thing a session actually
-references (`start_session(launcher: ...)`), rather than a spec resolving
-an implicit, hardcoded connection at compile time. A spec module's
+references (`start_session(launcher: ...)`), rather than a driver resolving
+an implicit, hardcoded connection at compile time. A driver's
 `default_launcher_spec/0` describes one **default** launcher the same way it
 always has (so `SurfBoard.start_session(driver: :chrome_cdp)` with no other
 opts keeps working exactly as before) — but a caller can also start their own
-`Launcher` and pass it explicitly:
+launcher and pass it explicitly:
 
 ```elixir
 # app boot — the default launcher is used implicitly, unchanged from before
 SurfBoard.start_session(driver: :chrome_cdp)
 
 # a test suite starts and owns a second, independent launcher alongside it —
-# SurfBoard.Launcher.Chrome builds the Strategy.SharedWS.Config for you
+# SurfBoard.Driver.ChromeCDP builds the Strategy.SharedWS.Config for you
 # (spawns and supervises its own Chrome process here; use
-# Launcher.Chrome.connect/1 instead to point at an already-running one)
-{:ok, _sup} = SurfBoard.Launcher.Chrome.start_link(name: MyApp.TestChrome)
+# Driver.ChromeCDP.connect/1 instead to point at an already-running one)
+{:ok, _sup} = SurfBoard.Driver.ChromeCDP.start_link(name: MyApp.TestChrome)
 
 SurfBoard.start_session(driver: :chrome_cdp, launcher: MyApp.TestChrome)
 ```
 
-`SurfBoard.Launcher.Chrome` is the reusable convenience for standing up a
-`Strategy.SharedWS` launcher talking to Chrome — the same thing
-`SpecModule.ChromeCDP` itself uses for its own default launcher (see
-[What a spec module actually does](#what-a-spec-module-actually-does)).
-Building a `Launcher` directly, by hand, with your own `Config` (as shown
-below) is the lower-level path — reach for it only when you're writing a
-new spec, not when you just want a second Chrome.
+`SurfBoard.Driver.ChromeCDP.start_link/1`/`connect/1` are the reusable
+convenience constructors for standing up a `Strategy.SharedWS` launcher
+talking to Chrome — the same thing `Driver.ChromeCDP` itself uses for its
+own default launcher (see
+[What a driver actually does](#what-a-driver-actually-does)). Building a
+`Launcher` directly, by hand, with your own `Config` (as shown below) is
+the lower-level path — reach for it only when you're writing a new
+driver, not when you just want a second Chrome.
 
 Both launchers are alive in the same BEAM at once, each with its own
 independent state — e.g. an application connecting to a remote Chrome
@@ -93,21 +92,20 @@ state today (the shared ws_pid, lazily connected and cached via
 `Launcher.get_or_compute/3`, scoped to *that* launcher instance rather
 than a global). Keeping the API uniform means a currently-stateless
 strategy could grow real shared state later with no change to how
-callers reference it. `LightpandaCDP`'s `:isolated` opt (no dedicated
-`Launcher.Lightpanda` constructor for it — see that module's moduledoc)
-and `ChromeBiDi`'s default path (`Launcher.BiDi.connect/1`) build a
-transient, unnamed launcher per `start_session/1` call instead of a
-persistent, named default one, precisely because their strategies cache
-nothing — there's no state worth keeping around past that one session's
-startup.
+callers reference it. `Driver.Lightpanda`'s `:isolated` opt (no dedicated
+named constructor for it — see that module's moduledoc) and
+`Driver.ChromeBiDi`'s default path (`connect/1`) build a transient,
+unnamed launcher per `start_session/1` call instead of a persistent,
+named default one, precisely because their strategies cache nothing —
+there's no state worth keeping around past that one session's startup.
 
 ### Launchers are a complete entry point, not just connection state
 
-A launcher can also hold two vendor-supplied hooks — `:build_template`
+A launcher can also hold two driver-supplied hooks — `:build_template`
 and `:post_start` — set at `start_link/1` time. When both are present,
 `SurfBoard.Launcher.start_session/2` is a fully standalone way to start
-a session: no spec module, no `SurfBoard.start_session/1` call, just
-the launcher.
+a session: no driver module lookup, no `SurfBoard.start_session/1` call,
+just the launcher.
 
 ```elixir
 {:ok, session} = SurfBoard.Launcher.start_session(MyApp.TestChrome)
@@ -121,92 +119,92 @@ the launcher.
   size, log-event subscription, …); returns
   `{:ok, session} | {:error, term}`.
 
-`SurfBoard.Launcher.Chrome`, `SurfBoard.Launcher.Lightpanda`, and
-`SurfBoard.Launcher.BiDi` are the real implementations of these hooks
+`SurfBoard.Driver.ChromeCDP`, `SurfBoard.Driver.Lightpanda`, and
+`SurfBoard.Driver.ChromeBiDi` are the real implementations of these hooks
 (session template, UA override, window size, log-event subscription/
-UA-unsupported warning as appropriate per vendor) — every spec module's
+UA-unsupported warning as appropriate per vendor) — every driver's
 `start_session/1` just resolves which launcher to use and calls
-`Launcher.start_session/2`; see `SpecModule.ChromeCDP.start_session/1` for the
+`Launcher.start_session/2`; see `Driver.ChromeCDP.start_session/1` for the
 smallest example: it's three lines. `SurfBoard.start_session(driver: ...)`
 stays the entry point when you don't already have a launcher in hand (most
 callers, most of the time) — the hooks exist so that once you *do* have
 one, it's not a dead end.
 
-## What a spec module actually does
+## What a driver actually does
 
-`SurfBoard.SpecModule` is a small behaviour:
+`SurfBoard.Driver` is a small behaviour:
 
 ```elixir
-@callback spec() :: SurfBoard.SpecModule.Spec.t()
+@callback spec() :: SurfBoard.Driver.Spec.t()
 @callback default_launcher_spec() :: Supervisor.child_spec() | {module, keyword}
 @callback start_session(opts :: keyword) :: {:ok, Session.t()} | {:error, term}
 @callback validate() :: :ok | {:error, SurfBoard.DependencyError.t()}
 @callback cleanup_stale_sessions() :: :ok
 ```
 
-A spec module doesn't even own teardown; every spec's `end_session/1` was
-identical (`Transport.Protocol.stop/1`, no spec-specific work), so
+A driver doesn't even own teardown; every driver's `end_session/1` was
+identical (`Transport.Protocol.stop/1`, no driver-specific work), so
 `SurfBoard.end_session/1` calls that directly and no `end_session` callback
 exists at all. Every browser capability (`visit/2`, `click/1`,
 `find_elements/2`, `cookies/1`, `focus_frame/2`, ...) is dispatched by
 `SurfBoard.Browser`/`SurfBoard.Element` calling `session.spec` — your
-`%SurfBoard.SpecModule.Spec{}` — directly. There's no per-spec module standing between
+`%SurfBoard.Driver.Spec{}` — directly. There's no layer standing between
 them and your Spec; `Browser`/`Element` never call
 `session.spec_module.<capability>`. All you write is:
 
-* `spec/0` — a `%SurfBoard.SpecModule.Spec{}` naming which existing (or new) protocol/
+* `spec/0` — a `%SurfBoard.Driver.Spec{}` naming which existing (or new) protocol/
   dialogs/windows/frames/grant_permissions/send_keys_session/touch_scroll
-  implementations this spec uses. Each field is a module (or, for
+  implementations this driver uses. Each field is a module (or, for
   `touch_scroll`, a function) that `Browser`/`Element` call directly — see
   [Capability dimensions](#capability-dimensions) for when to reuse an
   existing one vs. write a new one.
-* `default_launcher_spec/0` — a child spec for this variant's default
-  `Launcher.<Vendor>` (or whatever process it needs, if any — every current
+* `default_launcher_spec/0` — a child spec for this driver's default
+  launcher (or whatever process it needs, if any — every current
   implementation needs at least a bare `Launcher` process), started once,
   lazily, under `SurfBoard.DriverSupervisor` on first use (see
-  `SurfBoard.ensure_spec_started/1`).
+  `SurfBoard.ensure_driver_started/1`).
 * `start_session/1` — vendor-specific connection setup, typically just
   resolving which `Launcher` to use and delegating to
   `Launcher.start_session/2` (see
   [Launchers](#launchers-started-instances-of-a-strategy)). Stays a real
   per-module callback rather than shared logic, because process models
-  genuinely differ underneath — `SpecModule.ChromeBiDi`'s implementation
+  genuinely differ underneath — `Driver.ChromeBiDi`'s implementation
   resolves a base_url and builds a fresh, transient launcher per call,
-  since `Strategy.BiDi` caches no connection state; `SpecModule.ChromeCDP`/
-  `SpecModule.LightpandaCDP`'s is the generic one-liner. One uniform callback,
+  since `Strategy.BiDi` caches no connection state; `Driver.ChromeCDP`/
+  `Driver.Lightpanda`'s is the generic one-liner. One uniform callback,
   vendor-specific bodies underneath.
 * `validate/0` — a pre-flight dependency check, called once before your
-  spec's default launcher starts (see `ensure_spec_started/1` in
+  driver's default launcher starts (see `ensure_driver_started/1` in
   `lib/surf_board.ex`). Return `:ok`, or `{:error, %SurfBoard.DependencyError{}}`
   with a clear message (e.g. "Chrome not found. Run `mix surf_board.install`")
   — this is what turns a missing binary/config into a clean error instead of
   a confusing crash deep inside session startup.
-* `cleanup_stale_sessions/0` — called once, right after your spec's default
-  launcher first starts. Most specs no-op (`:ok`).
+* `cleanup_stale_sessions/0` — called once, right after your driver's default
+  launcher first starts. Most drivers no-op (`:ok`).
 
-## Adding a spec for a vendor that already has a protocol client
+## Adding a driver for a vendor that already has a protocol client
 
 This is the common case: a new way to run/connect-to a browser that already
 speaks CDP or BiDi (e.g. a different Chromium-based browser, or a new connection
 strategy for an existing vendor).
 
-1. **Create `lib/surf_board/spec_module/<your_spec>.ex`.** Look at
-   `lib/surf_board/spec_module/lightpanda_cdp.ex` for the smaller of the two existing
-   examples (`chrome_cdp.ex` is the shared-connection one; `chrome_bidi.ex` is
-   the BiDi one). Your module:
+1. **Create `lib/surf_board/driver/<your_driver>.ex`.** Look at
+   `lib/surf_board/driver/lightpanda.ex` for the smaller of the two existing
+   named-constructor examples (`chrome_cdp.ex` is the shared-connection one;
+   `chrome_bidi.ex` is the BiDi one, with only one connection shape). Your module:
 
    ```elixir
-   defmodule SurfBoard.SpecModule.YourSpec do
-     @behaviour SurfBoard.SpecModule
+   defmodule SurfBoard.Driver.YourDriver do
+     @behaviour SurfBoard.Driver
 
-     alias SurfBoard.SpecModule.Spec
+     alias SurfBoard.Driver.Spec
      alias SurfBoard.Clients.CDP.Client, as: CDPClient
 
      # Start from your wire_protocol client's own defaults and override
      # only the points where your vendor's engine genuinely diverges —
      # see CDPClient.default_strategies/0 (or Clients.BiDi.Client's) for
-     # what "genuinely diverges" looks like in practice (LightpandaCDP
-     # overrides every one of them; most new CDP-based specs override
+     # what "genuinely diverges" looks like in practice (Lightpanda
+     # overrides every one of them; most new CDP-based drivers override
      # none, or just grant_permissions).
      @spec_data struct!(
                   Spec,
@@ -224,21 +222,22 @@ strategy for an existing vendor).
                   })
                 )
 
-     @impl SurfBoard.SpecModule
+     @impl SurfBoard.Driver
      def spec, do: @spec_data
 
      @default_launcher_name __MODULE__.DefaultLauncher
 
      # ----- Default launcher: how your browser process / connection comes up -----
-     @impl SurfBoard.SpecModule
+     @impl SurfBoard.Driver
      def default_launcher_spec do
        # Return a child spec for whatever process(es) your connection
        # strategy needs, plus one default SurfBoard.Launcher wrapping your
        # strategy's Config and this module's build_template/1 + post_start/2
        # hooks — nothing else if you connect directly with nothing to launch.
-       # Mirror ChromeCDP/LightpandaCDP's `default_launcher_spec/0` for the
-       # shape, or write a real `Launcher.YourVendor` module if session
-       # bring-up needs its own build_template/post_start (the common case).
+       # Mirror ChromeCDP/Lightpanda's `default_launcher_spec/0` for the
+       # shape, and give your module its own `start_link/1`/`connect/1`
+       # named constructors if session bring-up needs its own
+       # build_template/post_start (the common case).
        {SurfBoard.Launcher,
         name: @default_launcher_name,
         strategy: SurfBoard.Transport.Strategy.SharedWS,
@@ -249,7 +248,7 @@ strategy for an existing vendor).
         post_start: &post_start/2}
      end
 
-     @impl SurfBoard.SpecModule
+     @impl SurfBoard.Driver
      def validate do
        if your_dependency_available?() do
          :ok
@@ -258,11 +257,11 @@ strategy for an existing vendor).
        end
      end
 
-     @impl SurfBoard.SpecModule
+     @impl SurfBoard.Driver
      def cleanup_stale_sessions, do: :ok
 
      # ----- Session lifecycle -----
-     @impl SurfBoard.SpecModule
+     @impl SurfBoard.Driver
      def start_session(opts \\ []) do
        launcher = Keyword.get(opts, :launcher, @default_launcher_name)
        SurfBoard.Launcher.start_session(launcher, opts)
@@ -287,7 +286,7 @@ strategy for an existing vendor).
        {:ok, session}
      end
 
-     # No end_session/1 to write — every spec's was identical, so
+     # No end_session/1 to write — every driver's was identical, so
      # SurfBoard.end_session/1 calls Transport.Protocol.stop/1 directly.
    end
    ```
@@ -308,7 +307,7 @@ strategy for an existing vendor).
 3. **If no existing `Transport.Strategy` fits, write a new one, owning your
    connection via `SurfBoard.Transport.Actor`.** (If one of the existing
    strategies fits — the common case — skip straight to step 4; you don't
-   need anything in this step.) Every spec's session runs on the same
+   need anything in this step.) Every driver's session runs on the same
    actor — one generic GenServer speaking
    `SurfBoard.Transport.Protocol` (the message contract
    `SurfBoard.Clients.CDP.Client` / `SurfBoard.Clients.BiDi.Client`
@@ -372,17 +371,17 @@ strategy for an existing vendor).
 4. **Reuse capability dimension modules where your vendor's behavior genuinely
    matches an existing one — see [Capability dimensions](#capability-dimensions).**
 
-5. **Register the spec.** Add your spec to `driver_module_for/1` in
+5. **Register the driver.** Add your driver to `driver_module_for/1` in
    `lib/surf_board.ex` so `SurfBoard.start_session(driver: :your_driver)`
    resolves to your module.
 
 ## Capability dimensions
 
 Every `%Spec{}` field beyond `wire_protocol` exists because at least two
-specs need genuinely different behavior for that capability. When your
-vendor's behavior matches an existing spec's exactly, point at the same
+drivers need genuinely different behavior for that capability. When your
+vendor's behavior matches an existing driver's exactly, point at the same
 module — don't copy it. When it doesn't, write a new implementation and
-point your Spec at that instead. There is no per-spec override mechanism
+point your Spec at that instead. There is no per-driver override mechanism
 any more (there used to be — see below); every capability lives in exactly
 one place: the module your Spec names.
 
@@ -396,7 +395,7 @@ one place: the module your Spec names.
   modules use, so it points `dialogs`/`windows`/`frames` at the shared
   fallbacks instead (`SurfBoard.Clients.Dialogs.Unsupported`, `SurfBoard.Clients.Windows.Single`,
   `SurfBoard.Clients.Frames.Unsupported`) — that's a vendor's *coverage* of the
-  protocol falling short, not a different protocol. If your spec speaks
+  protocol falling short, not a different protocol. If your driver speaks
   CDP and actually implements this part of it, point at
   `SurfBoard.Clients.CDP.{Dialogs,Windows,Frames}` directly rather than
   writing a new implementation; only write your own if your vendor's
@@ -405,7 +404,7 @@ one place: the module your Spec names.
   these CDP ones).
 * **`grant_permissions`** — implements `SurfBoard.Clients.Permissions`, in its own
   `Clients.<protocol>.Permissions` module (e.g. `SurfBoard.Clients.CDP.Permissions`,
-  which both `ChromeCDP` and `LightpandaCDP` could point at — but only
+  which both `ChromeCDP` and `Lightpanda` could point at — but only
   `ChromeCDP` does, because Lightpanda's browser engine doesn't actually
   support it). Otherwise leave it `nil` — `Browser.Form.grant_permissions/2`
   itself raises `SurfBoard.DriverError.not_supported/2` on `nil` rather than
@@ -422,21 +421,31 @@ one place: the module your Spec names.
   Lightpanda's `nil`/no-op) don't share enough to justify one. Write your
   own `touch_scroll_impl/3` unless an existing one's approach genuinely fits
   your vendor.
+* **`native_click_await?`** — a boolean picking between two click
+  pipelines: `false` (Chrome CDP/BiDi) lets `Element.click`'s own
+  classify + patch-await + navigation/page-ready logic handle it via the
+  generic `find` + retry loop; `true` (Lightpanda) routes through
+  `wire_protocol.click_aware/2` instead, a single native round trip that
+  captures pre_page_id, classifies, clicks, and awaits page_ready in one
+  call — Lightpanda's post-click re-find polling is slow enough that the
+  generic pipeline costs real time per click. Set `true` only if your
+  vendor has the same one-round-trip capability and the same reason to
+  prefer it.
 
 ### Why `grant_permissions`/`send_keys_session` are separate dimensions,
 ### not just `wire_protocol` calls
 
 `SurfBoard.Clients.CDP.Client` is the **same module**, not a copy, for both
-`ChromeCDP` and `LightpandaCDP` — both point `wire_protocol:` at it, because
+`ChromeCDP` and `Lightpanda` — both point `wire_protocol:` at it, because
 they're the same protocol. That sharing means a capability check keyed off
 `spec.wire_protocol` (e.g. `function_exported?/3`, or just calling it
-unconditionally) can't distinguish the two specs — it's the same module
+unconditionally) can't distinguish the two drivers — it's the same module
 either way. `grant_permissions` and `send_keys_session` both hit this for
 real: CDP has a working implementation of both, but Lightpanda's browser
-engine doesn't actually support either one. The fix isn't a per-spec
+engine doesn't actually support either one. The fix isn't a per-driver
 override (that used to exist, via a `Driver.Generic` dispatch layer that's
 since been removed) — it's giving the capability its own `%Spec{}` field, so
-each spec's Spec states directly whether it supports the capability,
+each driver's Spec states directly whether it supports the capability,
 independent of which `wire_protocol` it shares.
 
 Each of `grant_permissions`/`send_keys_session` also gets its own dedicated
@@ -457,30 +466,30 @@ instance — check first whether `SurfBoard.Clients.BiDi.{Client,Wire,
 Commands,ResponseParser}` is actually protocol-generic already (BiDi is a
 W3C spec; it lives under the vendor-neutral `Clients.BiDi` namespace on the
 assumption that it is) versus whether `chromium-bidi` — the Node sidecar
-`SurfBoard.Launcher.BiDi.Supervised` spawns to get Chrome speaking BiDi at
+`SurfBoard.Driver.ChromeBiDi.Supervised` spawns to get Chrome speaking BiDi at
 all — has leaked into the client code despite that. A vendor with *native*
 BiDi support doesn't need that sidecar; it needs a `Server`-equivalent that
 launches the vendor's browser directly and hands back its WebSocket URL. If
 the protocol client turns out to have Chrome-specific assumptions baked in
 after all, fix those in place — `Clients.BiDi` is meant to be shared by
-`SpecModule.ChromeBiDi` and your new spec, not duplicated per vendor.
+`Driver.ChromeBiDi` and your new driver, not duplicated per vendor.
 
 Adding a genuinely new wire protocol (neither CDP nor BiDi) is a much bigger
 undertaking — you'd be writing the `Clients.<Protocol>.*` analogue of
 everything under `Clients.CDP.*`, including a new `SurfBoard.Clients.WireProtocol`
-implementation (`lib/surf_board/wire_protocol.ex` documents the full
+implementation (`lib/surf_board/clients/wire_protocol.ex` documents the full
 callback contract `Browser`/`Element` dispatch through directly) and
 likely a new `Wire.<Protocol>` event decoder alongside the existing
 `Clients.CDP.Wire`/`Clients.BiDi.Wire`. There's no shortcut for this
 one — read both existing protocol implementations in full before starting.
 
-## Verifying a new spec
+## Verifying a new driver
 
-There's no substitute for the real integration suite here — a spec that
+There's no substitute for the real integration suite here — a driver that
 compiles cleanly can still hang or silently misbehave against a real
 browser (this project's history includes more than one bug that was
 invisible to `mix compile` and only surfaced under `SURF_BOARD_INTEGRATION=1
-mix test`). At minimum, run your spec through:
+mix test`). At minimum, run your driver through:
 
 * `mix test --exclude integration` — the unit suite shouldn't need a
   browser at all; if your changes broke it, something leaked into a path

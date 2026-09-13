@@ -2,7 +2,7 @@ defmodule SurfBoard.Transport.Strategy.BiDi.HandshakeTest do
   use ExUnit.Case, async: false
 
   alias SurfBoard.Transport.Strategy.BiDi.Handshake
-  alias SurfBoard.Launcher.BiDi.Server, as: BidiServer
+  alias SurfBoard.Driver.BiDi.Server, as: BidiServer
   alias SurfBoard.Transport.WebSocketClient
 
   @moduletag :browser

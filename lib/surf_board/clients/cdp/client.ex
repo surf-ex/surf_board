@@ -35,7 +35,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   CDP's own default strategy pick for each capability that isn't
   dispatched via `wire_protocol` directly (`dialogs`, `windows`,
   `frames`, `grant_permissions`, `send_keys_session` — see
-  `SurfBoard.SpecModule.Spec`). A spec module speaking CDP starts from
+  `SurfBoard.Driver.Spec`). A driver speaking CDP starts from
   this and overrides only the points where its vendor's engine
   genuinely can't do what CDP normally supports (e.g. Lightpanda
   overrides every one of these; a future CDP-based vendor with full

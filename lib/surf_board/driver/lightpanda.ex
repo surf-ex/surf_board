@@ -1,21 +1,21 @@
-defmodule SurfBoard.Launcher.Lightpanda do
+defmodule SurfBoard.Driver.Lightpanda do
   @moduledoc false
 
-  # Convenience constructors for a `Launcher` talking to Lightpanda —
-  # build a real, working Lightpanda session without hand-assembling a
-  # Strategy.Config yourself. Mirrors `Launcher.Chrome`'s shape exactly:
+  # Lightpanda over CDP.
+  #
+  # Two named constructors, mirroring ChromeCDP's shape:
   #
   #   * `start_link/1` — launches and owns a local Lightpanda process,
   #     multiplexing every session over it (`Strategy.PerSession` — one
   #     shared binary, one fresh WebSocket per session). This is a
   #     Supervisor (not the launcher itself): it owns a
   #     `Lightpanda.Server` and a `Launcher` as its two children, same
-  #     crash-restart guarantee `SpecModule.LightpandaCDP`'s own default
-  #     launcher gets. The launcher child is registered under the
-  #     `:name` you asked for — that name (not this Supervisor's pid)
-  #     is what you use afterward:
+  #     crash-restart guarantee this driver's own default launcher gets.
+  #     The launcher child is registered under the `:name` you asked
+  #     for — that name (not this Supervisor's pid) is what you use
+  #     afterward:
   #
-  #       {:ok, _sup} = Launcher.Lightpanda.start_link(name: MyApp.TestLightpanda)
+  #       {:ok, _sup} = Driver.Lightpanda.start_link(name: MyApp.TestLightpanda)
   #       {:ok, session} = Launcher.start_session(MyApp.TestLightpanda)
   #
   #   * `connect/1` — connects to a Lightpanda instance you don't
@@ -26,39 +26,64 @@ defmodule SurfBoard.Launcher.Lightpanda do
   # `Strategy.IsolatedProcess` (a fresh private Lightpanda process per
   # session, no persistent process to own) doesn't fit either shape —
   # it's neither "launch and own one process" nor "dial an existing
-  # url" — so it has no dedicated constructor here. Build it directly:
-  # `Launcher.start_link(strategy: IsolatedProcess, config: %IsolatedProcess.Config{...})`.
+  # url" — so it has no dedicated constructor here; `start_via_isolated/2`
+  # builds it directly.
   #
   # Both `start_link/1` and `connect/1` build a real, working
   # Lightpanda session on their own — this is the one place a
-  # %SurfBoard.Session{} template for SpecModule.LightpandaCDP gets built
+  # %SurfBoard.Session{} template for this driver gets built
   # (`build_template/1`) and finished (`post_start/2`: the BEAM sandbox
   # metadata UA, window size, :user_agent-unsupported warning).
-  # `SpecModule.LightpandaCDP` itself is built on top of this module for
-  # its :shared/:external opts, not the other way around.
-  # Pass your own `:build_template`/`:post_start` to override these
-  # defaults entirely.
+  # Pass your own `:build_template`/`:post_start` to either constructor
+  # to override these defaults entirely.
+
+  @behaviour SurfBoard.Driver
 
   alias SurfBoard.DependencyError
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.Dialogs
+  alias SurfBoard.Driver.Spec
+  alias SurfBoard.Clients.Frames
   alias SurfBoard.Launcher.{Metadata, UserAgent}
-  alias SurfBoard.SpecModule.LightpandaCDP
   alias SurfBoard.Launcher
   alias SurfBoard.Transport.Strategy.{IsolatedProcess, PerSession}
+  alias SurfBoard.Clients.Windows
 
   @base_user_agent "Lightpanda/1.0"
 
   @lightpanda_server Module.concat([Lightpanda, Server])
 
+  # Lightpanda's engine doesn't support any of CDP's optional
+  # capabilities reliably enough to trust — overrides every one of
+  # CDPClient.default_strategies/0's picks. Computed at runtime, not in
+  # a module attribute — see Driver.ChromeCDP.spec/0's comment for why.
+  @impl SurfBoard.Driver
+  def spec do
+    struct!(
+      Spec,
+      Map.merge(CDPClient.default_strategies(), %{
+        wire_protocol: CDPClient,
+        dialogs: Dialogs.Unsupported,
+        windows: Windows.Single,
+        frames: Frames.Unsupported,
+        grant_permissions: nil,
+        send_keys_session: nil,
+        touch_scroll: nil,
+        log_check_interactions?: false,
+        native_click_await?: true
+      })
+    )
+  end
+
   defmodule Supervised do
     @moduledoc false
-    # The actual Supervisor behind `Launcher.Lightpanda.start_link/1` —
-    # split into its own module for the same reason as
-    # `Launcher.Chrome.Supervised`: keeps `Launcher.Lightpanda` itself a
-    # plain module of functions, matching `connect/1`'s shape.
+    # The actual Supervisor behind `start_link/1` — split into its own
+    # module for the same reason as `ChromeCDP.Supervised`: keeps this
+    # module itself a plain module of functions, matching `connect/1`'s
+    # shape.
     use Supervisor
 
-    alias SurfBoard.Launcher.Lightpanda
+    alias SurfBoard.Driver.Lightpanda
 
     def start_link({name, opts}) do
       Supervisor.start_link(__MODULE__, {name, opts}, name: Lightpanda.supervisor_name(name))
@@ -115,24 +140,6 @@ defmodule SurfBoard.Launcher.Lightpanda do
       start: {__MODULE__, :start_link, [opts]},
       type: :supervisor
     }
-  end
-
-  @doc """
-  Checks whether `start_link/1` can actually succeed — the `lightpanda`
-  package is on the load path. Returns
-  `:ok | {:error, %SurfBoard.DependencyError{}}`, same contract as
-  `SurfBoard.SpecModule.validate/0`.
-  """
-  @spec validate() :: :ok | {:error, DependencyError.t()}
-  def validate do
-    if Code.ensure_loaded?(@lightpanda_server) do
-      :ok
-    else
-      {:error,
-       DependencyError.exception(
-         "Lightpanda not found. Add the `lightpanda` package as a dependency."
-       )}
-    end
   end
 
   @doc """
@@ -210,8 +217,8 @@ defmodule SurfBoard.Launcher.Lightpanda do
   end
 
   # Make `SurfBoard.Launcher.BrowserPaths` authoritative for Lightpanda's binary
-  # location, mirroring how the Chrome drivers resolve through it. We
-  # translate the resolved path into `config :lightpanda, :path`, which
+  # location, mirroring how Chrome resolves through it. We translate the
+  # resolved path into `config :lightpanda, :path`, which
   # `Lightpanda.bin_path/0` honors at the top of its precedence.
   #
   # An explicitly-configured `:path` (the dev sibling checkout) wins —
@@ -229,14 +236,178 @@ defmodule SurfBoard.Launcher.Lightpanda do
     end
   end
 
+  # ----- Default launcher -----
+  #
+  # Starts a single shared Lightpanda binary if the package is on the
+  # load path (via `start_link/1`). Sessions multiplex over this binary
+  # by opening their own WebSocket against its URL
+  # (Transport.Strategy.PerSession). Falls back to per-session binary
+  # spawn (Transport.Strategy.IsolatedProcess) if no shared server is
+  # running.
+
+  @default_launcher_name __MODULE__.DefaultLauncher
+
+  @impl SurfBoard.Driver
+  def default_launcher_spec do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      {__MODULE__, name: @default_launcher_name}
+    else
+      SurfBoard.Launcher.Noop.child_spec(id: __MODULE__)
+    end
+  end
+
+  @impl SurfBoard.Driver
+  def validate do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      :ok
+    else
+      {:error,
+       DependencyError.exception(
+         "Lightpanda not found. Add the `lightpanda` package as a dependency."
+       )}
+    end
+  end
+
+  @impl SurfBoard.Driver
+  def cleanup_stale_sessions, do: :ok
+
+  # ----- Session lifecycle -----
+
+  # `:connection` picks which of the three ways a session gets its
+  # Lightpanda transport — the (launch, socket, process-model)
+  # combination underneath this driver:
+  #
+  #   * `:shared`   — reuse the already-running shared Lightpanda
+  #                   binary (started once, lazily, iff the `lightpanda`
+  #                   package is loaded, via `start_link/1` — see
+  #                   `default_launcher_spec/0`). Fresh WS per session,
+  #                   fused actor (no extra hop). Fails with
+  #                   `{:error, :shared_server_not_running}` if
+  #                   explicitly requested but nothing is up.
+  #   * `:isolated` — spawn a brand-new private Lightpanda binary for
+  #                   just this session. Slower (pays binary startup
+  #                   every call) but fully isolated. Requires the
+  #                   `lightpanda` package; fails with
+  #                   `{:error, :lightpanda_package_not_loaded}` if it
+  #                   isn't on the load path.
+  #   * `:external` — connect to a Lightpanda instance this driver never
+  #                   launches at all, via a caller-supplied `:ws_url`
+  #                   (`connect/1`). Requires `:ws_url` in opts; fails
+  #                   with `{:error, :ws_url_required}` otherwise.
+  #
+  # Omitted (the default): auto-detect, in priority order — an
+  # explicit `:ws_url` wins (implies `:external`); else reuse the
+  # shared server if one is running (`:shared`); else spawn a private
+  # one if the package is available (`:isolated`); else raise, since
+  # there is no way to get a Lightpanda connection at all.
+  @impl SurfBoard.Driver
+  def start_session(opts \\ []) do
+    case resolve_connection(opts) do
+      {:ok, fun} -> fun.(opts)
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp resolve_connection(opts) do
+    case Keyword.get(opts, :connection) do
+      nil -> {:ok, auto_detect_connection(opts)}
+      :shared -> shared_connection(opts)
+      :isolated -> isolated_connection(opts)
+      :external -> external_connection(opts)
+    end
+  end
+
+  defp auto_detect_connection(opts) do
+    cond do
+      Keyword.has_key?(opts, :ws_url) ->
+        {:ok, fun} = external_connection(opts)
+        fun
+
+      Process.whereis(@default_launcher_name) ->
+        {:ok, fun} = shared_connection(opts)
+        fun
+
+      Code.ensure_loaded?(@lightpanda_server) ->
+        {:ok, fun} = isolated_connection(opts)
+        fun
+
+      true ->
+        raise "Driver.Lightpanda requires either a :ws_url opt or the `lightpanda` package on the path"
+    end
+  end
+
+  defp shared_connection(_opts) do
+    case Process.whereis(@default_launcher_name) do
+      nil -> {:error, :shared_server_not_running}
+      _pid -> {:ok, &Launcher.start_session(@default_launcher_name, &1)}
+    end
+  end
+
+  defp isolated_connection(_opts) do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      config = %IsolatedProcess.Config{
+        spawn_fun: fn ->
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(@lightpanda_server, :start_link, [
+            [name: nil, wrapper_script: wrapper_script()]
+          ])
+        end,
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
+        url_fun: fn server -> apply(@lightpanda_server, :ws_url, [server]) end
+      }
+
+      {:ok, &start_via_isolated(&1, config)}
+    else
+      {:error, :lightpanda_package_not_loaded}
+    end
+  end
+
+  defp external_connection(opts) do
+    case Keyword.get(opts, :ws_url) do
+      url when is_binary(url) ->
+        {:ok,
+         fn opts ->
+           {:ok, launcher} = connect(url: url)
+           result = Launcher.start_session(launcher, opts)
+           Agent.stop(launcher)
+           result
+         end}
+
+      _ ->
+        {:error, :ws_url_required}
+    end
+  end
+
+  # `:isolated` has no dedicated named constructor (see the moduledoc) —
+  # build the raw `Launcher` wrapping `IsolatedProcess.Config` directly,
+  # same shape `start_link/1`/`connect/1` themselves use internally,
+  # with the same build_template/post_start defaults so a caller holding
+  # this launcher (via opts[:launcher] on a future call) gets the same
+  # standalone `Launcher.start_session/2` capability. Nothing is lost by
+  # not keeping the launcher around past this one session's start —
+  # IsolatedProcess caches no connection state on it.
+  defp start_via_isolated(opts, config) do
+    {:ok, launcher} =
+      Launcher.start_link(
+        strategy: IsolatedProcess,
+        config: config,
+        build_template: &build_template/1,
+        post_start: &post_start/2
+      )
+
+    result = Launcher.start_session(launcher, opts)
+    Agent.stop(launcher)
+    result
+  end
+
   @doc false
   def build_template(opts) do
     %SurfBoard.Session{
       id: "lightpanda-#{System.unique_integer([:positive])}",
       url: "about:blank",
       session_url: "about:blank",
-      spec_module: LightpandaCDP,
-      spec: LightpandaCDP.spec(),
+      spec_module: __MODULE__,
+      spec: spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
       driver_state: %SurfBoard.Transport.DriverState{
         flat_session_id?: true,

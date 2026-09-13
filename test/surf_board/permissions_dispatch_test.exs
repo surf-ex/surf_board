@@ -5,19 +5,19 @@ defmodule SurfBoard.PermissionsDispatchTest do
   # open_stream/1: Chrome CDP and Lightpanda share the exact same
   # `wire_protocol` module (`SurfBoard.Clients.CDP.Client`), so a CDP-only
   # capability can't be gated by keying off `spec.wire_protocol` — it can't
-  # tell the two specs apart. grant_permissions has its own %Spec{}
+  # tell the two drivers apart. grant_permissions has its own %Spec{}
   # dimension (spec.grant_permissions) specifically so Browser.ex CAN tell
-  # them apart — LightpandaCDP/ChromeBiDi leave it `nil` (raises
+  # them apart — Lightpanda/ChromeBiDi leave it `nil` (raises
   # DriverError.not_supported/2), ChromeCDP points it at the real
   # Clients.CDP.Permissions implementation.
 
   alias SurfBoard.Browser
-  alias SurfBoard.SpecModule.{ChromeBiDi, LightpandaCDP}
+  alias SurfBoard.Driver.{ChromeBiDi, Lightpanda}
   alias SurfBoard.Session
 
-  describe "LightpandaCDP" do
+  describe "Lightpanda" do
     test "grant_permissions/2 raises SurfBoard.DriverError without touching the transport" do
-      session = %Session{spec_module: LightpandaCDP, spec: LightpandaCDP.spec()}
+      session = %Session{spec_module: Lightpanda, spec: Lightpanda.spec()}
 
       assert_raise SurfBoard.DriverError, ~r/grant_permissions\/2 is not supported/, fn ->
         Browser.grant_permissions(session, [:camera])

@@ -41,7 +41,7 @@ defmodule SurfBoard.BrowserTest do
     def grant_permissions(%Session{}, permissions), do: {:ok, permissions}
 
     def spec do
-      %SurfBoard.SpecModule.Spec{
+      %SurfBoard.Driver.Spec{
         wire_protocol: __MODULE__,
         grant_permissions: __MODULE__,
         log_check_interactions?: false
@@ -163,8 +163,8 @@ defmodule SurfBoard.BrowserTest do
 
     test "raises on a driver that doesn't support it (e.g. Lightpanda)" do
       session = %Session{
-        spec_module: SurfBoard.SpecModule.LightpandaCDP,
-        spec: SurfBoard.SpecModule.LightpandaCDP.spec()
+        spec_module: SurfBoard.Driver.Lightpanda,
+        spec: SurfBoard.Driver.Lightpanda.spec()
       }
 
       assert_raise SurfBoard.DriverError, fn ->

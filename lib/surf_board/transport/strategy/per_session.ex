@@ -30,7 +30,7 @@ defmodule SurfBoard.Transport.Strategy.PerSession do
     # binary, so every session calls this fresh — nothing is cached).
     # Deferred rather than a literal `ws_url` because when the shared
     # binary is launched by the same construct that builds this Config
-    # (see `Launcher.Lightpanda.start_link/1`), the URL isn't known
+    # (see `Driver.Lightpanda.start_link/1`), the URL isn't known
     # until the launched process reports it — resolving it eagerly at
     # Config-build time would mean blocking before the process has
     # even started.

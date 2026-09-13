@@ -50,10 +50,19 @@ defmodule SurfBoard.Clients.WireProtocol do
   @callback set_window_size(Session.t(), integer, integer) :: {:ok, nil} | {:error, term}
 
   @doc "Evaluate JS. Returns the value."
+  @callback evaluate(Session.t(), String.t()) :: {:ok, term} | {:error, term}
   @callback evaluate(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
 
   @doc "Evaluate JS that returns a promise; awaits resolution."
   @callback evaluate_async(Session.t(), String.t(), list) :: {:ok, term} | {:error, term}
+
+  @doc """
+  Evaluate JS that returns a promise; awaits resolution with an
+  explicit timeout on the underlying wire call itself, rather than
+  relying on a JS-side timeout to resolve the promise on its own.
+  """
+  @callback evaluate_async_with_timeout(Session.t(), String.t(), timeout()) ::
+              {:ok, term} | {:error, term}
 
   @doc """
   Simple click RPC — no classification, no page-ready await.
@@ -68,6 +77,15 @@ defmodule SurfBoard.Clients.WireProtocol do
   """
   @callback click_aware_with_classification(Session.t(), Element.t()) ::
               {:ok, String.t(), :ready | :timeout} | {:error, term}
+
+  @doc """
+  One-shot native click-and-await: captures pre_page_id, classifies,
+  clicks, awaits page_ready. Used by the native_click_await? fast path
+  (see `SurfBoard.Browser.LiveViewPatch.click_auto/2`) instead of the
+  classify+patch-await pipeline `click_aware_with_classification/2` backs.
+  """
+  @callback click_aware(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
+  @callback click_aware(Session.t(), Element.t(), keyword) :: {:ok, String.t()} | {:error, term}
 
   @doc "Text content of an element."
   @callback text(Session.t(), Element.t()) :: {:ok, String.t()} | {:error, term}
