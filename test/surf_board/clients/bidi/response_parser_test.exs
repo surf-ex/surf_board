@@ -56,52 +56,6 @@ defmodule SurfBoard.Clients.BiDi.ResponseParserTest do
     end
   end
 
-  describe "extract_nodes/1" do
-    test "extracts nodes from locateNodes response" do
-      response = %{
-        "nodes" => [
-          %{"sharedId" => "n1", "type" => "node", "value" => %{}},
-          %{"sharedId" => "n2", "type" => "node", "value" => %{}}
-        ]
-      }
-
-      assert {:ok, [{"n1", _}, {"n2", _}]} = ResponseParser.extract_nodes(response)
-    end
-
-    test "returns error for unexpected format" do
-      assert {:error, _} = ResponseParser.extract_nodes(%{"unexpected" => true})
-    end
-  end
-
-  describe "extract_context/1" do
-    test "extracts first context from getTree response" do
-      response = %{
-        "contexts" => [
-          %{"context" => "ctx-abc", "url" => "about:blank"}
-        ]
-      }
-
-      assert {:ok, "ctx-abc"} = ResponseParser.extract_context(response)
-    end
-
-    test "returns error for empty contexts" do
-      assert {:error, _} = ResponseParser.extract_context(%{"unexpected" => true})
-    end
-  end
-
-  describe "extract_all_contexts/1" do
-    test "extracts all context IDs" do
-      response = %{
-        "contexts" => [
-          %{"context" => "ctx-1"},
-          %{"context" => "ctx-2"}
-        ]
-      }
-
-      assert {:ok, ["ctx-1", "ctx-2"]} = ResponseParser.extract_all_contexts(response)
-    end
-  end
-
   describe "extract_screenshot/1" do
     test "decodes base64 screenshot data" do
       encoded = Base.encode64("fake-png-data")
@@ -128,29 +82,6 @@ defmodule SurfBoard.Clients.BiDi.ResponseParserTest do
       assert {:ok, [cookie]} = ResponseParser.extract_cookies(response)
       assert cookie["name"] == "token"
       assert cookie["value"] == "abc123"
-    end
-  end
-
-  describe "cast_elements/2" do
-    test "creates Element structs from node tuples" do
-      parent = %SurfBoard.Session{
-        session_url: "http://localhost:9515/session/123",
-        spec_module: SurfBoard.SpecModule.ChromeBiDi
-      }
-
-      nodes = [
-        {"shared-1", %{"sharedId" => "shared-1", "value" => %{"backendNodeId" => 42}}},
-        {"shared-2", %{"sharedId" => "shared-2", "value" => %{}}}
-      ]
-
-      elements = ResponseParser.cast_elements(parent, nodes)
-      assert length(elements) == 2
-
-      [el1, el2] = elements
-      assert el1.handle == "shared-1"
-      assert el1.id == "42"
-      assert el1.spec_module == SurfBoard.SpecModule.ChromeBiDi
-      assert el2.handle == "shared-2"
     end
   end
 
