@@ -50,11 +50,11 @@ defmodule SurfBoard.Browser.LiveViewPatch do
     end
   end
 
-  # Deferred click: fire the click via the Orchestrator's
-  # `click_deferred/2` which returns immediately after dispatching
-  # without awaiting `page_ready`. Stash the captured pre-click
-  # `pageId` on the session so `SurfBoard.LiveView.await_patch/2`
-  # can drain the wait later.
+  # Deferred click: `click_deferred/2` below fires the click and
+  # returns immediately after dispatching, without awaiting
+  # `page_ready`. Stash the captured pre-click `pageId` on the
+  # session so `SurfBoard.LiveView.await_patch/2` can drain the wait
+  # later.
   #
   # In-process LV driver: defer is a no-op (renders synchronously),
   # so just delegate to auto.
@@ -194,8 +194,7 @@ defmodule SurfBoard.Browser.LiveViewPatch do
   def with_patch_await(%Session{} = session, query, interaction, fun, opts) do
     # Classification runs a JS round-trip and only makes sense for a
     # session that opted in via `live_view_aware: true` — a plain
-    # scraping/automation session skips this entirely, same as
-    # Orchestrator.click_strategy_for/1.
+    # scraping/automation session skips this entirely.
     if session.live_view_aware? and Internal.remote_session?(session) do
       mode = Keyword.get(opts, :await, :auto)
 

@@ -3,7 +3,7 @@ defmodule SurfBoard.WireProtocol do
 
   # One of the dimensions of a driver Spec: the wire protocol
   # (CDP vs BiDi). Documents the subset of CDPClient / BiDiClient that
-  # the Orchestrator dispatches into.
+  # Browser/Element dispatch into.
   #
   # The two existing client modules (`SurfBoard.Clients.CDP.Client` and
   # `SurfBoard.Clients.BiDi.Client`) declare `@behaviour

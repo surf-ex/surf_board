@@ -49,8 +49,9 @@ defmodule SurfBoard.Browser.Navigation do
   # LiveView-connect await when live_view_aware? — the same await as
   # visit/2's own outer one above (gated on live_view_aware? alone here
   # vs. live_view_aware? and remote_session? there). Both run; this
-  # mirrors the pre-existing Orchestrator.visit/3 behavior exactly
-  # rather than removing what looks like a redundant second await.
+  # mirrors the pre-extraction driving-layer's visit/3 behavior
+  # exactly rather than removing what looks like a redundant second
+  # await.
   defp do_visit(%Session{} = session, url) do
     spec = Internal.spec(session)
 

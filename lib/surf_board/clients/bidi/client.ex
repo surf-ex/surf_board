@@ -662,8 +662,9 @@ defmodule SurfBoard.Clients.BiDi.Client do
   tag (`:ready` or `:timeout`) so callers can branch on the
   classification before deciding whether a page-ready timeout is
   actually an error. Patch-classified timeouts are swallowed by
-  the Orchestrator (callers' own find/has? retries take it from there); only
-  navigate/full_page classifications surface a timeout as an error.
+  `Element.do_click/1` (callers' own find/has? retries take it from
+  there); only navigate/full_page classifications surface a timeout
+  as an error.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
           {:ok, String.t(), :ready | :timeout | :deferred} | {:error, term}
@@ -1175,8 +1176,8 @@ defmodule SurfBoard.Clients.BiDi.Client do
 
   @doc """
   Window viewport size. BiDi's native call is `get_viewport/1`;
-  exposed here as `get_window_size/1` to match the WireProtocol
-  contract used by the Orchestrator.
+  exposed here as `get_window_size/1` to match the `WireProtocol`
+  contract `Browser.Windows` dispatches through.
   """
   @spec get_window_size(Session.t()) :: {:ok, %{width: integer, height: integer}} | {:error, term}
   defdelegate get_window_size(session), to: __MODULE__, as: :get_viewport

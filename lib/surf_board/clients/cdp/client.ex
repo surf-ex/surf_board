@@ -781,8 +781,9 @@ defmodule SurfBoard.Clients.CDP.Client do
   tag (`:ready` or `:timeout`) so callers can branch on the
   classification before deciding whether a page-ready timeout is
   actually an error. Patch-classified timeouts are swallowed by
-  the Orchestrator (callers' own find/has? retries take it from there); only
-  navigate/full_page classifications surface a timeout as an error.
+  `Element.do_click/1` (callers' own find/has? retries take it from
+  there); only navigate/full_page classifications surface a timeout
+  as an error.
   """
   @spec click_aware_with_classification(Session.t(), Element.t(), keyword) ::
           {:ok, String.t(), :ready | :timeout | :deferred} | {:error, term}
