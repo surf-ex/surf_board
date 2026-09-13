@@ -275,17 +275,6 @@ defmodule SurfBoard.Transport.Common do
     end
   end
 
-  # A single internal timer-message tag for both CDP and BiDi actors —
-  # there's no reason for callers to distinguish "which protocol's load
-  # timer fired," only that a load wait timed out. Exposed as the return
-  # value from `await_page_load/6`/`await_next_page_load/5` so callers
-  # arm `Process.send_after/3` with a name only `Common` needs to know.
-  @load_timeout_tag :common_load_timeout
-
-  @doc "Message tag `await_page_load/6`/`await_next_page_load/5` arm their timers with."
-  @spec load_timeout_tag() :: atom()
-  def load_timeout_tag, do: @load_timeout_tag
-
   @doc """
   `handle_call({:await_page_load, loader_id, name, timeout_ms}, from, state)`
   body, shared by all three transport actors.
@@ -313,7 +302,7 @@ defmodule SurfBoard.Transport.Common do
         {:reply, :ok, state}
 
       _ ->
-        timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
+        timer_ref = Process.send_after(self(), {:common_load_timeout, from}, timeout_ms)
         waiter = {from, loader_id, name, timer_ref, frame_id}
         {:noreply, %{state | load_waiters: [waiter | state.load_waiters]}}
     end
@@ -335,14 +324,14 @@ defmodule SurfBoard.Transport.Common do
     if already_loaded do
       {:reply, :ok, %{state | loads: %{}}}
     else
-      timer_ref = Process.send_after(self(), {@load_timeout_tag, from}, timeout_ms)
+      timer_ref = Process.send_after(self(), {:common_load_timeout, from}, timeout_ms)
       waiter = {from, :any, name, timer_ref, nil}
       {:noreply, %{state | loads: %{}, load_waiters: [waiter | state.load_waiters]}}
     end
   end
 
   @doc """
-  `handle_info({load_timeout_tag(), from}, state)` body, shared by all
+  `handle_info({:common_load_timeout, from}, state)` body, shared by all
   three transport actors. No-ops if the waiter already resolved (the
   timeout raced a reply).
   """
