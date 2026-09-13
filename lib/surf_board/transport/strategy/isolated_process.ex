@@ -12,7 +12,8 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
 
   @behaviour SurfBoard.Transport.Strategy
 
-  alias SurfBoard.{Launcher, Transport}
+  alias SurfBoard.Launcher
+  alias SurfBoard.Transport.Strategy.CDPBringUp
   alias SurfBoard.Transport.WebSocket
 
   defmodule Config do
@@ -35,7 +36,7 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
     with {:ok, ws_pid} <- WebSocket.start_link(ws_url),
          {:ok, %{"targetId" => target_id}} <-
            WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
-         {:ok, session_id} <- Transport.attach_to_target(ws_pid, target_id) do
+         {:ok, session_id} <- CDPBringUp.attach_to_target(ws_pid, target_id) do
       # Note: unlike SharedWS (real Chrome), this strategy is Lightpanda-
       # only, whose partial CDP implementation may not support
       # Target.setDiscoverTargets — not sent here, so
@@ -44,7 +45,7 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
       # enable_page_lifecycle_events/1) still applies if Lightpanda
       # ever emits it; harmless no-op subscription if it doesn't.
       teardown = fn _session ->
-        Transport.close_ws(ws_pid)
+        CDPBringUp.close_ws(ws_pid)
         if is_pid(server_pid), do: stop_server(server_pid)
         :ok
       end
@@ -62,7 +63,7 @@ defmodule SurfBoard.Transport.Strategy.IsolatedProcess do
         }
       }
 
-      Transport.start_session_from(acquired, template, opts)
+      CDPBringUp.start_session_from(acquired, template, opts)
     else
       err ->
         # Failed mid-bring-up: kill the spawned binary so we don't leak

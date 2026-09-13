@@ -1,9 +1,54 @@
 defmodule SurfBoard.Transport.Strategy do
   @moduledoc false
 
-  # The behaviour every Transport.Strategy.* module implements — see
-  # SurfBoard.Transport's moduledoc for the full picture of what
-  # varies across strategies and why.
+  # The behaviour every Transport.Strategy.* module implements: the
+  # "where does a session get its WebSocket" question. Four concrete
+  # strategies today:
+  #
+  #   * `Strategy.SharedWS`        — Chrome CDP. One WebSocket per BEAM,
+  #                         held in an Agent. Each session gets a fresh
+  #                         BrowserContext + Target + sessionId on the
+  #                         shared WS. Feeds `Transport.Actor` a
+  #                         `{:shared, ws_pid}` config. Bring-up shared
+  #                         with `Strategy.IsolatedProcess` via
+  #                         `Strategy.CDPBringUp`.
+  #
+  #   * `Strategy.PerSession`      — Lightpanda. One shared browser
+  #                         process per BEAM, but one WebSocket per
+  #                         session (Lightpanda accepts many WS to one
+  #                         binary). Feeds `Transport.Actor` a
+  #                         `{:fused, ws_url}` config — the actor owns
+  #                         its own WireSocket directly, no separate
+  #                         socket process. Own bring-up, entirely
+  #                         inline — doesn't use `Strategy.CDPBringUp`.
+  #
+  #   * `Strategy.IsolatedProcess` — One browser process AND one
+  #                         WebSocket per session. Slower but isolated.
+  #                         Used as a fallback / for browsers we can't
+  #                         share. Also feeds `Transport.Actor` a
+  #                         `{:shared, ws_pid}` config (the WS just
+  #                         isn't actually shared with any other
+  #                         session in practice).
+  #
+  #   * `Strategy.BiDi`            — chromium-bidi. One POST /session +
+  #                         one WS per session. Feeds `Transport.Actor`
+  #                         a `{:shared, ws_pid}` config with
+  #                         `send: :spawn_link` (BiDi's
+  #                         WebSocketClient.send_command/4 blocks
+  #                         synchronously, unlike CDP's
+  #                         WireSocket/WebSocket, so a slow call can't
+  #                         be allowed to stall the actor's mailbox —
+  #                         see `Transport.Actor`'s moduledoc). Own
+  #                         bring-up, entirely inline.
+  #
+  # Each impl returns the same shape so the surrounding driver code
+  # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
+  # A driver picks its strategy by module name once, at author time
+  # (ChromeCDP always calls Strategy.SharedWS.start_session/1); the one
+  # exception is Lightpanda's isolated/external fallback, which calls
+  # `transport_mod.start_session/1` polymorphically because it can
+  # resolve to either Strategy.IsolatedProcess or (in principle) any
+  # other module honoring the same behaviour.
   #
   # `opts` carries exactly three keys, none of them strategy-specific:
   #

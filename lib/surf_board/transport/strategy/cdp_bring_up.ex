@@ -1,63 +1,24 @@
-defmodule SurfBoard.Transport do
+defmodule SurfBoard.Transport.Strategy.CDPBringUp do
   @moduledoc false
 
-  # Strategy for the "where does a session get its WebSocket" question.
+  # CDP-only session bring-up, shared by the two CDP connection
+  # strategies: `Strategy.SharedWS` (Chrome — one WebSocket per BEAM,
+  # a fresh BrowserContext + Target + sessionId per session) and
+  # `Strategy.IsolatedProcess` (one browser process AND one WebSocket
+  # per session — slower but isolated; used as a fallback / for
+  # browsers that can't share a connection).
   #
-  # The stack already has a shape for talking to a CDP-speaking
-  # browser: a `WebSocket` pid + a routing key (the CDP `sessionId`,
-  # used for flat-session multiplexing). The thing that varies across
-  # browsers is *how a session acquires that pid* at start_session time
-  # — each way of doing that lives under `Transport.Strategy.*`, and
-  # implements the `SurfBoard.Transport.Strategy` behaviour: one
-  # `start_session(opts) :: {:ok, Session.t()} | {:error, term}`
-  # callback, spec-agnostic — the caller supplies a `:session_struct`
-  # template (id/spec_module/spec/live_view_aware?/base capabilities
-  # already filled in) and the strategy returns it with `ws_pid`,
-  # `browsing_context`, and `capabilities` populated and the session
-  # GenServer already up.
-  #
-  # Four concrete strategies today:
-  #
-  #   * `Strategy.SharedWS`        — Chrome CDP. One WebSocket per BEAM,
-  #                         held in an Agent. Each session gets a fresh
-  #                         BrowserContext + Target + sessionId on the
-  #                         shared WS. Feeds `Transport.Actor` a
-  #                         `{:shared, ws_pid}` config.
-  #
-  #   * `Strategy.PerSession`      — Lightpanda. One shared browser
-  #                         process per BEAM, but one WebSocket per
-  #                         session (Lightpanda accepts many WS to one
-  #                         binary). Feeds `Transport.Actor` a
-  #                         `{:fused, ws_url}` config — the actor owns
-  #                         its own WireSocket directly, no separate
-  #                         socket process.
-  #
-  #   * `Strategy.IsolatedProcess` — One browser process AND one
-  #                         WebSocket per session. Slower but isolated.
-  #                         Used as a fallback / for browsers we can't
-  #                         share. Also feeds `Transport.Actor` a
-  #                         `{:shared, ws_pid}` config (the WS just
-  #                         isn't actually shared with any other
-  #                         session in practice).
-  #
-  #   * `Strategy.BiDi`            — chromium-bidi. One POST /session +
-  #                         one WS per session. Feeds `Transport.Actor`
-  #                         a `{:shared, ws_pid}` config with
-  #                         `send: :spawn_link` (BiDi's
-  #                         WebSocketClient.send_command/4 blocks
-  #                         synchronously, unlike CDP's
-  #                         WireSocket/WebSocket, so a slow call can't
-  #                         be allowed to stall the actor's mailbox —
-  #                         see `Transport.Actor`'s moduledoc).
-  #
-  # Each impl returns the same shape so the surrounding driver code
-  # (install_bootstrap, await_page_load, click_aware, …) is unchanged.
-  # A driver picks its strategy by module name once, at author time
-  # (ChromeCDP always calls Strategy.SharedWS.start_session/1); the one
-  # exception is Lightpanda's isolated/external fallback, which calls
-  # `transport_mod.start_session/1` polymorphically because it can
-  # resolve to either Strategy.IsolatedProcess or (in principle) any
-  # other module honoring the same behaviour.
+  # This is NOT a generic "any protocol" bring-up module, despite once
+  # living at the top level as `SurfBoard.Transport` — every function
+  # here (`attach_to_target/2`, `dispose_browser_context/2`,
+  # `start_session_from/3`'s own bootstrap/page-lifecycle/frame-tracking
+  # sequence) is a raw CDP wire call or CDP-specific bring-up step.
+  # `Strategy.PerSession` (Lightpanda) and `Strategy.BiDi` don't call
+  # anything in this module — each does its own bring-up entirely
+  # inline, because their bring-up genuinely doesn't share this shape.
+  # The one truly protocol-agnostic thing here is the `Strategy`
+  # behaviour contract itself (`SurfBoard.Transport.Strategy`) that all
+  # four strategies implement — that lives in its own file, unchanged.
 
   alias SurfBoard.Transport.Actor
   alias SurfBoard.Clients.CDP.Wire

@@ -14,14 +14,15 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
   #   4. Attaches to the target (flat session) → gets a sessionId
   #      that becomes the routing key for this session.
   #   5. Folds the above into the caller's `:session_struct` template
-  #      via `Transport.start_session_from/3`.
+  #      via `CDPBringUp.start_session_from/3`.
   #
   # Teardown disposes the BrowserContext (which kills its targets)
   # but leaves the shared WS alone.
 
   @behaviour SurfBoard.Transport.Strategy
 
-  alias SurfBoard.{Launcher, Transport}
+  alias SurfBoard.Launcher
+  alias SurfBoard.Transport.Strategy.CDPBringUp
   alias SurfBoard.Transport.WebSocket
 
   defmodule Config do
@@ -71,8 +72,8 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
              url: "about:blank",
              browserContextId: ctx_id
            }),
-         {:ok, session_id} <- Transport.attach_to_target(ws_pid, target_id) do
-      teardown = fn _session -> Transport.dispose_browser_context(ws_pid, ctx_id) end
+         {:ok, session_id} <- CDPBringUp.attach_to_target(ws_pid, target_id) do
+      teardown = fn _session -> CDPBringUp.dispose_browser_context(ws_pid, ctx_id) end
 
       acquired = %{
         ws_pid: ws_pid,
@@ -88,7 +89,7 @@ defmodule SurfBoard.Transport.Strategy.SharedWS do
         }
       }
 
-      Transport.start_session_from(acquired, template, opts)
+      CDPBringUp.start_session_from(acquired, template, opts)
     end
   end
 end
