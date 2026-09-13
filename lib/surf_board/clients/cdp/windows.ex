@@ -8,7 +8,7 @@ defmodule SurfBoard.Clients.CDP.Windows do
   # Target.* multi-window handling, not because this logic is
   # Chrome-specific.
 
-  @behaviour SurfBoard.Windows
+  @behaviour SurfBoard.Clients.Windows
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient

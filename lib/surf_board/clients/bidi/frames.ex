@@ -11,7 +11,7 @@ defmodule SurfBoard.Clients.BiDi.Frames do
   # separately by `Clients.BiDi.Windows`) when the stack is empty, to
   # decide which context every BiDi wire op targets.
 
-  @behaviour SurfBoard.Frames
+  @behaviour SurfBoard.Clients.Frames
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient

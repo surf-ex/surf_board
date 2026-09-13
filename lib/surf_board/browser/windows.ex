@@ -57,12 +57,12 @@ defmodule SurfBoard.Browser.Windows do
   # Every driver here always runs Chrome headless (`--headless`/
   # `--headless=new`, hardcoded — no non-headless launch path exists),
   # so there is never a real OS window to maximize, move, or report
-  # the position of. Raise rather than silently no-op — like
-  # `Permissions.Unsupported`, a caller that thinks it moved/maximized
-  # the window needs to know it didn't, rather than have code that
-  # assumes it did. `window_size`/`resize_window` are unaffected: they
-  # operate on the viewport via `Emulation.setDeviceMetricsOverride`,
-  # which works headless.
+  # the position of. Raise rather than silently no-op — same
+  # reasoning as `spec.grant_permissions == nil`: a caller that thinks
+  # it moved/maximized the window needs to know it didn't, rather than
+  # have code that assumes it did. `window_size`/`resize_window` are
+  # unaffected: they operate on the viewport via
+  # `Emulation.setDeviceMetricsOverride`, which works headless.
   @spec maximize_window(Session.t()) :: no_return
   def maximize_window(%Session{spec_module: spec_module}) do
     raise SurfBoard.DriverError.not_supported("maximize_window/1", spec_module)

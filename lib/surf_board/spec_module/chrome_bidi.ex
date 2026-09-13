@@ -21,23 +21,21 @@ defmodule SurfBoard.SpecModule.ChromeBiDi do
 
   alias SurfBoard.Launcher
   alias SurfBoard.Launcher.BiDi, as: LauncherBiDi
-  alias SurfBoard.Browser
-  alias SurfBoard.Clients.BiDi.{Dialogs, Frames, SendKeysSession, Windows}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
-  alias SurfBoard.Spec
-  alias SurfBoard.Permissions
+  alias SurfBoard.SpecModule.Spec
 
-  @spec_data %Spec{
-    browser: Browser.Chrome,
-    wire_protocol: BiDiClient,
-    dialogs: Dialogs,
-    windows: Windows,
-    frames: Frames,
-    grant_permissions: Permissions.Unsupported,
-    send_keys_session: SendKeysSession,
-    touch_scroll: &__MODULE__.touch_scroll_impl/3,
-    log_check_interactions?: true
-  }
+  # Full support for everything BiDi offers here — no overrides needed
+  # on top of BiDiClient.default_strategies/0 (which already has
+  # grant_permissions: nil — no real BiDi permissions implementation
+  # exists yet).
+  @spec_data struct!(
+               Spec,
+               Map.merge(BiDiClient.default_strategies(), %{
+                 wire_protocol: BiDiClient,
+                 touch_scroll: &__MODULE__.touch_scroll_impl/3,
+                 log_check_interactions?: true
+               })
+             )
 
   @impl SurfBoard.SpecModule
   def spec, do: @spec_data

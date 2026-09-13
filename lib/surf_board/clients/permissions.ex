@@ -1,17 +1,16 @@
-defmodule SurfBoard.Permissions do
+defmodule SurfBoard.Clients.Permissions do
   @moduledoc false
 
   # Media (camera/microphone) permission granting. One of the
   # vendor-specific dimensions of a driver Spec.
   #
-  #   * `Clients.CDP.Client` — CDP `Browser.grantPermissions`. Shared
-  #                            by ChromeCDP directly (it's also the
-  #                            wire_protocol client — no separate
-  #                            Permissions.ChromeCDP module needed).
-  #   * `Unsupported`        — ChromeBiDi (no BiDi permissions API
-  #                            wired up yet) and Lightpanda (no
-  #                            camera/mic or getUserMedia support at
-  #                            all).
+  #   * `Clients.CDP.Permissions` — CDP `Browser.grantPermissions`.
+  #     ChromeBiDi (no BiDi permissions API wired up yet) and
+  #     Lightpanda (no camera/mic or getUserMedia support at all)
+  #     leave `spec.grant_permissions` as `nil` instead of naming a
+  #     module — `Browser.Form.grant_permissions/2` raises
+  #     `DriverError.not_supported/2` itself on `nil` rather than
+  #     calling through a dedicated stub module.
   #
   # Exists as its own %Spec{} field, not dispatched via
   # spec.wire_protocol, because Chrome CDP and Lightpanda CDP share the

@@ -1,7 +1,7 @@
 defmodule SurfBoard.Clients.CDP.Frames do
   @moduledoc false
 
-  @behaviour SurfBoard.Frames
+  @behaviour SurfBoard.Clients.Frames
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.CDP.Client, as: CDPClient

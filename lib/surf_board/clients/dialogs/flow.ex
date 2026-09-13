@@ -1,4 +1,4 @@
-defmodule SurfBoard.Dialogs.Flow do
+defmodule SurfBoard.Clients.Dialogs.Flow do
   @moduledoc false
 
   # Protocol-agnostic dialog orchestration. Both Page.javascriptDialogOpening

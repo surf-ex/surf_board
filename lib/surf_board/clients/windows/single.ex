@@ -1,11 +1,11 @@
-defmodule SurfBoard.Windows.Single do
+defmodule SurfBoard.Clients.Windows.Single do
   @moduledoc false
 
   # Single-window stub for drivers without multi-window support
   # (currently Lightpanda). All sessions report a single window
   # handle "main"; focus/close are no-ops.
 
-  @behaviour SurfBoard.Windows
+  @behaviour SurfBoard.Clients.Windows
 
   @impl true
   def window_handle(_), do: {:ok, "main"}

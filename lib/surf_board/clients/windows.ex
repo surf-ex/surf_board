@@ -1,4 +1,4 @@
-defmodule SurfBoard.Windows do
+defmodule SurfBoard.Clients.Windows do
   @moduledoc false
 
   # Multi-window / tab management. One of the vendor-specific dimensions

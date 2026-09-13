@@ -1,4 +1,4 @@
-defmodule SurfBoard.Frames do
+defmodule SurfBoard.Clients.Frames do
   @moduledoc false
 
   # IFrame focus management. One of the vendor-specific dimensions of

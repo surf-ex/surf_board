@@ -5,7 +5,7 @@ defmodule SurfBoard.Session do
   `capabilities` holds only caller-supplied WebDriver/BiDi capabilities
   (the `:capabilities` opt passed to `start_session/1`, if any) — driver-
   internal bring-up state (target id, browser-context id, flat-session
-  routing, ...) lives on `driver_state` (`SurfBoard.DriverState.t()`)
+  routing, ...) lives on `driver_state` (`SurfBoard.Transport.DriverState.t()`)
   instead, so the two don't share one untyped map.
   """
 
@@ -31,7 +31,7 @@ defmodule SurfBoard.Session do
           spec_module: module,
           spec: struct() | nil,
           capabilities: map(),
-          driver_state: SurfBoard.DriverState.t(),
+          driver_state: SurfBoard.Transport.DriverState.t(),
           ws_pid: pid() | nil,
           browsing_context: String.t() | nil,
           metadata: map() | nil,
@@ -53,7 +53,7 @@ defmodule SurfBoard.Session do
     server: :none,
     screenshots: [],
     pending_await: nil,
-    driver_state: %SurfBoard.DriverState{},
+    driver_state: %SurfBoard.Transport.DriverState{},
     # Settings passed to `start_session/1` that govern later calls rather
     # than session startup (`:base_url`, `:max_wait_time`). Kept on the
     # session so they beat config without a global read.

@@ -6,10 +6,10 @@ defmodule SurfBoard.Clients.CDP.Dialogs do
   # (spawn handler, await event, run user fun, reply) lives in
   # Dialogs.Flow; this module just supplies the 3 protocol primitives.
 
-  @behaviour SurfBoard.Dialogs
+  @behaviour SurfBoard.Clients.Dialogs
 
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Dialogs.Flow
+  alias SurfBoard.Clients.Dialogs.Flow
   alias SurfBoard.Transport.WebSocket
   alias SurfBoard.Session
 

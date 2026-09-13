@@ -1,4 +1,4 @@
-defmodule SurfBoard.Spec do
+defmodule SurfBoard.SpecModule.Spec do
   @moduledoc false
 
   # A protocol variant as data: dimension modules plus per-variant
@@ -8,22 +8,33 @@ defmodule SurfBoard.Spec do
   #
   # Stamped onto `Session.spec` at start_session time; from then
   # on, the session is fully described by its Spec.
+  #
+  # `dialogs`/`windows`/`frames` are always a real module — dispatched
+  # polymorphically (`spec.dialogs.accept_alert(...)`), so even the
+  # "unsupported" case needs a real module whose own body defines what
+  # "unsupported" safely means for that capability (no-op, simulate a
+  # single window, ...) — see `Clients.Dialogs.Unsupported`,
+  # `Clients.Windows.Single`, `Clients.Frames.Unsupported`.
+  #
+  # `grant_permissions`/`send_keys_session` are `module | nil` instead:
+  # the caller (`Browser.Form`) checks support and raises itself rather
+  # than calling through a stub module, so there's nothing for a
+  # dedicated "unsupported" module to do — `nil` says the same thing
+  # with no module needed.
+  #
+  # Each protocol client owns its own default pick for these five
+  # (`Clients.CDP.Client.default_strategies/0`,
+  # `Clients.BiDi.Client.default_strategies/0`); a spec module starts
+  # from its client's defaults and overrides only where its vendor's
+  # engine genuinely diverges — see `SpecModule.LightpandaCDP`, which
+  # overrides every one of them.
 
   defstruct [
-    # Dimension modules — each one is a behaviour impl that varies
-    # per driver.
-    :browser,
     :wire_protocol,
     :dialogs,
     :windows,
     :frames,
-    # Not dispatched via wire_protocol — see SurfBoard.Permissions'
-    # moduledoc for why grant_permissions needs its own dimension
-    # rather than living on the shared wire_protocol client.
     :grant_permissions,
-    # Same reason as grant_permissions — see SurfBoard.SendKeysSession's
-    # moduledoc. Session-scoped send_keys, not element-scoped (which
-    # stays a plain wire_protocol.send_keys/3 dispatch).
     :send_keys_session,
     # Per-driver one-off: touch_scroll has three distinct implementations
     # (CDP synthesizeScrollGesture / BiDi JS scrollBy / Lightpanda no-op)
@@ -35,13 +46,12 @@ defmodule SurfBoard.Spec do
   ]
 
   @type t :: %__MODULE__{
-          browser: module,
           wire_protocol: module,
           dialogs: module,
           windows: module,
           frames: module,
-          grant_permissions: module,
-          send_keys_session: module,
+          grant_permissions: module | nil,
+          send_keys_session: module | nil,
           touch_scroll:
             (SurfBoard.Element.t(), number, number -> {:ok, nil} | {:error, term}) | nil,
           log_check_interactions?: boolean

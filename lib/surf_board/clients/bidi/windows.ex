@@ -8,7 +8,7 @@ defmodule SurfBoard.Clients.BiDi.Windows do
   # not per-process state. Any process holding this session sees the
   # same focused window.
 
-  @behaviour SurfBoard.Windows
+  @behaviour SurfBoard.Clients.Windows
 
   alias SurfBoard.{Element, Session}
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient

@@ -1,4 +1,4 @@
-defmodule SurfBoard.WireProtocol do
+defmodule SurfBoard.Clients.WireProtocol do
   @moduledoc false
 
   # One of the dimensions of a driver Spec: the wire protocol
@@ -7,7 +7,7 @@ defmodule SurfBoard.WireProtocol do
   #
   # The two existing client modules (`SurfBoard.Clients.CDP.Client` and
   # `SurfBoard.Clients.BiDi.Client`) declare `@behaviour
-  # SurfBoard.WireProtocol` directly. There are no separate
+  # SurfBoard.Clients.WireProtocol` directly. There are no separate
   # adapter modules — the callback names match the client function
   # names exactly so the compiler can verify the contract on the
   # actual implementations.
@@ -91,7 +91,7 @@ defmodule SurfBoard.WireProtocol do
 
   @doc """
   Find elements matching the query, returning lazy `Element`s (no
-  eager V8 ref-fetch round trip) — see `SurfBoard.OpsShared`.
+  eager V8 ref-fetch round trip) — see `SurfBoard.Clients.OpsShared`.
   """
   @callback find_elements_lazy(Session.t() | Element.t(), term, keyword) ::
               {:ok, list(Element.t())} | {:error, term}

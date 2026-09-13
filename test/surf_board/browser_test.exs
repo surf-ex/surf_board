@@ -41,7 +41,7 @@ defmodule SurfBoard.BrowserTest do
     def grant_permissions(%Session{}, permissions), do: {:ok, permissions}
 
     def spec do
-      %SurfBoard.Spec{
+      %SurfBoard.SpecModule.Spec{
         wire_protocol: __MODULE__,
         grant_permissions: __MODULE__,
         log_check_interactions?: false

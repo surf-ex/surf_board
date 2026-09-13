@@ -1,4 +1,4 @@
-defmodule SurfBoard.Dialogs do
+defmodule SurfBoard.Clients.Dialogs do
   @moduledoc false
 
   # JavaScript dialog handling (alert/confirm/prompt). One of the

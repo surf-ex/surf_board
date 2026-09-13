@@ -7,7 +7,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   # need to know about wire-id correlation, session GenServers, or
   # the per-method CDP param schemas.
   #
-  # Implements `SurfBoard.WireProtocol` directly — driver Specs
+  # Implements `SurfBoard.Clients.WireProtocol` directly — driver Specs
   # point `wire_protocol: CDPClient` and Browser.ex/Element.ex dispatch
   # straight to these functions, no adapter wrapper in between.
   #
@@ -17,18 +17,40 @@ defmodule SurfBoard.Clients.CDP.Client do
   # shapes) versus which are protocol-mandated (frame focus, element
   # ref types, mouse/touch input model).
 
-  @behaviour SurfBoard.WireProtocol
+  @behaviour SurfBoard.Clients.WireProtocol
 
   alias SurfBoard.{Element, Session}
-  alias SurfBoard.Clients.CDP.{Commands, ResponseParser}
-  alias SurfBoard.OpsShared
+  alias SurfBoard.Clients.CDP.{Commands, Dialogs, Frames, Permissions, ResponseParser, Windows}
+  alias SurfBoard.Clients.CDP.SendKeysSession, as: CDPSendKeysSession
+  alias SurfBoard.Clients.OpsShared
   alias SurfBoard.Transport.Protocol
 
   # Pulls in shared op bodies (text/2, attribute/3, displayed/2,
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
   # ops). They call this module's call_on_element/4 + evaluate/2,3
   # for the wire layer.
-  use SurfBoard.OpsShared
+  use SurfBoard.Clients.OpsShared
+
+  @doc """
+  CDP's own default strategy pick for each capability that isn't
+  dispatched via `wire_protocol` directly (`dialogs`, `windows`,
+  `frames`, `grant_permissions`, `send_keys_session` — see
+  `SurfBoard.SpecModule.Spec`). A spec module speaking CDP starts from
+  this and overrides only the points where its vendor's engine
+  genuinely can't do what CDP normally supports (e.g. Lightpanda
+  overrides every one of these; a future CDP-based vendor with full
+  support wouldn't need to override any).
+  """
+  @spec default_strategies() :: map()
+  def default_strategies do
+    %{
+      dialogs: Dialogs,
+      windows: Windows,
+      frames: Frames,
+      grant_permissions: Permissions,
+      send_keys_session: CDPSendKeysSession
+    }
+  end
 
   @doc """
   Returns the CDP send opts (`:flat_session_id` + `:session_id`) for
@@ -409,7 +431,7 @@ defmodule SurfBoard.Clients.CDP.Client do
   end
 
   # element_size/1, element_location/1, selected/2, blank_page?/1 —
-  # provided by SurfBoard.OpsShared.
+  # provided by SurfBoard.Clients.OpsShared.
 
   # ----- Element-scoped operations -----
 
@@ -550,7 +572,7 @@ defmodule SurfBoard.Clients.CDP.Client do
       String.contains?(msg, "Object has been released")
   end
 
-  # text/2, attribute/3, displayed/2 — provided by SurfBoard.OpsShared.
+  # text/2, attribute/3, displayed/2 — provided by SurfBoard.Clients.OpsShared.
 
   @doc """
   Sets the value of an input element and dispatches `input` and
@@ -580,7 +602,7 @@ defmodule SurfBoard.Clients.CDP.Client do
     end
   end
 
-  # fill_in/4 — provided by SurfBoard.OpsShared. Text-only path.
+  # fill_in/4 — provided by SurfBoard.Clients.OpsShared. Text-only path.
   # File inputs go through `set_value/3` which materializes a V8 ref
   # for `DOM.setFileInputFiles`.
 
@@ -694,11 +716,11 @@ defmodule SurfBoard.Clients.CDP.Client do
   end
 
   # set_value_dom/3 (the DOM-based path) is provided by
-  # SurfBoard.OpsShared. set_value/3 above dispatches between
+  # SurfBoard.Clients.OpsShared. set_value/3 above dispatches between
   # file-input handling (CDP-specific via DOM.setFileInputFiles)
   # and the shared DOM path.
 
-  # clear/3 — provided by SurfBoard.OpsShared.
+  # clear/3 — provided by SurfBoard.Clients.OpsShared.
 
   @doc """
   Sends keys to the element. `keys` is a list of string segments
@@ -725,11 +747,11 @@ defmodule SurfBoard.Clients.CDP.Client do
     end
   end
 
-  # classify/3 — provided by SurfBoard.OpsShared. Returns
+  # classify/3 — provided by SurfBoard.Clients.OpsShared. Returns
   # "patch" / "navigate" / "full_page" / "none" based on phx-* attrs
   # and form/anchor context. See W.classify in priv/surf_board.js.
 
-  # click/2 — provided by SurfBoard.OpsShared. Routes through
+  # click/2 — provided by SurfBoard.Clients.OpsShared. Routes through
   # window.__w.clickEl when the bootstrap is installed (handles
   # <option> selection + change events) and falls back to
   # scroll+focus+click otherwise.
@@ -1338,13 +1360,13 @@ defmodule SurfBoard.Clients.CDP.Client do
   # ----- Page introspection -----
   #
   # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by SurfBoard.OpsShared.
+  # provided by SurfBoard.Clients.OpsShared.
 
-  # visit/3 — provided by SurfBoard.OpsShared (uses our
+  # visit/3 — provided by SurfBoard.Clients.OpsShared (uses our
   # navigate/2 plus the shared xpath-polyfill post-load hook).
 
   # ----- Dialog handling -----
   #
   # Dialog flow lives in SurfBoard.Clients.CDP.Dialogs (which uses
-  # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
+  # SurfBoard.Clients.Dialogs.Flow for the protocol-agnostic orchestration).
 end

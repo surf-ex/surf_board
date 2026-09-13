@@ -25,7 +25,8 @@ defmodule SurfBoard.SpecModule do
   # process models underneath, rather than special-casing any one
   # vendor in shared dispatch code.
 
-  alias SurfBoard.{DependencyError, Session, Spec}
+  alias SurfBoard.{DependencyError, Session}
+  alias SurfBoard.SpecModule.Spec
 
   @type reason :: :not_implemented | :not_supported | any
   @type on_start_session :: {:ok, Session.t()} | {:error, reason}

@@ -20,28 +20,30 @@ defmodule SurfBoard.SpecModule.LightpandaCDP do
   @behaviour SurfBoard.SpecModule
 
   alias SurfBoard.Launcher
-  alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Dialogs
-  alias SurfBoard.Spec
-  alias SurfBoard.Frames
+  alias SurfBoard.Clients.Dialogs
+  alias SurfBoard.SpecModule.Spec
+  alias SurfBoard.Clients.Frames
   alias SurfBoard.Launcher.Lightpanda, as: LauncherLightpanda
-  alias SurfBoard.Permissions
-  alias SurfBoard.SendKeysSession
   alias SurfBoard.Transport.Strategy.IsolatedProcess
-  alias SurfBoard.Windows
+  alias SurfBoard.Clients.Windows
 
-  @spec_data %Spec{
-    browser: Browser.Lightpanda,
-    wire_protocol: CDPClient,
-    dialogs: Dialogs.Unsupported,
-    windows: Windows.Single,
-    frames: Frames.Unsupported,
-    grant_permissions: Permissions.Unsupported,
-    send_keys_session: SendKeysSession.Unsupported,
-    touch_scroll: nil,
-    log_check_interactions?: false
-  }
+  # Lightpanda's engine doesn't support any of CDP's optional
+  # capabilities reliably enough to trust — overrides every one of
+  # CDPClient.default_strategies/0's picks.
+  @spec_data struct!(
+               Spec,
+               Map.merge(CDPClient.default_strategies(), %{
+                 wire_protocol: CDPClient,
+                 dialogs: Dialogs.Unsupported,
+                 windows: Windows.Single,
+                 frames: Frames.Unsupported,
+                 grant_permissions: nil,
+                 send_keys_session: nil,
+                 touch_scroll: nil,
+                 log_check_interactions?: false
+               })
+             )
 
   @impl SurfBoard.SpecModule
   def spec, do: @spec_data

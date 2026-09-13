@@ -7,7 +7,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # and don't need to know about wire-id correlation, session
   # GenServers, or the per-method BiDi param schemas.
   #
-  # Implements `SurfBoard.WireProtocol` directly — driver Specs
+  # Implements `SurfBoard.Clients.WireProtocol` directly — driver Specs
   # point `wire_protocol: BiDiClient` and Browser.ex/Element.ex dispatch
   # straight to these functions, no adapter wrapper in between.
   #
@@ -17,12 +17,13 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # shapes) versus which are protocol-mandated (frame focus, element
   # ref types, mouse/touch input model).
 
-  @behaviour SurfBoard.WireProtocol
+  @behaviour SurfBoard.Clients.WireProtocol
 
   alias SurfBoard.Element
-  alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
+  alias SurfBoard.Clients.BiDi.{Commands, Dialogs, Frames, ResponseParser, Windows}
+  alias SurfBoard.Clients.BiDi.SendKeysSession, as: BiDiSendKeysSession
   alias SurfBoard.Clients.Bootstrap
-  alias SurfBoard.OpsShared
+  alias SurfBoard.Clients.OpsShared
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Session
 
@@ -30,7 +31,25 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # click/2, set_value_dom/3, clear/2, send_keys_text/3, page-info
   # ops). They call this module's call_on_element/4 + evaluate/2,3
   # for the wire layer.
-  use SurfBoard.OpsShared
+  use SurfBoard.Clients.OpsShared
+
+  @doc """
+  BiDi's own default strategy pick for each capability that isn't
+  dispatched via `wire_protocol` directly — see
+  `Clients.CDP.Client.default_strategies/0` for the full rationale.
+  `grant_permissions` has no real BiDi implementation today, so it's
+  `nil` (unsupported) by default.
+  """
+  @spec default_strategies() :: map()
+  def default_strategies do
+    %{
+      dialogs: Dialogs,
+      windows: Windows,
+      frames: Frames,
+      grant_permissions: nil,
+      send_keys_session: BiDiSendKeysSession
+    }
+  end
 
   # The context every BiDi wire op targets: the top of the transport
   # actor's frame_stack (set by `Clients.BiDi.Frames.focus_frame/2`)
@@ -92,7 +111,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
     end
   end
 
-  # visit/3 — provided by SurfBoard.OpsShared (uses our navigate/2).
+  # visit/3 — provided by SurfBoard.Clients.OpsShared (uses our navigate/2).
 
   # ----- Script evaluation -----
 
@@ -300,7 +319,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   defp decode_remote_value(other), do: other
 
   # current_url/1, current_path/1, page_title/1, page_source/1 —
-  # provided by SurfBoard.OpsShared.
+  # provided by SurfBoard.Clients.OpsShared.
 
   # ----- Element-scoped ops -----
 
@@ -423,7 +442,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
 
   defp stale_marker?(_), do: false
 
-  # text/2, attribute/3, displayed/2 — provided by SurfBoard.OpsShared.
+  # text/2, attribute/3, displayed/2 — provided by SurfBoard.Clients.OpsShared.
 
   # ----- Element finding -----
   #
@@ -629,7 +648,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
 
   # ----- Interactions -----
 
-  # classify/3 — provided by SurfBoard.OpsShared.
+  # classify/3 — provided by SurfBoard.Clients.OpsShared.
 
   @doc """
   LV-aware click. Captures `pre_page_id` BEFORE the click, classifies
@@ -706,7 +725,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
     )
   end
 
-  # click/2 — provided by SurfBoard.OpsShared.
+  # click/2 — provided by SurfBoard.Clients.OpsShared.
 
   @doc """
   Sets the value of an input element and dispatches `input` and
@@ -735,7 +754,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
     end
   end
 
-  # fill_in/4 — provided by SurfBoard.OpsShared.
+  # fill_in/4 — provided by SurfBoard.Clients.OpsShared.
 
   @doc false
   @spec materialize(Session.t(), Element.t()) :: {:ok, Element.t()} | {:error, term}
@@ -779,7 +798,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   end
 
   # set_value_dom/3 (the DOM-based path) and clear/3 — provided by
-  # SurfBoard.OpsShared. set_value/3 above dispatches between the
+  # SurfBoard.Clients.OpsShared. set_value/3 above dispatches between the
   # file-input branch (DataTransfer trick) and the shared DOM path.
 
   @doc """
@@ -898,7 +917,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   end
 
   # element_size/1, element_location/1, selected/2, blank_page?/1 —
-  # provided by SurfBoard.OpsShared.
+  # provided by SurfBoard.Clients.OpsShared.
 
   # ----- Cookies -----
 
@@ -1172,7 +1191,7 @@ defmodule SurfBoard.Clients.BiDi.Client do
   # ----- Dialog handling -----
   #
   # Dialog flow lives in SurfBoard.Clients.BiDi.Dialogs (which uses
-  # SurfBoard.Dialogs.Flow for the protocol-agnostic orchestration).
+  # SurfBoard.Clients.Dialogs.Flow for the protocol-agnostic orchestration).
 
   @doc """
   Window viewport size. BiDi's native call is `get_viewport/1`;

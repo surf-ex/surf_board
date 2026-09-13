@@ -136,7 +136,7 @@ defmodule SurfBoard.Browser.Form do
 
   def send_keys(%Session{} = parent, keys) when is_list(keys) do
     case Internal.spec(parent).send_keys_session do
-      SurfBoard.SendKeysSession.Unsupported ->
+      nil ->
         raise SurfBoard.DriverError.not_supported("send_keys/2", parent.spec_module)
 
       mod ->
@@ -148,7 +148,7 @@ defmodule SurfBoard.Browser.Form do
   @spec grant_permissions(Session.t(), [:camera | :microphone]) :: :ok | {:error, term}
   def grant_permissions(%Session{} = session, permissions) when is_list(permissions) do
     case Internal.spec(session).grant_permissions do
-      SurfBoard.Permissions.Unsupported ->
+      nil ->
         raise SurfBoard.DriverError.not_supported("grant_permissions/2", session.spec_module)
 
       mod ->

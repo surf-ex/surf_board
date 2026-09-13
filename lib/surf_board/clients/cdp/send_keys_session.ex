@@ -7,7 +7,7 @@ defmodule SurfBoard.Clients.CDP.SendKeysSession do
   # Clients.CDP.Client (aliased as CDPClient below), the same as
   # Clients.CDP.Dialogs/Permissions do.
 
-  @behaviour SurfBoard.SendKeysSession
+  @behaviour SurfBoard.Clients.SendKeysSession
 
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Session

@@ -6,7 +6,7 @@ defmodule SurfBoard.Clients.CDP.Permissions do
   # Clients.CDP.Client (aliased as CDPClient below), the same as
   # Clients.CDP.Dialogs does.
 
-  @behaviour SurfBoard.Permissions
+  @behaviour SurfBoard.Clients.Permissions
 
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Session

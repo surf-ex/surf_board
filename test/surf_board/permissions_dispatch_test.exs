@@ -7,8 +7,9 @@ defmodule SurfBoard.PermissionsDispatchTest do
   # capability can't be gated by keying off `spec.wire_protocol` — it can't
   # tell the two specs apart. grant_permissions has its own %Spec{}
   # dimension (spec.grant_permissions) specifically so Browser.ex CAN tell
-  # them apart — LightpandaCDP/ChromeBiDi point it at Permissions.Unsupported,
-  # ChromeCDP points it at the real Clients.CDP.Client implementation.
+  # them apart — LightpandaCDP/ChromeBiDi leave it `nil` (raises
+  # DriverError.not_supported/2), ChromeCDP points it at the real
+  # Clients.CDP.Permissions implementation.
 
   alias SurfBoard.Browser
   alias SurfBoard.SpecModule.{ChromeBiDi, LightpandaCDP}

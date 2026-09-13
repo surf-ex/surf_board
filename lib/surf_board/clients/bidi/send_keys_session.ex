@@ -7,7 +7,7 @@ defmodule SurfBoard.Clients.BiDi.SendKeysSession do
   # Transport.Protocol directly (matching Clients.BiDi.Client's own
   # style), not through Clients.BiDi.Client.
 
-  @behaviour SurfBoard.SendKeysSession
+  @behaviour SurfBoard.Clients.SendKeysSession
 
   alias SurfBoard.Clients.BiDi.Commands
   alias SurfBoard.Session

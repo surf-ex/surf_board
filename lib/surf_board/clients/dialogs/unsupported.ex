@@ -1,4 +1,4 @@
-defmodule SurfBoard.Dialogs.Unsupported do
+defmodule SurfBoard.Clients.Dialogs.Unsupported do
   @moduledoc false
 
   # Stub used by drivers whose underlying browser doesn't surface JS
@@ -7,7 +7,7 @@ defmodule SurfBoard.Dialogs.Unsupported do
   # `:browser`-tagged dialog tests' "if dialogs aren't supported just
   # don't raise" contract.
 
-  @behaviour SurfBoard.Dialogs
+  @behaviour SurfBoard.Clients.Dialogs
 
   @impl true
   def accept_alert(session, fun) do

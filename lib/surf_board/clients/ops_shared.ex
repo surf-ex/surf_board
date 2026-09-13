@@ -1,4 +1,4 @@
-defmodule SurfBoard.OpsShared do
+defmodule SurfBoard.Clients.OpsShared do
   @moduledoc false
 
   # Shared op bodies between CDPClient and BiDiClient.
@@ -12,7 +12,7 @@ defmodule SurfBoard.OpsShared do
   #
   # ## Contract
   #
-  # Modules that `use SurfBoard.OpsShared` must export:
+  # Modules that `use SurfBoard.Clients.OpsShared` must export:
   #
   #   * `call_on_element(session, element, fn_decl, args \\ [])` —
   #     run `fn_decl` (a JS function expression) with `this` bound

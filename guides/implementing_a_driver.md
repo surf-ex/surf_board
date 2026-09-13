@@ -135,7 +135,7 @@ one, it's not a dead end.
 `SurfBoard.SpecModule` is a small behaviour:
 
 ```elixir
-@callback spec() :: SurfBoard.Spec.t()
+@callback spec() :: SurfBoard.SpecModule.Spec.t()
 @callback default_launcher_spec() :: Supervisor.child_spec() | {module, keyword}
 @callback start_session(opts :: keyword) :: {:ok, Session.t()} | {:error, term}
 @callback validate() :: :ok | {:error, SurfBoard.DependencyError.t()}
@@ -148,11 +148,11 @@ identical (`Transport.Protocol.stop/1`, no spec-specific work), so
 exists at all. Every browser capability (`visit/2`, `click/1`,
 `find_elements/2`, `cookies/1`, `focus_frame/2`, ...) is dispatched by
 `SurfBoard.Browser`/`SurfBoard.Element` calling `session.spec` — your
-`%SurfBoard.Spec{}` — directly. There's no per-spec module standing between
+`%SurfBoard.SpecModule.Spec{}` — directly. There's no per-spec module standing between
 them and your Spec; `Browser`/`Element` never call
 `session.spec_module.<capability>`. All you write is:
 
-* `spec/0` — a `%SurfBoard.Spec{}` naming which existing (or new) protocol/
+* `spec/0` — a `%SurfBoard.SpecModule.Spec{}` naming which existing (or new) protocol/
   dialogs/windows/frames/grant_permissions/send_keys_session/touch_scroll
   implementations this spec uses. Each field is a module (or, for
   `touch_scroll`, a function) that `Browser`/`Element` call directly — see
@@ -197,19 +197,30 @@ strategy for an existing vendor).
    defmodule SurfBoard.SpecModule.YourSpec do
      @behaviour SurfBoard.SpecModule
 
-     alias SurfBoard.Spec
+     alias SurfBoard.SpecModule.Spec
+     alias SurfBoard.Clients.CDP.Client, as: CDPClient
 
-     @spec_data %Spec{
-       browser: Browser.YourVendor,
-       wire_protocol: SurfBoard.Clients.CDP.Client, # or Clients.BiDi.Client
-       dialogs: SurfBoard.Clients.CDP.Dialogs,  # reuse, or write your own — see below
-       windows: SurfBoard.Clients.CDP.Windows,  # reuse, or write your own
-       frames: SurfBoard.Clients.CDP.Frames,    # reuse, or write your own
-       grant_permissions: SurfBoard.Clients.CDP.Permissions, # reuse, or Permissions.Unsupported
-       send_keys_session: SurfBoard.Clients.CDP.SendKeysSession, # reuse, or SendKeysSession.Unsupported
-       touch_scroll: &__MODULE__.touch_scroll_impl/3,
-       log_check_interactions?: true
-     }
+     # Start from your wire_protocol client's own defaults and override
+     # only the points where your vendor's engine genuinely diverges —
+     # see CDPClient.default_strategies/0 (or Clients.BiDi.Client's) for
+     # what "genuinely diverges" looks like in practice (LightpandaCDP
+     # overrides every one of them; most new CDP-based specs override
+     # none, or just grant_permissions).
+     @spec_data struct!(
+                  Spec,
+                  Map.merge(CDPClient.default_strategies(), %{
+                    wire_protocol: CDPClient, # or Clients.BiDi.Client
+                    touch_scroll: &__MODULE__.touch_scroll_impl/3,
+                    log_check_interactions?: true
+                    # dialogs/windows/frames/grant_permissions/send_keys_session
+                    # only need to appear here if your vendor's engine can't do
+                    # what its wire protocol normally supports — set
+                    # grant_permissions/send_keys_session to nil, or
+                    # dialogs/windows/frames to a real "unsupported" module
+                    # (see Capability dimensions below for why those three
+                    # always need a real module rather than nil).
+                  })
+                )
 
      @impl SurfBoard.SpecModule
      def spec, do: @spec_data
@@ -374,15 +385,15 @@ any more (there used to be — see below); every capability lives in exactly
 one place: the module your Spec names.
 
 * **`dialogs` / `windows` / `frames`** — each implements a small behaviour
-  (`SurfBoard.Dialogs`, `SurfBoard.Windows`, `SurfBoard.Frames`) for one
+  (`SurfBoard.Clients.Dialogs`, `SurfBoard.Clients.Windows`, `SurfBoard.Clients.Frames`) for one
   *protocol*, not one vendor: `SurfBoard.Clients.CDP.{Dialogs,Windows,Frames}`
   is CDP's dialog/window/frame handling, full stop — it lives under
   `Clients.CDP`, vendor-neutral, even though today only `ChromeCDP` points at
   it. Lightpanda also speaks CDP, but its engine doesn't implement the
   `Page.javascriptDialogOpening`/`Target.*`/frame-focus surface these
   modules use, so it points `dialogs`/`windows`/`frames` at the shared
-  fallbacks instead (`SurfBoard.Dialogs.Unsupported`, `SurfBoard.Windows.Single`,
-  `SurfBoard.Frames.Unsupported`) — that's a vendor's *coverage* of the
+  fallbacks instead (`SurfBoard.Clients.Dialogs.Unsupported`, `SurfBoard.Clients.Windows.Single`,
+  `SurfBoard.Clients.Frames.Unsupported`) — that's a vendor's *coverage* of the
   protocol falling short, not a different protocol. If your spec speaks
   CDP and actually implements this part of it, point at
   `SurfBoard.Clients.CDP.{Dialogs,Windows,Frames}` directly rather than
@@ -390,18 +401,18 @@ one place: the module your Spec names.
   protocol genuinely differs here (e.g. a real BiDi vendor needs
   `Clients.BiDi.{Dialogs,Windows,Frames}`'s BiDi equivalents, not
   these CDP ones).
-* **`grant_permissions`** — implements `SurfBoard.Permissions`, in its own
+* **`grant_permissions`** — implements `SurfBoard.Clients.Permissions`, in its own
   `Clients.<protocol>.Permissions` module (e.g. `SurfBoard.Clients.CDP.Permissions`,
   which both `ChromeCDP` and `LightpandaCDP` could point at — but only
   `ChromeCDP` does, because Lightpanda's browser engine doesn't actually
-  support it). Otherwise point at `SurfBoard.Permissions.Unsupported`, which
-  raises `SurfBoard.DriverError.not_supported/2` rather than silently
-  no-opping — a caller granting camera/mic access needs to know it didn't
-  happen.
-* **`send_keys_session`** — implements `SurfBoard.SendKeysSession` (session-
+  support it). Otherwise leave it `nil` — `Browser.Form.grant_permissions/2`
+  itself raises `SurfBoard.DriverError.not_supported/2` on `nil` rather than
+  silently no-opping (or calling through a dedicated stub module) — a
+  caller granting camera/mic access needs to know it didn't happen.
+* **`send_keys_session`** — implements `SurfBoard.Clients.SendKeysSession` (session-
   scoped key dispatch; element-scoped `send_keys` is a plain `wire_protocol`
   call and needs no separate dimension), in its own
-  `Clients.<protocol>.SendKeysSession` module. Same reuse-or-`Unsupported`
+  `Clients.<protocol>.SendKeysSession` module. Same reuse-or-`nil`
   choice as `grant_permissions`.
 * **`touch_scroll`** — there's no shared behaviour for this; it's a bare
   3-arity function on `%Spec{}` because the three existing implementations
@@ -454,7 +465,7 @@ after all, fix those in place — `Clients.BiDi` is meant to be shared by
 
 Adding a genuinely new wire protocol (neither CDP nor BiDi) is a much bigger
 undertaking — you'd be writing the `Clients.<Protocol>.*` analogue of
-everything under `Clients.CDP.*`, including a new `SurfBoard.WireProtocol`
+everything under `Clients.CDP.*`, including a new `SurfBoard.Clients.WireProtocol`
 implementation (`lib/surf_board/wire_protocol.ex` documents the full
 callback contract `Browser`/`Element` dispatch through directly) and
 likely a new `Wire.<Protocol>` event decoder alongside the existing

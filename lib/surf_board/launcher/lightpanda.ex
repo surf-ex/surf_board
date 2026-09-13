@@ -238,7 +238,7 @@ defmodule SurfBoard.Launcher.Lightpanda do
       spec_module: LightpandaCDP,
       spec: LightpandaCDP.spec(),
       live_view_aware?: Keyword.get(opts, :live_view_aware, false),
-      driver_state: %SurfBoard.DriverState{
+      driver_state: %SurfBoard.Transport.DriverState{
         flat_session_id?: true,
         # Lightpanda's JS engine doesn't ship a real document.evaluate
         # — CDPClient.visit injects wgxpath after each page load.

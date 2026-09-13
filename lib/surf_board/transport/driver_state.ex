@@ -1,4 +1,4 @@
-defmodule SurfBoard.DriverState do
+defmodule SurfBoard.Transport.DriverState do
   @moduledoc """
   Driver-internal bring-up state stashed on `SurfBoard.Session.driver_state`.
 

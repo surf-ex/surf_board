@@ -27,24 +27,21 @@ defmodule SurfBoard.SpecModule.ChromeCDP do
   @behaviour SurfBoard.SpecModule
 
   alias SurfBoard.Launcher
-  alias SurfBoard.Browser
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
-  alias SurfBoard.Clients.CDP.{Dialogs, Frames, Permissions, SendKeysSession, Windows}
-  alias SurfBoard.Spec
+  alias SurfBoard.SpecModule.Spec
   alias SurfBoard.Launcher.Chrome, as: LauncherChrome
   alias SurfBoard.Transport.Strategy.SharedWS
 
-  @spec_data %Spec{
-    browser: Browser.Chrome,
-    wire_protocol: CDPClient,
-    dialogs: Dialogs,
-    windows: Windows,
-    frames: Frames,
-    grant_permissions: Permissions,
-    send_keys_session: SendKeysSession,
-    touch_scroll: &__MODULE__.touch_scroll_impl/3,
-    log_check_interactions?: true
-  }
+  # Full support for everything CDP offers — no overrides needed on
+  # top of CDPClient.default_strategies/0.
+  @spec_data struct!(
+               Spec,
+               Map.merge(CDPClient.default_strategies(), %{
+                 wire_protocol: CDPClient,
+                 touch_scroll: &__MODULE__.touch_scroll_impl/3,
+                 log_check_interactions?: true
+               })
+             )
 
   @impl SurfBoard.SpecModule
   def spec, do: @spec_data

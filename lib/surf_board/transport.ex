@@ -85,7 +85,7 @@ defmodule SurfBoard.Transport do
           session_id: String.t() | nil,
           browser_context_id: String.t() | nil,
           teardown_fun: (SurfBoard.Session.t() -> any),
-          driver_state: SurfBoard.DriverState.t()
+          driver_state: SurfBoard.Transport.DriverState.t()
         }
 
   # ----- Default implementations of common teardown shapes -----

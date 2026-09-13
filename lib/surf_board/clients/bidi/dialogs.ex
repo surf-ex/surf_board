@@ -6,11 +6,11 @@ defmodule SurfBoard.Clients.BiDi.Dialogs do
   # Orchestration lives in Dialogs.Flow; this module supplies the
   # 3 protocol primitives.
 
-  @behaviour SurfBoard.Dialogs
+  @behaviour SurfBoard.Clients.Dialogs
 
   alias SurfBoard.Clients.BiDi.{Commands, ResponseParser}
   alias SurfBoard.Drivers.ChromeBiDi.WebSocketClient
-  alias SurfBoard.Dialogs.Flow
+  alias SurfBoard.Clients.Dialogs.Flow
   alias SurfBoard.Session
 
   @impl true
