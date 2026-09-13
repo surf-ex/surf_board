@@ -68,14 +68,6 @@ defmodule SurfBoard.Element do
   def root_session(%__MODULE__{parent: parent}), do: root_session(parent)
 
   @doc """
-  Returns the BiDi/CDP WebSocket pid for an Element or Session, walking
-  up the parent chain to find the root Session's `:ws_pid`.
-  """
-  @spec ws_pid(t() | Session.t()) :: pid() | nil
-  def ws_pid(%Session{ws_pid: pid}), do: pid
-  def ws_pid(%__MODULE__{parent: parent}), do: ws_pid(parent)
-
-  @doc """
   Clears any value set in the element.
   """
   @spec clear(t) :: t
