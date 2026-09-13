@@ -249,7 +249,9 @@ defmodule SurfBoard.Clients.BiDi.Commands do
     ]
   end
 
-  # Key code mappings matching SurfBoard.KeyCodes
+  # Key code mappings — see Browser.send_keys/2's own @doc for the
+  # full canonical vocabulary (matches Clients.CDP.SendKeysSession's
+  # key_mapping/1).
   defp key_code(:null), do: "\uE000"
   defp key_code(:cancel), do: "\uE001"
   defp key_code(:help), do: "\uE002"

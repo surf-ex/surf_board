@@ -485,7 +485,14 @@ defmodule SurfBoard.Browser do
   list of atoms, which are automatically converted into the corresponding key
   codes.
 
-  For a list of available key codes see `SurfBoard.KeyCodes`.
+  Available special-key atoms, accepted identically on every driver:
+
+  `:null`, `:cancel`, `:help`, `:backspace`, `:tab`, `:clear`, `:return`,
+  `:enter`, `:shift`, `:control`, `:alt`, `:pause`, `:escape`, `:space`,
+  `:pageup`, `:pagedown`, `:end`, `:home`, `:left_arrow`, `:up_arrow`,
+  `:right_arrow`, `:down_arrow`, `:insert`, `:delete`, `:semicolon`,
+  `:equals`, `:num0`-`:num9`, `:multiply`, `:add`, `:separator`,
+  `:subtract`, `:decimal`, `:divide`, `:command`.
 
   ## Example
 

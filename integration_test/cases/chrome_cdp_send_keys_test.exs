@@ -1,12 +1,12 @@
 defmodule SurfBoard.Integration.ChromeCDPSendKeysTest do
   @moduledoc """
   Verifies session-scoped `send_keys/2` accepts the canonical
-  WebDriver key vocabulary (`SurfBoard.KeyCodes`) against real Chrome
-  over CDP — the same vocabulary `chrome_bidi_send_keys_test.exs`
-  verifies over BiDi. Before this, CDP only accepted a small custom
-  atom set (`:arrow_up`, `:end_key`, ...) different from BiDi's; both
-  now accept the same names, with the old CDP-only names kept as
-  aliases.
+  WebDriver key vocabulary (see `SurfBoard.Browser.send_keys/2`'s own
+  `@doc`) against real Chrome over CDP — the same vocabulary
+  `chrome_bidi_send_keys_test.exs` verifies over BiDi. Before this,
+  CDP only accepted a small custom atom set (`:arrow_up`, `:end_key`,
+  ...) different from BiDi's; both now accept the same names, with
+  the old CDP-only names kept as aliases.
   """
   use SurfBoard.Integration.SessionCase, async: false
 

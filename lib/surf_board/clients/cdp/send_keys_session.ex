@@ -104,14 +104,14 @@ defmodule SurfBoard.Clients.CDP.SendKeysSession do
     ]
   end
 
-  # Canonical WebDriver key vocabulary (matches SurfBoard.KeyCodes and
-  # Clients.BiDi.Commands's key_code/1) mapped to CDP's DOM `code` +
-  # `key` values and legacy `windowsVirtualKeyCode`. Every atom here is
-  # accepted by both CDP and BiDi send_keys — see SurfBoard.KeyCodes
-  # for the full canonical list. Keyed off the atom (not the derived
-  # `code` string) since two different keys can share one `code`
-  # (`:clear` and `:num5` both physically sit on Numpad5, but need
-  # different VK codes).
+  # Canonical WebDriver key vocabulary (matches Clients.BiDi.Commands's
+  # key_code/1 — see Browser.send_keys/2's own @doc for the full list)
+  # mapped to CDP's DOM `code` + `key` values and legacy
+  # `windowsVirtualKeyCode`. Every atom here is accepted by both CDP
+  # and BiDi send_keys. Keyed off the atom (not the derived `code`
+  # string) since two different keys can share one `code` (`:clear`
+  # and `:num5` both physically sit on Numpad5, but need different VK
+  # codes).
   defp key_mapping(:cancel), do: {"Abort", "Cancel", 3}
   defp key_mapping(:help), do: {"Help", "Help", 47}
   defp key_mapping(:backspace), do: {"Backspace", "Backspace", 8}
