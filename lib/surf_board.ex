@@ -15,39 +15,36 @@ defmodule SurfBoard do
 
   ## Starting a session
 
-  There's no central dispatcher, and no single "the Chrome driver" or
-  "the Lightpanda driver" module — connection mode is part of a
-  driver's identity, not an option you pass. Pick the module for the
-  connection you actually want and call it directly:
+  There's no central dispatcher — three driver modules, one per
+  vendor, each a self-contained OTP module:
 
-    * `SurfBoard.Driver.SharedChromeCDP` — spawn and own a local Chrome
-      process (or connect to one this library launched lazily via
-      `default_child_spec/0` — see below).
-    * `SurfBoard.Driver.ExternalChromeCDP` — connect to a Chrome you
-      don't manage, via a `ws://` URL or `SURF_BOARD_CHROME_URL`.
+    * `SurfBoard.Driver.ChromeCDP` — real Chrome/Chromium via the
+      DevTools Protocol. `start_link/1` spawns and owns a local Chrome
+      process; `connect/1` connects to one you don't manage (a `ws://`
+      URL, or `SURF_BOARD_CHROME_URL`).
     * `SurfBoard.Driver.ChromeBiDi` — real Chrome over WebDriver BiDi
       (chromium-bidi sidecar).
-    * `SurfBoard.Driver.SharedLightpanda` — reuse an already-running
-      shared Lightpanda binary.
-    * `SurfBoard.Driver.IsolatedLightpanda` — spawn a brand-new private
-      Lightpanda binary per session (slower, fully isolated).
-    * `SurfBoard.Driver.ExternalLightpanda` — connect to a Lightpanda
-      instance this library never launches, via a caller-supplied
-      `:ws_url`.
+    * `SurfBoard.Driver.Lightpanda` — a lightweight headless browser.
+      `start_link/1` spawns and owns a shared local instance every
+      session multiplexes over; `spawn_session/1` spawns a private
+      instance for just one session (slower, fully isolated);
+      `connect_session/2` connects to a Lightpanda instance this
+      library never launches.
 
-  Each driver is a self-contained OTP module. None of them start
-  anything on their own — nothing about loading this library depends on
-  Chrome/Lightpanda being installed, only on actually adding a driver's
-  `default_child_spec/0` to a supervision tree once, the same way you'd
-  add any other child (a Repo, a PubSub, ...). Not every driver has one
-  — `IsolatedLightpanda` and `ExternalLightpanda` spawn/dial fresh per
-  session, so there's no persistent instance to hold:
+  None of them start anything on their own — nothing about loading
+  this library depends on Chrome/Lightpanda being installed, only on
+  actually adding a driver's `default_child_spec/0` to a supervision
+  tree once, the same way you'd add any other child (a Repo, a
+  PubSub, ...). Not every entry point has a persistent instance to
+  hold — `Driver.Lightpanda.spawn_session/1`/`connect_session/2` start
+  or dial fresh per session, so there's no `default_child_spec/0` for
+  those:
 
   ```
   # in your application's own Supervisor (or a script's, via
   # Supervisor.start_link/2 directly, if there's no application of its own)
   children = [
-    SurfBoard.Driver.SharedChromeCDP.default_child_spec()
+    SurfBoard.Driver.ChromeCDP.default_child_spec()
     # ...
   ]
   ```
@@ -55,23 +52,28 @@ defmodule SurfBoard do
   Then, from anywhere:
 
   ```
-  {:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session([])
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session([])
   ```
 
   To own your own instance instead of using a driver's shared default
   (e.g. a test suite launching and owning a second, independent Chrome):
 
   ```
-  {:ok, _sup} = SurfBoard.Driver.SharedChromeCDP.start_link(name: MyApp.TestChrome)
-  {:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session(MyApp.TestChrome, [])
+  {:ok, _sup} = SurfBoard.Driver.ChromeCDP.start_link(name: MyApp.TestChrome)
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(MyApp.TestChrome, [])
   ```
 
   Or connect to a browser you don't manage:
 
   ```
-  {:ok, pid} = SurfBoard.Driver.ExternalChromeCDP.connect(url: "ws://localhost:9222/...")
-  {:ok, session} = SurfBoard.Driver.ExternalChromeCDP.start_session(pid, [])
+  {:ok, pid} = SurfBoard.Driver.ChromeCDP.connect(url: "ws://localhost:9222/...")
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(pid, [])
   ```
+
+  `Driver.ChromeCDP` also has a *default connected* instance
+  (`default_remote_child_spec/0`) for applications that want the
+  library-wide default to connect rather than spawn — wire up one or
+  the other, not both.
 
   ## Session options
 
@@ -88,7 +90,7 @@ defmodule SurfBoard do
       DB-backed tests can find the sandbox owner. Composes with a custom
       User-Agent, which becomes the base.
 
-  `Driver.ExternalLightpanda.start_session/1` requires `:ws_url`.
+  `Driver.Lightpanda.connect_session/2` requires a `ws_url` first argument.
 
   ## Setting the User-Agent
 
@@ -102,8 +104,8 @@ defmodule SurfBoard do
   *different* User-Agents at the same time (mobile vs desktop, say):
 
   ```
-  {:ok, mobile} = SurfBoard.Driver.SharedChromeCDP.start_session(user_agent: "…iPhone…")
-  {:ok, desktop} = SurfBoard.Driver.SharedChromeCDP.start_session([])
+  {:ok, mobile} = SurfBoard.Driver.ChromeCDP.start_session(user_agent: "…iPhone…")
+  {:ok, desktop} = SurfBoard.Driver.ChromeCDP.start_session([])
   ```
 
   That option is Chrome-only. Lightpanda sets its User-Agent per process
@@ -123,13 +125,13 @@ defmodule SurfBoard do
   @message_list Query.css(".messages")
 
   test "That multiple sessions work" do
-    {:ok, user1} = SurfBoard.Driver.SharedChromeCDP.start_session([])
+    {:ok, user1} = SurfBoard.Driver.ChromeCDP.start_session([])
     user1
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello there!")
     |> click(@share_button)
 
-    {:ok, user2} = SurfBoard.Driver.SharedChromeCDP.start_session([])
+    {:ok, user2} = SurfBoard.Driver.ChromeCDP.start_session([])
     user2
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello yourself")

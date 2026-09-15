@@ -26,7 +26,7 @@ defmodule SurfBoard.Driver.Spec do
   # (`Clients.CDP.Client.default_strategies/0`,
   # `Clients.BiDi.Client.default_strategies/0`); a driver starts
   # from its client's defaults and overrides only where its vendor's
-  # engine genuinely diverges — see `Driver.SharedLightpanda`, which
+  # engine genuinely diverges — see `Driver.Lightpanda`, which
   # overrides every one of them.
 
   defstruct [

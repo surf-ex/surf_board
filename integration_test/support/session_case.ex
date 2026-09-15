@@ -16,9 +16,9 @@ defmodule SurfBoard.Integration.SessionCase do
   # by module, everywhere except here, where a `@moduletag driver:
   # ...` on the test case still needs to pick one at runtime).
   @drivers %{
-    chrome_cdp: SurfBoard.Driver.SharedChromeCDP,
+    chrome_cdp: SurfBoard.Driver.ChromeCDP,
     chrome: SurfBoard.Driver.ChromeBiDi,
-    lightpanda: SurfBoard.Driver.SharedLightpanda
+    lightpanda: SurfBoard.Driver.Lightpanda
   }
 
   @doc """

@@ -37,7 +37,7 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   # on top of BiDiClient.default_strategies/0 (which already has
   # grant_permissions: nil — no real BiDi permissions implementation
   # exists yet). Computed at runtime, not in a module attribute — see
-  # Driver.SharedChromeCDP.spec/0's comment for why.
+  # Driver.ChromeCDP.spec/0's comment for why.
   def spec do
     struct!(
       Spec,

@@ -16,7 +16,7 @@ so this is a real step, not boilerplate:
 # lib/my_app/application.ex
 def start(_type, _args) do
   children = [
-    SurfBoard.Driver.SharedChromeCDP.default_child_spec(),
+    SurfBoard.Driver.ChromeCDP.default_child_spec(),
     # ...your app's own children
   ]
 
@@ -27,7 +27,7 @@ end
 Then, from anywhere:
 
 ```elixir
-{:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session([])
+{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session([])
 
 session
 |> SurfBoard.Browser.visit("https://example.com")
@@ -44,7 +44,7 @@ A one-off script with no application of its own can call
 ```elixir
 {:ok, _} =
   Supervisor.start_link(
-    [SurfBoard.Driver.SharedChromeCDP.default_child_spec()],
+    [SurfBoard.Driver.ChromeCDP.default_child_spec()],
     strategy: :one_for_one
   )
 ```
@@ -55,15 +55,18 @@ shared default one.
 
 ## Drivers
 
-There's no single "the Chrome driver" — connection mode is part of a
-driver's identity, not an option you pass:
+One module per vendor. Connection mode is a choice of *function* on
+that module, not a separate module or a runtime option:
 
-- **`Driver.SharedChromeCDP`** — spawn and own a local Chrome process, via CDP.
-- **`Driver.ExternalChromeCDP`** — connect to a Chrome you don't manage, via CDP.
+- **`Driver.ChromeCDP`** — real Chrome/Chromium via the DevTools Protocol.
+  `start_link/1` spawns and owns a local Chrome process; `connect/1`
+  connects to one you don't manage.
 - **`Driver.ChromeBiDi`** — real Chrome over WebDriver BiDi (chromium-bidi).
-- **`Driver.SharedLightpanda`** — reuse an already-running shared Lightpanda binary.
-- **`Driver.IsolatedLightpanda`** — spawn a brand-new private Lightpanda binary per session.
-- **`Driver.ExternalLightpanda`** — connect to a Lightpanda instance this library never launches.
+- **`Driver.Lightpanda`** — a lightweight headless browser, faster to start
+  and run than Chrome. `start_link/1` spawns and owns a shared instance
+  every session multiplexes over; `spawn_session/1` spawns a private
+  instance for just one session; `connect_session/2` connects to a
+  Lightpanda instance this library never launches.
 
 ## LiveView awareness
 
@@ -72,7 +75,7 @@ same on any page. Pass `live_view_aware: true` to a driver's `start_session/1` f
 that need to wait on LiveView's `phx-*` patch lifecycle (e.g. testing a LiveView app):
 
 ```elixir
-{:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session(live_view_aware: true)
+{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(live_view_aware: true)
 ```
 
 ## Installation

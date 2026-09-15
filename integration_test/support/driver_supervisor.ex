@@ -19,11 +19,12 @@ defmodule SurfBoard.Integration.DriverSupervisor do
 
   @doc """
   Idempotently starts `driver`'s default instance under this
-  supervisor, if it has one to start (`Driver.SharedLightpanda.default_child_spec/0`
+  supervisor, if it has one to start (`Driver.Lightpanda.default_child_spec/0`
   returns `nil` when the optional `lightpanda` package isn't loaded —
-  nothing to do then; drivers with no persistent instance at all, like
-  `Driver.IsolatedLightpanda`/`Driver.ExternalLightpanda`, have no
-  `default_child_spec/0` — don't pass those to this function).
+  nothing to do then; entry points with no persistent instance at all,
+  like `Driver.Lightpanda.spawn_session/1`/`connect_session/2`, have no
+  `default_child_spec/0` to call — this function is only for drivers
+  that have one).
   """
   def start_default(driver) do
     case driver.default_child_spec() do

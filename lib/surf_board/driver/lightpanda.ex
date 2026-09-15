@@ -1,30 +1,49 @@
-defmodule SurfBoard.Driver.SharedLightpanda do
+defmodule SurfBoard.Driver.Lightpanda do
   @moduledoc false
 
-  # Lightpanda over CDP, reusing an already-running shared Lightpanda
-  # binary (`start_link/1`'s `Supervised` tree). Fresh WS per session,
-  # fused actor (no extra hop) — see `start_session/2`. No cached
-  # connection state needed: the shared binary's `ws_url` is looked up
-  # fresh from `Lightpanda.Server` on every call, since Lightpanda
-  # accepts many WS to one binary.
+  # Lightpanda over CDP. Three ways to get a connection, as three
+  # entry points on this one module rather than three separate driver
+  # modules: they fail differently (`validate_shared/0` checks a
+  # running shared instance, `validate_isolated/0` checks the
+  # `lightpanda` package is loaded, connecting has nothing to
+  # validate at all — the caller already has a URL) and supervise
+  # different things (a shared binary; nothing persistent at all —
+  # every session spawns or dials fresh), but everything downstream of
+  # "I have a ws_url" — spec/0, the session template, post-connection
+  # setup, the User-Agent-unsupported warning — is identical, so it
+  # isn't duplicated: it lives once, here.
   #
-  # Fully self-contained on purpose — no shared module with
-  # `Driver.IsolatedLightpanda`/`Driver.ExternalLightpanda` beyond
-  # `SurfBoard.Clients.CDP.Client` (genuinely shared protocol code,
-  # used by other drivers too). Reusing a persistent shared process is
-  # a different enough job (nothing to spawn per session, no
-  # bring-up-from-scratch sequence) that it's a fully separate driver,
-  # not a branch inside one Lightpanda module.
+  #   * `start_link/1` — launches and owns a local Lightpanda process
+  #     that every `start_session/2` call against it multiplexes over
+  #     (fresh WS per session, fused actor, no extra hop — Lightpanda
+  #     accepts many WS to one binary, so nothing is cached; the
+  #     shared binary's ws_url is looked up fresh every call):
   #
-  #   {:ok, _sup} = Driver.SharedLightpanda.start_link(name: MyApp.TestLightpanda)
-  #   {:ok, session} = Driver.SharedLightpanda.start_session(MyApp.TestLightpanda, [])
+  #       {:ok, _sup} = Driver.Lightpanda.start_link(name: MyApp.TestLightpanda)
+  #       {:ok, session} = Driver.Lightpanda.start_session(MyApp.TestLightpanda, [])
+  #
+  #   * `spawn_session/1` — spawns a brand-new private Lightpanda
+  #     binary for just this one session, starts it, and kills it on
+  #     teardown. The slowest way to get a session (pays binary-startup
+  #     cost every time) but the most isolated (no contention with any
+  #     other session). Uses `SurfBoard.Clients.CDP.SessionBringUp` —
+  #     the one piece of CDP session bring-up genuinely shared with
+  #     `Driver.ChromeCDP`'s own connection logic.
+  #
+  #   * `connect_session/2` — connects to a Lightpanda instance this
+  #     driver never launches at all, given its `ws_url` directly.
+  #     Uses the same `SessionBringUp` bring-up as `spawn_session/1` —
+  #     the only difference is whether there's a process to spawn and
+  #     later kill.
 
   alias SurfBoard.DependencyError
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.SessionBringUp
   alias SurfBoard.Clients.Dialogs
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Clients.Frames
   alias SurfBoard.Launcher.{Metadata, UserAgent}
+  alias SurfBoard.Transport.WebSocket
   alias SurfBoard.Clients.Windows
 
   @base_user_agent "Lightpanda/1.0"
@@ -34,8 +53,7 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   # Lightpanda's engine doesn't support any of CDP's optional
   # capabilities reliably enough to trust — overrides every one of
   # CDPClient.default_strategies/0's picks. Computed at runtime, not in
-  # a module attribute — see Driver.SharedChromeCDP.spec/0's comment
-  # for why.
+  # a module attribute — see Driver.ChromeCDP.spec/0's comment for why.
   def spec do
     struct!(
       Spec,
@@ -53,33 +71,35 @@ defmodule SurfBoard.Driver.SharedLightpanda do
     )
   end
 
+  # ----- Reuse an already-running shared Lightpanda binary -----
+
   defmodule Supervised do
     @moduledoc false
     # Owns the shared Lightpanda binary (`Lightpanda.Server`) as its
     # one child — session start needs no worker of its own here: this
-    # driver caches no connection state (each session opens its own WS
-    # fresh, see `start_session/2`), so there's nothing for a second
-    # child to hold.
+    # entry point caches no connection state (each session opens its
+    # own WS fresh, see `start_session/2`), so there's nothing for a
+    # second child to hold.
     use Supervisor
 
-    alias SurfBoard.Driver.SharedLightpanda
+    alias SurfBoard.Driver.Lightpanda
 
     def start_link({name, _opts}) do
-      Supervisor.start_link(__MODULE__, name, name: SharedLightpanda.supervisor_name(name))
+      Supervisor.start_link(__MODULE__, name, name: Lightpanda.supervisor_name(name))
     end
 
     @impl Supervisor
     def init(name) do
-      SharedLightpanda.resolve_binary_path()
-      server_name = SharedLightpanda.server_name(name)
+      Lightpanda.resolve_binary_path()
+      server_name = Lightpanda.server_name(name)
 
       server_opts = [
         name: server_name,
-        extra_args: SharedLightpanda.server_args(),
-        wrapper_script: SharedLightpanda.wrapper_script()
+        extra_args: Lightpanda.server_args(),
+        wrapper_script: Lightpanda.wrapper_script()
       ]
 
-      Supervisor.init([{SharedLightpanda.server_module(), server_opts}], strategy: :one_for_one)
+      Supervisor.init([{Lightpanda.server_module(), server_opts}], strategy: :one_for_one)
     end
   end
 
@@ -128,7 +148,7 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   # `config :surf_board, user_agent: "..."` is the cross-driver setting; it
   # arrives here as a `--user-agent` flag because Lightpanda's UA is a
   # property of the *process*, not of a CDP session — every session on the
-  # shared binary shares it. (The Chrome drivers read the same config key
+  # shared binary shares it. (The Chrome driver reads the same config key
   # per session.)
   #
   # `:lightpanda_user_agent_suffix` has no Chrome equivalent, so it stays
@@ -182,10 +202,10 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   @default_name __MODULE__.Default
 
   @doc """
-  A child spec for this driver's default instance, meant to be added
-  to a supervision tree the normal way. Returns `nil` if the optional
-  `lightpanda` package isn't on the load path — there's nothing to
-  start.
+  A child spec for this driver's default *shared* instance, meant to
+  be added to a supervision tree the normal way. Returns `nil` if the
+  optional `lightpanda` package isn't on the load path — there's
+  nothing to start.
   """
   def default_child_spec do
     if Code.ensure_loaded?(@lightpanda_server) do
@@ -201,8 +221,18 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   package is loaded — without starting anything. Returns
   `:ok | {:error, %SurfBoard.DependencyError{}}`.
   """
-  @spec validate() :: :ok | {:error, DependencyError.t()}
-  def validate do
+  @spec validate_shared() :: :ok | {:error, DependencyError.t()}
+  def validate_shared, do: validate_package_loaded()
+
+  @doc """
+  Checks whether `spawn_session/1` can actually succeed — the
+  `lightpanda` package is loaded — without starting anything. Returns
+  `:ok | {:error, %SurfBoard.DependencyError{}}`.
+  """
+  @spec validate_isolated() :: :ok | {:error, DependencyError.t()}
+  def validate_isolated, do: validate_package_loaded()
+
+  defp validate_package_loaded do
     if Code.ensure_loaded?(@lightpanda_server) do
       :ok
     else
@@ -212,8 +242,6 @@ defmodule SurfBoard.Driver.SharedLightpanda do
        )}
     end
   end
-
-  # ----- Session lifecycle -----
 
   @doc """
   Starts a new session against `name` — the name a `start_link/1`
@@ -228,8 +256,8 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   ws_url fresh).
   """
   @spec start_session(atom, keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
-  def start_session(server, opts) when server != nil and is_list(opts) do
-    server_name = server_name(server)
+  def start_session(name, opts) when name != nil and is_list(opts) do
+    server_name = server_name(name)
 
     case Process.whereis(server_name) do
       nil ->
@@ -238,20 +266,20 @@ defmodule SurfBoard.Driver.SharedLightpanda do
       _pid ->
         # credo:disable-for-next-line Credo.Check.Refactor.Apply
         ws_url = apply(@lightpanda_server, :ws_url, [server_name])
-        start_session_from_ws(ws_url, opts)
+        start_session_fused(ws_url, opts)
     end
   end
 
   @doc """
-  Starts a session against this driver's default instance (see
-  `default_child_spec/0`).
+  Starts a session against this driver's default *shared* instance
+  (see `default_child_spec/0`).
   """
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) when is_list(opts) do
     start_session(@default_name, opts)
   end
 
-  defp start_session_from_ws(ws_url, opts) do
+  defp start_session_fused(ws_url, opts) do
     template = build_template(opts)
     teardown_fun = fn _ -> :ok end
     owner = Keyword.get(opts, :owner, self())
@@ -295,6 +323,98 @@ defmodule SurfBoard.Driver.SharedLightpanda do
         driver_state: %{session.driver_state | target_id: target_id}
     }
   end
+
+  # ----- Spawn a brand-new private Lightpanda binary per session -----
+
+  @doc """
+  Spawns a fresh, private Lightpanda binary and starts a session
+  against it. Fails with `{:error, :lightpanda_package_not_loaded}` if
+  the `lightpanda` package isn't on the load path.
+  """
+  @spec spawn_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
+  def spawn_session(opts \\ []) do
+    if Code.ensure_loaded?(@lightpanda_server) do
+      start_link_args = [[name: nil, wrapper_script: wrapper_script()]]
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      {:ok, server_pid} = apply(@lightpanda_server, :start_link, start_link_args)
+
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      ws_url = apply(@lightpanda_server, :ws_url, [server_pid])
+      start_session_acquired(ws_url, server_pid, opts)
+    else
+      {:error, :lightpanda_package_not_loaded}
+    end
+  end
+
+  defp stop_server(pid) do
+    try do
+      GenServer.stop(pid, :normal, 5_000)
+    catch
+      _, _ -> :ok
+    end
+
+    :ok
+  end
+
+  # ----- Connect to a Lightpanda instance this driver never launches -----
+
+  @doc """
+  Connects to a Lightpanda instance at `ws_url` and starts a session
+  against it. Nothing to spawn, nothing to kill on teardown — that's
+  the only real difference from `spawn_session/1`, which shares this
+  function's bring-up sequence.
+  """
+  @spec connect_session(String.t(), keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
+  def connect_session(ws_url, opts \\ []) when is_binary(ws_url) do
+    start_session_acquired(ws_url, nil, opts)
+  end
+
+  # A fresh WebSocket per session, and (for spawn_session/1) a fresh
+  # browser process to go with it. Uses `SessionBringUp` for the
+  # shared second half (also used by `Driver.ChromeCDP`).
+  defp start_session_acquired(ws_url, server_pid, opts) do
+    template = build_template(opts)
+
+    with {:ok, ws_pid} <- WebSocket.start_link(ws_url),
+         {:ok, %{"targetId" => target_id}} <-
+           WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
+         {:ok, session_id} <- CDPClient.attach_to_target(ws_pid, target_id) do
+      # Note: unlike Chrome, this is Lightpanda-only, whose partial CDP
+      # implementation may not support Target.setDiscoverTargets — not
+      # sent here, so Target.detachedFromTarget won't fire for
+      # Lightpanda sessions.
+      teardown = fn _session ->
+        CDPClient.close_ws(ws_pid)
+        if is_pid(server_pid), do: stop_server(server_pid)
+        :ok
+      end
+
+      acquired = %{
+        ws_pid: ws_pid,
+        target_id: target_id,
+        session_id: session_id,
+        browser_context_id: nil,
+        teardown_fun: teardown,
+        driver_state: %SurfBoard.Transport.DriverState{
+          target_id: target_id,
+          flat_session_id?: true,
+          server_pid: server_pid
+        }
+      }
+
+      with {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
+        post_start(session, opts)
+      end
+    else
+      err ->
+        # Failed mid-bring-up: kill the spawned binary (if any) so we
+        # don't leak a Lightpanda process per failed session.
+        if is_pid(server_pid), do: stop_server(server_pid)
+        err
+    end
+  end
+
+  # ----- Shared across all three entry points -----
 
   defp build_template(opts) do
     %SurfBoard.Session{
@@ -341,7 +461,9 @@ defmodule SurfBoard.Driver.SharedLightpanda do
   # `{:ok, %{}}`, but the UA it actually sends is unchanged — so a caller
   # passing `:user_agent` would otherwise be silently ignored. Its UA is a
   # process-level setting instead (see `user_agent_args/0`). Warn once per
-  # VM rather than per session, so a crawl doesn't flood the log.
+  # VM (this driver is one module now, regardless of connection mode, so
+  # one persistent_term key genuinely means once per VM) rather than per
+  # session, so a crawl doesn't flood the log.
   @warned_ua_key {__MODULE__, :warned_user_agent_unsupported}
 
   defp warn_user_agent_unsupported do
@@ -365,7 +487,7 @@ defmodule SurfBoard.Driver.SharedLightpanda do
 
       A per-session User-Agent (two different UAs at once) needs Chrome:
 
-          SurfBoard.Driver.SharedChromeCDP.start_session(user_agent: "...")
+          SurfBoard.Driver.ChromeCDP.start_session(user_agent: "...")
       """)
     end
 

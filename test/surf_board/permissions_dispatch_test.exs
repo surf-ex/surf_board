@@ -12,12 +12,12 @@ defmodule SurfBoard.PermissionsDispatchTest do
   # Clients.CDP.Permissions implementation.
 
   alias SurfBoard.Browser
-  alias SurfBoard.Driver.{ChromeBiDi, SharedLightpanda}
+  alias SurfBoard.Driver.{ChromeBiDi, Lightpanda}
   alias SurfBoard.Session
 
-  describe "SharedLightpanda" do
+  describe "Lightpanda" do
     test "grant_permissions/2 raises SurfBoard.DriverError without touching the transport" do
-      session = %Session{spec_module: SharedLightpanda, spec: SharedLightpanda.spec()}
+      session = %Session{spec_module: Lightpanda, spec: Lightpanda.spec()}
 
       assert_raise SurfBoard.DriverError, ~r/grant_permissions\/2 is not supported/, fn ->
         Browser.grant_permissions(session, [:camera])
