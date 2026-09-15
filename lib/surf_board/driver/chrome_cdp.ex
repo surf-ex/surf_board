@@ -40,11 +40,12 @@ defmodule SurfBoard.Driver.ChromeCDP do
   #   1. Fetches the shared ws_pid from this process's own state
   #      (lazily connecting on first use, caching it for every session
   #      that follows — see `handle_call/3`'s `:get_ws_pid` clause).
-  #   2. Creates a fresh BrowserContext on that shared WS.
-  #   3. Creates a Target inside that BrowserContext (about:blank).
-  #   4. Attaches to the target (flat session) → gets a sessionId that
-  #      becomes the routing key for this session.
-  #   5. Folds the above into a session template via
+  #   2. Creates a fresh BrowserContext on that shared WS, a Target
+  #      inside it, and attaches (flat session) — via
+  #      `Clients.CDP.Acquire.shared_ws/2`, the one piece of this
+  #      genuinely shared with `Driver.Lightpanda`'s own
+  #      connection-acquisition code (different shape, same module).
+  #   3. Folds the above into a session template via
   #      `SessionBringUp.start_session_from/3`.
   #
   # Teardown disposes the BrowserContext (which kills its targets) but
@@ -60,6 +61,7 @@ defmodule SurfBoard.Driver.ChromeCDP do
   use GenServer
 
   alias SurfBoard.DependencyError
+  alias SurfBoard.Clients.CDP.Acquire
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.SessionBringUp
   alias SurfBoard.Driver.Spec
@@ -271,33 +273,10 @@ defmodule SurfBoard.Driver.ChromeCDP do
     ws_pid = GenServer.call(server, :get_ws_pid)
     template = build_template(opts)
 
-    with {:ok, %{"browserContextId" => ctx_id}} <-
-           SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.createBrowserContext", %{}),
-         {:ok, %{"targetId" => target_id}} <-
-           SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.createTarget", %{
-             url: "about:blank",
-             browserContextId: ctx_id
-           }),
-         {:ok, session_id} <- CDPClient.attach_to_target(ws_pid, target_id) do
-      teardown = fn _session -> CDPClient.dispose_browser_context(ws_pid, ctx_id) end
-
-      acquired = %{
-        ws_pid: ws_pid,
-        target_id: target_id,
-        session_id: session_id,
-        browser_context_id: ctx_id,
-        teardown_fun: teardown,
-        driver_state: %SurfBoard.Transport.DriverState{
-          target_id: target_id,
-          browser_context_id: ctx_id,
-          flat_session_id?: true,
-          shared_connection?: true
-        }
-      }
-
-      with {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
-        post_start(session, opts)
-      end
+    with {:ok, acquired} <-
+           Acquire.shared_ws(ws_pid, %SurfBoard.Transport.DriverState{shared_connection?: true}),
+         {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
+      post_start(session, opts)
     end
   end
 

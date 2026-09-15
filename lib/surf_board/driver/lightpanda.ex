@@ -26,17 +26,20 @@ defmodule SurfBoard.Driver.Lightpanda do
   #     binary for just this one session, starts it, and kills it on
   #     teardown. The slowest way to get a session (pays binary-startup
   #     cost every time) but the most isolated (no contention with any
-  #     other session). Uses `SurfBoard.Clients.CDP.SessionBringUp` —
-  #     the one piece of CDP session bring-up genuinely shared with
-  #     `Driver.ChromeCDP`'s own connection logic.
+  #     other session). Uses `SurfBoard.Clients.CDP.Acquire.fresh_ws/3`
+  #     for the target/attach sequence and `Clients.CDP.SessionBringUp`
+  #     for the rest — the pieces of CDP session bring-up genuinely
+  #     shared with `Driver.ChromeCDP`'s own connection logic (a
+  #     different `Acquire` shape, same module and `SessionBringUp`).
   #
   #   * `connect_session/2` — connects to a Lightpanda instance this
   #     driver never launches at all, given its `ws_url` directly.
-  #     Uses the same `SessionBringUp` bring-up as `spawn_session/1` —
-  #     the only difference is whether there's a process to spawn and
-  #     later kill.
+  #     Uses the same `start_session_acquired/3` bring-up as
+  #     `spawn_session/1` — the only difference is whether there's a
+  #     process to spawn and later kill.
 
   alias SurfBoard.DependencyError
+  alias SurfBoard.Clients.CDP.Acquire
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
   alias SurfBoard.Clients.CDP.SessionBringUp
   alias SurfBoard.Clients.Dialogs
@@ -370,45 +373,36 @@ defmodule SurfBoard.Driver.Lightpanda do
   end
 
   # A fresh WebSocket per session, and (for spawn_session/1) a fresh
-  # browser process to go with it. Uses `SessionBringUp` for the
-  # shared second half (also used by `Driver.ChromeCDP`).
+  # browser process to go with it. Uses `Acquire.fresh_ws/3` — the
+  # target/attach sequence genuinely shared with `Driver.ChromeCDP`'s
+  # own :isolated-shaped acquisition — plus `SessionBringUp` for the
+  # shared second half.
+  #
+  # Note: unlike Chrome, this is Lightpanda-only, whose partial CDP
+  # implementation may not support Target.setDiscoverTargets — not
+  # sent here (`Acquire.fresh_ws/3` doesn't send it either), so
+  # Target.detachedFromTarget won't fire for Lightpanda sessions.
   defp start_session_acquired(ws_url, server_pid, opts) do
     template = build_template(opts)
+    extra_driver_state = %SurfBoard.Transport.DriverState{server_pid: server_pid}
+    on_close = if is_pid(server_pid), do: fn -> stop_server(server_pid) end
 
-    with {:ok, ws_pid} <- WebSocket.start_link(ws_url),
-         {:ok, %{"targetId" => target_id}} <-
-           WebSocket.send_sync(ws_pid, "Target.createTarget", %{url: "about:blank"}),
-         {:ok, session_id} <- CDPClient.attach_to_target(ws_pid, target_id) do
-      # Note: unlike Chrome, this is Lightpanda-only, whose partial CDP
-      # implementation may not support Target.setDiscoverTargets — not
-      # sent here, so Target.detachedFromTarget won't fire for
-      # Lightpanda sessions.
-      teardown = fn _session ->
-        CDPClient.close_ws(ws_pid)
-        if is_pid(server_pid), do: stop_server(server_pid)
-        :ok
-      end
+    case WebSocket.start_link(ws_url) do
+      {:ok, ws_pid} ->
+        case Acquire.fresh_ws(ws_pid, extra_driver_state, on_close) do
+          {:ok, acquired} ->
+            with {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
+              post_start(session, opts)
+            end
 
-      acquired = %{
-        ws_pid: ws_pid,
-        target_id: target_id,
-        session_id: session_id,
-        browser_context_id: nil,
-        teardown_fun: teardown,
-        driver_state: %SurfBoard.Transport.DriverState{
-          target_id: target_id,
-          flat_session_id?: true,
-          server_pid: server_pid
-        }
-      }
+          err ->
+            # Failed mid-bring-up: kill the spawned binary (if any) so
+            # we don't leak a Lightpanda process per failed session.
+            if is_pid(server_pid), do: stop_server(server_pid)
+            err
+        end
 
-      with {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
-        post_start(session, opts)
-      end
-    else
       err ->
-        # Failed mid-bring-up: kill the spawned binary (if any) so we
-        # don't leak a Lightpanda process per failed session.
         if is_pid(server_pid), do: stop_server(server_pid)
         err
     end

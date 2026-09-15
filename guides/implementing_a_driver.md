@@ -365,17 +365,43 @@ a new connection mode for an existing vendor).
      decoder module (`SurfBoard.Clients.CDP.Wire` or
      `SurfBoard.Clients.BiDi.Wire` today).
 
-   If your vendor speaks CDP over a connection shape that matches
-   `Driver.ChromeCDP`'s or `Driver.Lightpanda.spawn_session/1`'s, use
-   `SurfBoard.Clients.CDP.SessionBringUp.start_session_from/3` directly
-   rather than writing your own bring-up sequence — it's the one piece
-   of CDP session bring-up genuinely shared across vendors today
-   (folds an "acquired connection" map into a session template, brings
-   up the actor, and runs the standard page-lifecycle/bootstrap/
-   frame-tracking init sequence). `Transport.Common` (the shared
-   find/load/page-ready/frame-stack state machine `Transport.Actor` runs
-   on) needs no changes regardless; it operates purely on the actor's
-   state fields, not on your config.
+   If your vendor speaks CDP, `SurfBoard.Clients.CDP.Acquire` is worth
+   checking before you write your own acquisition sequence — it holds
+   the two connection-acquisition shapes genuinely shared across
+   vendors today, each returning the `acquired` map
+   `SessionBringUp.start_session_from/3` (below) expects:
+
+     * **`Acquire.shared_ws/2`** — the connection is a long-lived
+       WebSocket shared across many sessions: creates a fresh
+       BrowserContext, creates a Target inside it, attaches (flat
+       session); teardown disposes the context, leaving the shared WS
+       alone. Used by `Driver.ChromeCDP`.
+     * **`Acquire.fresh_ws/3`** — the connection is this session's own
+       WebSocket, already open, nothing else using it: creates a
+       Target, attaches — no BrowserContext step, since the whole
+       connection is already scoped to one session; teardown closes
+       the WS and, if you pass `on_close`, runs that too (e.g. to kill
+       a process the WS came from). Used by
+       `Driver.Lightpanda.spawn_session/1`/`connect_session/2` — the
+       *only* difference between those two call sites is whether
+       `on_close` is `nil`.
+
+   Both take an `extra_driver_state` (a `%DriverState{}` with whatever
+   fields your vendor needs set — `Driver.ChromeCDP` passes
+   `shared_connection?: true`; `Driver.Lightpanda`'s spawn mode passes
+   `server_pid: pid`) merged onto the `target_id`/`flat_session_id?`
+   fields both shapes set themselves.
+
+   Use `SurfBoard.Clients.CDP.SessionBringUp.start_session_from/3`
+   directly (with the `acquired` map either `Acquire` function
+   returns, or one you build yourself if neither shape fits) rather
+   than writing your own bring-up sequence from scratch — it folds
+   that map into a session template, brings up the actor, and runs the
+   standard page-lifecycle/bootstrap/frame-tracking init sequence.
+   `Transport.Common` (the shared find/load/page-ready/frame-stack
+   state machine `Transport.Actor` runs on) needs no changes
+   regardless; it operates purely on the actor's state fields, not on
+   your config.
 
 4. **Reuse capability dimension modules where your vendor's behavior genuinely
    matches an existing one — see [Capability dimensions](#capability-dimensions).**
