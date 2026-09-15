@@ -322,29 +322,20 @@ defmodule SurfBoard.Driver.ChromeCDP do
     if Process.alive?(pid) do
       {pid, state}
     else
-      connect_ws(state)
+      establish_ws(state)
     end
   end
 
-  defp ensure_ws_pid(state), do: connect_ws(state)
+  defp ensure_ws_pid(state), do: establish_ws(state)
 
-  defp connect_ws(%{resolve_ws_url: resolve_ws_url} = state) do
-    # `WebSocket.start_link` would link to the *current caller* (this
-    # GenServer, since connect_ws/1 runs inside handle_call/3), so the
-    # shared WS would die if this process ever crashed anyway — but we
-    # still use `start/1` for an unlinked process whose lifetime is
-    # tied to this GenServer's explicit lifecycle, not to link
-    # propagation. Cached here, in this process's own state, so two
+  defp establish_ws(%{resolve_ws_url: resolve_ws_url} = state) do
+    # CDPClient.connect_ws/1 uses `WebSocket.start/1`, not `start_link/1`
+    # — this GenServer would otherwise be linked to the WS process (since
+    # establish_ws/1 runs inside handle_call/3), tying the shared WS's
+    # lifetime to link propagation instead of this GenServer's explicit
+    # lifecycle. Cached here, in this process's own state, so two
     # independently-started instances never share a connection.
-    {:ok, pid} = SurfBoard.Transport.WebSocket.start(resolve_ws_url.())
-
-    # Target.detachedFromTarget only reaches a connection that has
-    # target discovery enabled on the BROWSER session (no sessionId)
-    # — done once here, covering every session subsequently attached
-    # over this shared connection.
-    {:ok, _} =
-      SurfBoard.Transport.WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{discover: true})
-
+    {:ok, pid} = CDPClient.connect_ws(resolve_ws_url.())
     {pid, %{state | ws_pid: pid}}
   end
 
@@ -365,21 +356,7 @@ defmodule SurfBoard.Driver.ChromeCDP do
 
     # Forward console + exception events to the test caller's mailbox
     # so Browser.LogChecker.check_logs! can drain them after each operation.
-    _ =
-      SurfBoard.Transport.WebSocket.subscribe(
-        session.ws_pid,
-        "Runtime.consoleAPICalled",
-        session.browsing_context,
-        caller
-      )
-
-    _ =
-      SurfBoard.Transport.WebSocket.subscribe(
-        session.ws_pid,
-        "Runtime.exceptionThrown",
-        session.browsing_context,
-        caller
-      )
+    :ok = CDPClient.subscribe_console_events(session.ws_pid, session.browsing_context, caller)
 
     if UserAgent.override?(opts) do
       ua =

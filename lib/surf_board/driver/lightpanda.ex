@@ -46,7 +46,6 @@ defmodule SurfBoard.Driver.Lightpanda do
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Clients.Frames
   alias SurfBoard.Launcher.{Metadata, UserAgent}
-  alias SurfBoard.Transport.WebSocket
   alias SurfBoard.Clients.Windows
 
   @base_user_agent "Lightpanda/1.0"
@@ -411,7 +410,7 @@ defmodule SurfBoard.Driver.Lightpanda do
     extra_driver_state = %SurfBoard.Transport.DriverState{server_pid: server_pid}
     on_close = if is_pid(server_pid), do: fn -> stop_server(server_pid) end
 
-    case WebSocket.start_link(ws_url) do
+    case CDPClient.connect_ws_linked(ws_url) do
       {:ok, ws_pid} ->
         case Acquire.fresh_ws(ws_pid, extra_driver_state, on_close) do
           {:ok, acquired} ->

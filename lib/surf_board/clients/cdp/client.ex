@@ -135,6 +135,64 @@ defmodule SurfBoard.Clients.CDP.Client do
     end
   end
 
+  @doc """
+  Opens a WebSocket to `ws_url` and enables target discovery on the
+  BROWSER session (no sessionId) — needed once per connection so
+  `Target.detachedFromTarget` reaches every session subsequently
+  attached over it. Unlinked (`WebSocket.start/1`, not `start_link/1`)
+  so the connection's lifetime is tied to whoever holds `ws_pid`
+  explicitly, not to the calling process crashing.
+  """
+  @spec connect_ws(String.t()) :: {:ok, pid} | {:error, term}
+  def connect_ws(ws_url) when is_binary(ws_url) do
+    with {:ok, pid} <- SurfBoard.Transport.WebSocket.start(ws_url),
+         {:ok, _} <-
+           SurfBoard.Transport.WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{
+             discover: true
+           }) do
+      {:ok, pid}
+    end
+  end
+
+  @doc """
+  Opens a WebSocket to `ws_url`, linked to the calling process — no
+  `Target.setDiscoverTargets` step, unlike `connect_ws/1`: this is for
+  a connection scoped to one session (no other session's target
+  detachment to listen for), where a crash of the caller should take
+  the connection down with it rather than leaking it.
+  """
+  @spec connect_ws_linked(String.t()) :: {:ok, pid} | {:error, term}
+  def connect_ws_linked(ws_url) when is_binary(ws_url) do
+    SurfBoard.Transport.WebSocket.start_link(ws_url)
+  end
+
+  @doc """
+  Subscribes `subscriber` to console/exception events on `ws_pid` for
+  `browsing_context` — what a driver's `post_start/2` forwards to a
+  test caller's mailbox so `Browser.LogChecker.check_logs!` can drain
+  them after each operation.
+  """
+  @spec subscribe_console_events(pid, String.t() | nil, pid) :: :ok
+  def subscribe_console_events(ws_pid, browsing_context, subscriber) do
+    _ =
+      SurfBoard.Transport.WebSocket.subscribe(
+        ws_pid,
+        "Runtime.consoleAPICalled",
+        browsing_context,
+        subscriber
+      )
+
+    _ =
+      SurfBoard.Transport.WebSocket.subscribe(
+        ws_pid,
+        "Runtime.exceptionThrown",
+        browsing_context,
+        subscriber
+      )
+
+    :ok
+  end
+
   # ----- Page domain enables -----
 
   @doc """
