@@ -80,6 +80,61 @@ defmodule SurfBoard.Clients.CDP.Client do
     Protocol.cdp_cast(session, method, params, send_opts(session))
   end
 
+  # ----- Session/connection lifecycle -----
+  #
+  # Raw connection-teardown/attach primitives used by drivers during
+  # session bring-up and teardown (not by Browser/Element — those go
+  # through Protocol.stop/1). Callers pass a raw `ws_pid` rather than a
+  # `%Session{}` because these run before a session struct exists
+  # (attach) or after its actor has already stopped (teardown).
+
+  @doc """
+  Teardown that closes the WebSocket. Use when the session OWNS
+  its WS (a per-session connection).
+  """
+  @spec close_ws(pid) :: :ok
+  def close_ws(ws_pid) when is_pid(ws_pid) do
+    try do
+      SurfBoard.Transport.WebSocket.close(ws_pid)
+    catch
+      :exit, _ -> :ok
+    end
+
+    :ok
+  end
+
+  @doc """
+  Teardown that disposes a Chrome BrowserContext on a shared WS.
+  """
+  @spec dispose_browser_context(pid, String.t()) :: :ok
+  def dispose_browser_context(ws_pid, ctx_id)
+      when is_pid(ws_pid) and is_binary(ctx_id) do
+    try do
+      SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.disposeBrowserContext", %{
+        browserContextId: ctx_id
+      })
+    catch
+      :exit, _ -> :ok
+    end
+
+    :ok
+  end
+
+  @doc """
+  Calls `attachToTarget(targetId, flatten: true)` on `ws_pid` and
+  returns `{:ok, sessionId}`.
+  """
+  @spec attach_to_target(pid, String.t()) :: {:ok, String.t()} | {:error, term}
+  def attach_to_target(ws_pid, target_id) do
+    case SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.attachToTarget", %{
+           targetId: target_id,
+           flatten: true
+         }) do
+      {:ok, %{"sessionId" => sid}} -> {:ok, sid}
+      err -> err
+    end
+  end
+
   # ----- Page domain enables -----
 
   @doc """

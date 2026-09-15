@@ -7,98 +7,52 @@ defmodule SurfBoard do
 
   SurfBoard supports the following options:
 
-  * `:driver` - Which driver `start_session/1` uses when no `:driver` opt
-    is given. Defaults to `:chrome_cdp`.
   * `:screenshot_dir` - The directory to store screenshots.
   * `:screenshot_on_failure` - if SurfBoard should take screenshots on test failures (defaults to `false`).
   * `:max_wait_time` - The amount of time that SurfBoard should wait to find an element on the page. (defaults to `3_000`)
   * `:js_errors` - if SurfBoard should re-throw JavaScript errors in elixir (defaults to true).
   * `:js_logger` - IO device where JavaScript console logs are written to. Defaults to :stdio. This option can also be set to a file or any other io device. You can disable JavaScript console logging by setting this to `nil`.
-  """
 
-  use Application
+  ## Starting a session
 
-  alias SurfBoard.Session
-  alias SurfBoard.Transport.Protocol
+  There's no central dispatcher — call the driver module you want directly:
 
-  @doc false
-  def start(_type, _args) do
-    SurfBoard.Transport.Timing.setup()
+  ```
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session()
+  ```
 
-    # No driver's default launcher is started here — a session's driver
-    # isn't known until `start_session/1` is called, so its launcher
-    # starts lazily then (see `ensure_driver_started/1`). Nothing about
-    # booting the application should depend on Chrome/Lightpanda being
-    # installed.
-    children = [
-      {DynamicSupervisor, name: SurfBoard.DriverSupervisor, strategy: :one_for_one},
-      {SurfBoard.Transport.SessionStore, [name: SurfBoard.Transport.SessionStore]}
-    ]
+  Each driver is a self-contained OTP module: `SurfBoard.Driver.ChromeCDP`,
+  `SurfBoard.Driver.ChromeBiDi`, `SurfBoard.Driver.Lightpanda`. Calling
+  `start_session/1` against a driver that hasn't started its own default
+  instance yet starts one lazily on first use (for `ChromeCDP`/`Lightpanda`)
+  — nothing about loading this library depends on Chrome/Lightpanda being
+  installed, only on actually calling `start_session/1`.
 
-    opts = [strategy: :one_for_one, name: SurfBoard.Supervisor]
-    Supervisor.start_link(children, opts)
-  end
+  `ChromeBiDi` is the one exception: it needs its sidecar process
+  (`Driver.ChromeBiDi.default_child_spec/0`) started under your own
+  supervision tree first, since there's no implicit "start on first call"
+  hook for it — see that module's docs.
 
-  # Starts `mod`'s default launcher under `SurfBoard.DriverSupervisor`
-  # on first use, idempotently — a second call for an already-running
-  # driver is a no-op. Runs `mod.validate/0` first so a missing
-  # dependency (Chrome/Lightpanda not installed, no remote_url
-  # configured, ...) surfaces its own clear DependencyError instead of
-  # spinning up a launcher that's just going to fail lower down anyway.
-  # Runs `mod.cleanup_stale_sessions/0` once, right after a fresh start.
-  defp ensure_driver_started(mod) do
-    with :ok <- mod.validate() do
-      case DynamicSupervisor.start_child(SurfBoard.DriverSupervisor, mod.default_launcher_spec()) do
-        {:ok, _pid} ->
-          mod.cleanup_stale_sessions()
-          :ok
+  To own your own instance instead of using a driver's shared default
+  (e.g. a test suite launching and owning a second, independent Chrome):
 
-        {:error, {:already_started, _pid}} ->
-          :ok
+  ```
+  {:ok, _sup} = SurfBoard.Driver.ChromeCDP.start_link(name: MyApp.TestChrome)
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(MyApp.TestChrome, [])
+  ```
 
-        # A driver whose default launcher starts a fixed-named child
-        # (e.g. ChromeBiDi's chromium-bidi sidecar) reports a second
-        # concurrent start attempt this way rather than as a flat
-        # :already_started — the DynamicSupervisor call for the launcher
-        # itself succeeds far enough to spawn the child before the
-        # child's own name clash unwinds the start. Treat it the same as
-        # :already_started: some other call already has (or is bringing
-        # up) this driver's launcher.
-        {:error, {:shutdown, {:failed_to_start_child, _child, {:already_started, _pid}}}} ->
-          :ok
+  Or connect to a browser you don't manage:
 
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end
-  end
+  ```
+  {:ok, launcher} = SurfBoard.Driver.ChromeCDP.connect(url: "ws://localhost:9222/...")
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(launcher, [])
+  ```
 
-  @type reason :: any
-  @type start_session_opts :: {atom, any}
+  ## Session options
 
-  @doc """
-  Starts a browser session.
+  Every driver's `start_session/1` (or `/2` for the ones that take an
+  explicit instance) accepts:
 
-  ## Options
-
-    * `:driver` — which driver runs this session (`:lightpanda`,
-      `:chrome_cdp`, `:chrome`). Defaults to the configured driver.
-    * `:connection` — Lightpanda only: how this session gets its
-      transport. `:shared` (reuse the already-running shared Lightpanda
-      binary), `:isolated` (spawn a private binary for just this
-      session), or `:external` (connect to a Lightpanda instance this
-      driver doesn't manage — requires `:ws_url`). Omit to auto-detect
-      (prefers `:external` if `:ws_url` is given, else `:shared` if a
-      shared binary is already running, else `:isolated`). An explicit
-      value that isn't actually available returns `{:error, reason}`
-      rather than silently falling back — see
-      `SurfBoard.Driver.Lightpanda.start_session/1`. Chrome CDP has
-      the analogous `:shared`/`:external` choice too, but it's fixed
-      once for the life of the BEAM (the default launcher starts lazily
-      on first use and is never restarted per session) — set it via
-      `config :surf_board, :chrome_cdp, connection: :shared | :external`,
-      not as a `start_session/1` opt. See
-      `SurfBoard.Driver.ChromeCDP.default_launcher_spec/0`.
     * `:user_agent` — replace this session's User-Agent. Chrome only; see
       below.
     * `:window_size` — `[width: w, height: h]`.
@@ -108,6 +62,9 @@ defmodule SurfBoard do
     * `:metadata` — BEAM sandbox metadata, appended to the User-Agent so
       DB-backed tests can find the sandbox owner. Composes with a custom
       User-Agent, which becomes the base.
+
+  `Driver.Lightpanda.start_session/1` additionally accepts `:connection`
+  (`:shared`/`:isolated`/`:external`) — see that module's docs.
 
   ## Setting the User-Agent
 
@@ -121,8 +78,8 @@ defmodule SurfBoard do
   *different* User-Agents at the same time (mobile vs desktop, say):
 
   ```
-  {:ok, mobile} = SurfBoard.start_session(driver: :chrome_cdp, user_agent: "…iPhone…")
-  {:ok, desktop} = SurfBoard.start_session(driver: :chrome_cdp)
+  {:ok, mobile} = SurfBoard.Driver.ChromeCDP.start_session(user_agent: "…iPhone…")
+  {:ok, desktop} = SurfBoard.Driver.ChromeCDP.start_session()
   ```
 
   That option is Chrome-only. Lightpanda sets its User-Agent per process
@@ -142,13 +99,13 @@ defmodule SurfBoard do
   @message_list Query.css(".messages")
 
   test "That multiple sessions work" do
-    {:ok, user1} = SurfBoard.start_session
+    {:ok, user1} = SurfBoard.Driver.ChromeCDP.start_session()
     user1
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello there!")
     |> click(@share_button)
 
-    {:ok, user2} = SurfBoard.start_session
+    {:ok, user2} = SurfBoard.Driver.ChromeCDP.start_session()
     user2
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello yourself")
@@ -159,46 +116,32 @@ defmodule SurfBoard do
   end
   ```
   """
-  @spec start_session([start_session_opts]) :: {:ok, Session.t()} | {:error, reason}
-  def start_session(opts \\ []) do
-    # Each Transport actor monitors its owner and runs cleanup in
-    # terminate/2 when the owner dies, so we don't need on_exit hooks
-    # or SessionStore monitoring for crashed-test cleanup.
-    opts = Keyword.delete(opts, :__test_api__)
 
-    opts
-    |> do_start_session()
-    |> stash_session_opts(opts)
-  end
+  use Application
 
-  # `:base_url` and `:max_wait_time` govern later calls rather than session
-  # startup, so they ride on the session — that way an application's own
-  # session isn't governed by whatever the test suite configured globally.
-  @session_scoped_opts [:base_url, :max_wait_time]
+  alias SurfBoard.Session
+  alias SurfBoard.Transport.Protocol
 
-  defp stash_session_opts({:ok, session}, opts) do
-    {:ok, %{session | session_opts: Keyword.take(opts, @session_scoped_opts)}}
-  end
+  @doc false
+  def start(_type, _args) do
+    SurfBoard.Transport.Timing.setup()
 
-  defp stash_session_opts(other, _opts), do: other
+    children = [
+      {SurfBoard.Transport.SessionStore, [name: SurfBoard.Transport.SessionStore]}
+    ]
 
-  defp do_start_session(opts) do
-    mod = opts |> resolve_driver() |> driver_module_for()
-
-    with :ok <- ensure_driver_started(mod) do
-      mod.start_session(opts)
-    end
+    opts = [strategy: :one_for_one, name: SurfBoard.Supervisor]
+    Supervisor.start_link(children, opts)
   end
 
   @doc """
   Ends a browser session.
   """
-  @spec end_session(Session.t()) :: :ok | {:error, reason}
+  @spec end_session(Session.t()) :: :ok | {:error, any}
   def end_session(%Session{} = session) do
-    # Every spec's end_session/1 was identical (Protocol.stop/1, no
-    # spec-specific teardown) — call it directly so ending a session
-    # never needs to look up a spec module, symmetric with
-    # Launcher.start_session/2 not needing one either.
+    # Every driver's end_session/1 was identical (Protocol.stop/1, no
+    # driver-specific teardown) — call it directly so ending a session
+    # never needs to know which driver started it.
     result = Protocol.stop(session)
 
     # Drain any in-flight WebSocket events that arrived after session
@@ -219,26 +162,6 @@ defmodule SurfBoard do
   @doc false
   def stop(_state) do
     :ok
-  end
-
-  @doc false
-  def driver_module_for(driver) do
-    case driver do
-      :lightpanda -> SurfBoard.Driver.Lightpanda
-      :chrome_cdp -> SurfBoard.Driver.ChromeCDP
-      :chrome -> SurfBoard.Driver.ChromeBiDi
-      other -> raise ArgumentError, "unknown SurfBoard driver: #{inspect(other)}"
-    end
-  end
-
-  @doc """
-  Resolves the driver for a session. Explicit `opts[:driver]` wins;
-  otherwise `config :surf_board, driver: ...`, defaulting to `:chrome_cdp`.
-  """
-  def resolve_driver(opts \\ []) do
-    Keyword.get_lazy(opts, :driver, fn ->
-      Application.get_env(:surf_board, :driver, :chrome_cdp)
-    end)
   end
 
   @doc false

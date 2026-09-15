@@ -2,8 +2,6 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
   use ExUnit.Case, async: false
 
   alias SurfBoard.Driver.BiDi.Server, as: BidiServer
-  alias SurfBoard.Session
-  alias SurfBoard.Transport.Strategy.BiDi
   alias SurfBoard.Transport.Protocol
 
   @moduletag :browser
@@ -160,21 +158,6 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
   end
 
   defp start(base_url, extra \\ []) do
-    session_struct = %Session{
-      id: "v2-bidi-test",
-      url: "",
-      spec_module: :test,
-      capabilities: %{}
-    }
-
-    {:ok, launcher} =
-      SurfBoard.Launcher.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
-
-    BiDi.start_session(
-      Keyword.merge(
-        [launcher: launcher, session_struct: session_struct],
-        extra
-      )
-    )
+    SurfBoard.Driver.ChromeBiDi.start_session(Keyword.merge([base_url: base_url], extra))
   end
 end

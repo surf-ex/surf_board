@@ -1,38 +1,34 @@
 defmodule SurfBoard.Driver.ChromeBiDi do
   @moduledoc false
 
-  # Chrome over WebDriver-BiDi, against a chromium-bidi Node sidecar.
+  # Chrome over WebDriver-BiDi, against a chromium-bidi Node sidecar:
+  # one POST /session -> one WS -> one Chrome. No cached connection
+  # state (unlike ChromeCDP's shared ws_pid) — each session does its
+  # own `POST /session`, so there's no "own a persistent process, many
+  # sessions reuse it" shape to give a `start_link/1` for, and no
+  # worker needed beyond the sidecar itself. `start_session/2` is
+  # inlined directly from the old `Strategy.BiDi` (genuinely only ever
+  # used by this driver, unlike the CDP bring-up shared with
+  # Lightpanda — see `SurfBoard.Clients.CDP.SessionBringUp`).
   #
-  # One entry point to a connection, unlike ChromeCDP/Lightpanda's two:
-  # `Strategy.BiDi` caches no connection state on its launcher (each
-  # session does its own `POST /session` — see `Strategy.BiDi`'s
-  # moduledoc), so there's no "own a persistent process, many sessions
-  # reuse it" shape to give a `start_link/1` for. Every BiDi launcher is
-  # the `connect/1` shape — dial a `base_url` — whether that url points
-  # at a chromium-bidi sidecar you launched yourself or the one this
-  # driver manages.
-  #
-  #   {:ok, launcher} = Driver.ChromeBiDi.connect(base_url: "http://localhost:12345")
-  #   {:ok, session} = Launcher.start_session(launcher)
+  #   {:ok, session} = Driver.ChromeBiDi.start_session(base_url: "http://localhost:12345")
   #
   # `Supervised` owns the chromium-bidi Node sidecar (`BiDi.Server`) —
-  # this driver's default launcher spec, started once, lazily, under
-  # `SurfBoard.DriverSupervisor`. Every session still connects via the
-  # plain `connect/1` shape above (transient, no state to keep); the
-  # sidecar just needs somewhere to live so it survives across sessions
-  # instead of respawning per call.
-
-  @behaviour SurfBoard.Driver
+  # this driver's default instance, started once, lazily, under
+  # whichever supervisor the application chooses (see
+  # `default_child_spec/0`). The sidecar just needs somewhere to live
+  # so it survives across sessions instead of respawning per call.
 
   alias SurfBoard.Launcher.Metadata
   alias SurfBoard.Launcher.UserAgent
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
   alias SurfBoard.Driver.BiDi.Server, as: BidiServer
   alias SurfBoard.Driver.Spec
-  alias SurfBoard.Transport.WebSocketClient
-  alias SurfBoard.Launcher
+  alias SurfBoard.Transport.Strategy.BiDi.Handshake
+  alias SurfBoard.Transport.Actor
   alias SurfBoard.Transport.Protocol
-  alias SurfBoard.Transport.Strategy.BiDi, as: BiDiStrategy
+  alias SurfBoard.Clients.BiDi.Wire
+  alias SurfBoard.Transport.WebSocketClient
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
                      "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
@@ -42,7 +38,6 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   # grant_permissions: nil — no real BiDi permissions implementation
   # exists yet). Computed at runtime, not in a module attribute — see
   # Driver.ChromeCDP.spec/0's comment for why.
-  @impl SurfBoard.Driver
   def spec do
     struct!(
       Spec,
@@ -57,10 +52,8 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   defmodule Supervised do
     @moduledoc false
     # Owns the chromium-bidi Node sidecar (`BiDi.Server`) as its one
-    # child — same pattern as `ChromeCDP.Supervised`, except there's no
-    # `Launcher` child here: `Strategy.BiDi` caches no connection state,
-    # so every session dials the sidecar fresh via `connect/1` rather
-    # than reusing a persistent one.
+    # child — no worker child here: session start caches nothing (see
+    # the moduledoc), so there's nothing for a second child to hold.
     use Supervisor
 
     alias SurfBoard.Driver.ChromeBiDi
@@ -83,31 +76,82 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   @doc false
   def bidi_server_name(name), do: Module.concat(name, BidiServer)
   @doc false
-  def default_name, do: __MODULE__.DefaultLauncher
+  def default_name, do: __MODULE__.Default
 
   @doc """
-  Connects to a chromium-bidi HTTP endpoint, wrapped in a `Launcher` —
-  no process to spawn, no Supervisor (nothing to own; see the
-  moduledoc). `:base_url` is required. Pass `:name` to register the
-  launcher; omitted, you get an anonymous pid back.
+  A child spec for this driver's default instance (the chromium-bidi
+  sidecar), meant to be started once, under whatever supervisor the
+  application chooses.
   """
-  @spec connect(keyword) :: Agent.on_start()
-  def connect(opts) do
-    launcher_opts =
-      [
-        strategy: BiDiStrategy,
-        config: %BiDiStrategy.Config{base_url: Keyword.fetch!(opts, :base_url)},
-        build_template: Keyword.get(opts, :build_template, &build_template/1),
-        post_start: Keyword.get(opts, :post_start, &post_start/2)
-      ] ++ Keyword.take(opts, [:name])
+  def default_child_spec do
+    name = default_name()
 
-    Launcher.start_link(launcher_opts)
+    %{
+      id: name,
+      start: {Supervised, :start_link, [{name, []}]},
+      type: :supervisor
+    }
+  end
+
+  @doc """
+  Checks whether this driver can actually work — Chrome is installed
+  (the sidecar drives a real Chrome under the hood). Returns
+  `:ok | {:error, %SurfBoard.DependencyError{}}`.
+  """
+  @spec validate() :: :ok | {:error, SurfBoard.DependencyError.t()}
+  def validate do
+    if match?({:ok, _}, SurfBoard.Launcher.BrowserPaths.chrome_path()) do
+      :ok
+    else
+      {:error,
+       SurfBoard.DependencyError.exception(
+         "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
+       )}
+    end
+  end
+
+  @doc """
+  Default capabilities passed when starting a Chrome session via BiDi.
+  """
+  def default_capabilities do
+    %{
+      browserName: "chrome",
+      unhandledPromptBehavior: "ignore"
+    }
+  end
+
+  # ----- Session lifecycle -----
+
+  @doc """
+  Starts a new BiDi session. `:base_url` (the chromium-bidi server's
+  HTTP base URL) is resolved via `resolve_base_url/1` if not given
+  directly — a caller-supplied one wins; otherwise this driver's own
+  default sidecar (must already be started — see
+  `default_child_spec/0`).
+  """
+  @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
+  def start_session(opts \\ []) do
+    base_url = resolve_base_url(opts)
+    caps = Keyword.get(opts, :capabilities)
+    handshake_opts = if caps, do: [capabilities: caps], else: []
+    template = build_template(opts)
+    teardown_fun = Keyword.get(opts, :teardown_fun, fn _ -> :ok end)
+    owner = Keyword.get(opts, :owner, self())
+
+    # chromium-bidi's session.subscribe can transiently time out on
+    # slow runners. Retry the WHOLE handshake -> Actor.start_link ->
+    # initial-context block on `{:error, {:subscribe_failed, _}}` so
+    # tests aren't held responsible for protocol-level flakes.
+    with {:ok, session} <-
+           start_with_retry(base_url, handshake_opts, template, teardown_fun, owner, 4) do
+      post_start(session, opts)
+    end
   end
 
   @doc """
   Resolves the `base_url` a session should connect to: a caller-given
   one wins; otherwise the sidecar's own WS URL (`:launcher_name`,
-  defaulting to the default launcher), converted to its HTTP
+  defaulting to the default instance), converted to its HTTP
   equivalent (they share host/port; chromium-bidi serves both).
   """
   @spec resolve_base_url(keyword) :: String.t()
@@ -146,74 +190,160 @@ defmodule SurfBoard.Driver.ChromeBiDi do
       bidi_ws_url_with_retry(name, retries_left - 1)
   end
 
-  @impl SurfBoard.Driver
-  def default_launcher_spec do
-    name = default_name()
+  defp start_with_retry(base_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
+    with {:ok, ws_url} <- Handshake.post_session(base_url, handshake_opts),
+         {:ok, socket_pid} <- WebSocketClient.start_link(ws_url),
+         {:ok, session} <- start_actor(socket_pid, session_struct, teardown_fun, owner),
+         :ok <- subscribe_load_events(socket_pid, session.pid),
+         {:ok, context_id} <- find_or_create_initial_context(session),
+         :ok <- install_bootstrap(session) do
+      session = %{session | browsing_context: context_id, ws_pid: socket_pid}
 
-    %{
-      id: name,
-      start: {Supervised, :start_link, [{name, []}]},
-      type: :supervisor
-    }
-  end
+      # Mirror the actor's session-struct view so subsequent reads via
+      # :get_session also see the populated browsing_context — ctx/1
+      # depends on this being correct.
+      :ok = GenServer.call(session.pid, {:update_browsing_context, context_id, nil})
 
-  @impl SurfBoard.Driver
-  def validate do
-    if match?({:ok, _}, SurfBoard.Launcher.BrowserPaths.chrome_path()) do
-      :ok
+      {:ok, session}
     else
-      {:error,
-       SurfBoard.DependencyError.exception(
-         "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
-       )}
+      {:error, {:subscribe_failed, _}} when retries > 0 ->
+        Process.sleep(250)
+
+        start_with_retry(
+          base_url,
+          handshake_opts,
+          session_struct,
+          teardown_fun,
+          owner,
+          retries - 1
+        )
+
+      {:error, {:timeout, {GenServer, :call, _}}} when retries > 0 ->
+        Process.sleep(250)
+
+        start_with_retry(
+          base_url,
+          handshake_opts,
+          session_struct,
+          teardown_fun,
+          owner,
+          retries - 1
+        )
+
+      other ->
+        other
     end
   end
 
-  @impl SurfBoard.Driver
-  def cleanup_stale_sessions, do: :ok
-
-  @doc """
-  Default capabilities passed when starting a Chrome session via BiDi.
-  """
-  def default_capabilities do
-    %{
-      browserName: "chrome",
-      unhandledPromptBehavior: "ignore"
+  defp start_actor(socket_pid, session_struct, teardown_fun, owner) do
+    config = %Actor.Config{
+      socket: {:remote, WebSocketClient, socket_pid},
+      load: :wake_once,
+      wire: Wire
     }
-  end
 
-  # ----- Session lifecycle -----
+    case Actor.start_link(
+           config: config,
+           init_fun: fn -> {:ok, session_struct} end,
+           teardown_fun: teardown_fun,
+           owner: owner
+         ) do
+      {:ok, session} ->
+        {:ok, session}
 
-  @impl SurfBoard.Driver
-  def start_session(opts \\ []) do
-    {launcher, cleanup} = resolve_launcher(opts)
-    result = Launcher.start_session(launcher, opts)
-    cleanup.()
-    result
-  end
+      {:error, reason} ->
+        # The actor never came up to own socket_pid's lifecycle —
+        # nothing else will close it, so do it here rather than leak
+        # a WebSocketClient/chromium-bidi connection per failed retry.
+        try do
+          WebSocketClient.close(socket_pid)
+        catch
+          :exit, _ -> :ok
+        end
 
-  # An explicit `:launcher` opt uses that started launcher as-is (no
-  # cleanup — it's the caller's own, independently-started launcher; it
-  # already carries whatever hooks it was started with). Otherwise
-  # build a transient, unnamed one via `connect/1` from
-  # opts[:base_url] (or the default sidecar, started lazily under
-  # `default_launcher_spec/0`), and tear it down again once
-  # start_session/1 returns — `Strategy.BiDi` caches no connection
-  # state on its launcher (each session does its own POST /session),
-  # so nothing is lost by not keeping it around.
-  defp resolve_launcher(opts) do
-    case Keyword.get(opts, :launcher) do
-      nil ->
-        {:ok, launcher} = connect(base_url: resolve_base_url(opts))
-        {launcher, fn -> Agent.stop(launcher) end}
-
-      launcher ->
-        {launcher, fn -> :ok end}
+        {:error, reason}
     end
   end
 
-  @doc false
-  def build_template(opts) do
+  # Subscribe load milestones + bootstrap channel + log entries in a
+  # single server-side session.subscribe call. WSC-side forward-to-
+  # this-pid is set up for the events the actor needs to consume
+  # (loads + script.message); log.entryAdded is forwarded to other
+  # subscribers (e.g. the test process for LogChecker).
+  defp subscribe_load_events(socket_pid, actor_pid) do
+    events = [
+      "browsingContext.load",
+      "browsingContext.domContentLoaded",
+      "script.message",
+      "log.entryAdded",
+      # Supplies the document's HTTP status for `Browser.status/1`.
+      "network.responseCompleted",
+      # Lets Wire.handle_event/3 fail every pending call immediately
+      # if this session's context disappears, instead of each one
+      # timing out on its own — see Clients.BiDi.Wire's moduledoc.
+      "browsingContext.contextDestroyed"
+    ]
+
+    Enum.each(events, fn ev ->
+      WebSocketClient.subscribe(socket_pid, ev, :global, actor_pid)
+    end)
+
+    # The first session.subscribe after browser launch can take a
+    # while on slow runners (GHA Linux) because chromium-bidi's Mapper
+    # is still settling. 12s lets us retry up to 4× (start_with_retry)
+    # and still fit inside ExUnit's default 60s test timeout.
+    # Subsequent subscribes are fast (<200ms) so the actual cap rarely
+    # fires.
+    timeout = Application.get_env(:surf_board, :bidi_subscribe_timeout_ms, 12_000)
+
+    case WebSocketClient.send_command(
+           socket_pid,
+           "session.subscribe",
+           %{"events" => events},
+           timeout
+         ) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, {:subscribe_failed, reason}}
+    end
+  end
+
+  # Chrome launches with a default about:blank tab. Reuse it instead
+  # of creating a sibling — otherwise window_handles sees TWO tabs at
+  # session start (the leftover plus our newly-created one), which
+  # confuses tests that check tab counts.
+  defp find_or_create_initial_context(session) do
+    case Protocol.cdp_send(session, "browsingContext.getTree", %{}, []) do
+      {:ok, %{"contexts" => [%{"context" => existing} | _]}} when is_binary(existing) ->
+        {:ok, existing}
+
+      _ ->
+        case Protocol.cdp_send(session, "browsingContext.create", %{"type" => "tab"}, []) do
+          {:ok, %{"context" => context_id}} -> {:ok, context_id}
+          err -> err
+        end
+    end
+  end
+
+  # Install the shared SurfBoard.Clients.Bootstrap as a BiDi preload script.
+  # The script receives `__surfboard` as a channel callback parameter;
+  # any payload it sends comes back as a `script.message` event that
+  # the SessionActor decodes into find / page_ready dispatches.
+  defp install_bootstrap(session) do
+    fn_decl = SurfBoard.Clients.Bootstrap.bidi_preload(session.live_view_aware?)
+    channel_arg = [%{"type" => "channel", "value" => %{"channel" => "__surfboard"}}]
+
+    case Protocol.cdp_send(
+           session,
+           "script.addPreloadScript",
+           %{"functionDeclaration" => fn_decl, "arguments" => channel_arg},
+           []
+         ) do
+      {:ok, _} -> :ok
+      err -> err
+    end
+  end
+
+  defp build_template(opts) do
     %SurfBoard.Session{
       id: "bidi-#{System.unique_integer([:positive])}",
       url: "about:blank",
@@ -226,8 +356,7 @@ defmodule SurfBoard.Driver.ChromeBiDi do
     }
   end
 
-  @doc false
-  def post_start(session, opts) do
+  defp post_start(session, opts) do
     caller = Keyword.get(opts, :owner, self())
     _ = WebSocketClient.subscribe(session.ws_pid, "log.entryAdded", :global, caller)
 
@@ -250,7 +379,12 @@ defmodule SurfBoard.Driver.ChromeBiDi do
       _ = BiDiClient.set_viewport(session, window_size[:width], window_size[:height])
     end
 
-    {:ok, session}
+    # `:base_url`/`:max_wait_time` govern later calls rather than
+    # session startup, so they ride on the session — that way an
+    # application's own session isn't governed by whatever a test
+    # suite configured globally.
+    session_opts = Keyword.take(opts, [:base_url, :max_wait_time])
+    {:ok, %{session | session_opts: session_opts}}
   end
 
   # ----- Per-spec overrides -----

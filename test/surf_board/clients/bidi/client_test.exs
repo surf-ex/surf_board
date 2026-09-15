@@ -2,9 +2,7 @@ defmodule SurfBoard.Clients.BiDi.ClientTest do
   use ExUnit.Case, async: false
 
   alias SurfBoard.Driver.BiDi.Server, as: BidiServer
-  alias SurfBoard.Session
   alias SurfBoard.Clients.BiDi.Client, as: BiDiClient
-  alias SurfBoard.Transport.Strategy.BiDi
 
   @moduletag :browser
 
@@ -31,12 +29,7 @@ defmodule SurfBoard.Clients.BiDi.ClientTest do
   end
 
   defp start(base_url) do
-    session_struct = %Session{id: "bc-test", url: "", spec_module: :test, capabilities: %{}}
-
-    {:ok, launcher} =
-      SurfBoard.Launcher.start_link(strategy: BiDi, config: %BiDi.Config{base_url: base_url})
-
-    BiDi.start_session(launcher: launcher, session_struct: session_struct)
+    SurfBoard.Driver.ChromeBiDi.start_session(base_url: base_url)
   end
 
   defp data_url(html), do: "data:text/html;charset=utf-8," <> URI.encode(html)

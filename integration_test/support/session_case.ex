@@ -11,14 +11,27 @@ defmodule SurfBoard.Integration.SessionCase do
 
   setup :inject_test_session
 
+  # Test-suite-owned driver-atom → module resolution — the library
+  # itself has no such table any more (each driver is called directly,
+  # by module, everywhere except here, where a `@moduletag driver:
+  # ...` on the test case still needs to pick one at runtime).
+  @drivers %{
+    chrome_cdp: SurfBoard.Driver.ChromeCDP,
+    chrome: SurfBoard.Driver.ChromeBiDi,
+    lightpanda: SurfBoard.Driver.Lightpanda
+  }
+
   @doc """
-  Starts a test session with the default opts for the given driver.
+  Starts a test session against `driver` (an atom — `:chrome_cdp`,
+  `:chrome`, or `:lightpanda`) with the given opts.
   """
-  def start_test_session(opts \\ []) do
+  def start_test_session(driver, opts \\ []) do
+    mod = Map.fetch!(@drivers, driver)
+
     # A little retry room for BiDi's chromium-bidi singleton to settle
     # on a slow first boot — same shape as wallabidi's own integration
     # harness.
-    retry(4, fn -> SurfBoard.start_session(opts) end)
+    retry(4, fn -> mod.start_session(opts) end)
   end
 
   @doc """
@@ -29,8 +42,8 @@ defmodule SurfBoard.Integration.SessionCase do
   def inject_test_session(%{skip_test_session: true}), do: :ok
 
   def inject_test_session(context) do
-    opts = if driver = context[:driver], do: [driver: driver], else: []
-    {:ok, session} = start_test_session(opts)
+    driver = context[:driver] || :chrome_cdp
+    {:ok, session} = start_test_session(driver, [])
 
     on_exit(fn ->
       try do

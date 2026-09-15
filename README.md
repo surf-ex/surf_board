@@ -9,7 +9,7 @@ or a GenServer — screen scraping, PDF rendering, automating a third-party site
 that needs a real (or Lightpanda) browser without a testing framework attached.
 
 ```elixir
-{:ok, session} = SurfBoard.start_session(driver: :chrome_cdp)
+{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session()
 
 session
 |> SurfBoard.Browser.visit("https://example.com")
@@ -29,11 +29,11 @@ SurfBoard.end_session(session)
 ## LiveView awareness
 
 SurfBoard has no opinion on Phoenix LiveView by default — clicks and navigation behave the
-same on any page. Pass `live_view_aware: true` to `start_session/1` for sessions that need to
-wait on LiveView's `phx-*` patch lifecycle (e.g. testing a LiveView app):
+same on any page. Pass `live_view_aware: true` to a driver's `start_session/1` for sessions
+that need to wait on LiveView's `phx-*` patch lifecycle (e.g. testing a LiveView app):
 
 ```elixir
-{:ok, session} = SurfBoard.start_session(driver: :chrome_cdp, live_view_aware: true)
+{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(live_view_aware: true)
 ```
 
 ## Installation

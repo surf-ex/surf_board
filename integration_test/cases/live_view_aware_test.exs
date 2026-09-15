@@ -18,7 +18,7 @@ defmodule SurfBoard.Integration.LiveViewAwareTest do
   @moduletag skip_test_session: true
 
   test "live_view_aware: false (default) never installs the onPatchEnd hook, even on a LiveView-shaped page" do
-    {:ok, session} = start_test_session(driver: :chrome_cdp)
+    {:ok, session} = start_test_session(:chrome_cdp)
 
     visit(session, "/fake_liveview.html")
     # Give detectReady()'s DOMContentLoaded/requestAnimationFrame loop a
@@ -33,7 +33,7 @@ defmodule SurfBoard.Integration.LiveViewAwareTest do
   end
 
   test "live_view_aware: true installs the onPatchEnd hook on a LiveView-shaped page" do
-    {:ok, session} = start_test_session(driver: :chrome_cdp, live_view_aware: true)
+    {:ok, session} = start_test_session(:chrome_cdp, live_view_aware: true)
 
     visit(session, "/fake_liveview.html")
     Process.sleep(300)
@@ -46,7 +46,7 @@ defmodule SurfBoard.Integration.LiveViewAwareTest do
   end
 
   test "live_view_aware: true on a PLAIN (non-LiveView-shaped) page never installs the hook" do
-    {:ok, session} = start_test_session(driver: :chrome_cdp, live_view_aware: true)
+    {:ok, session} = start_test_session(:chrome_cdp, live_view_aware: true)
 
     visit(session, "/index.html")
     Process.sleep(300)

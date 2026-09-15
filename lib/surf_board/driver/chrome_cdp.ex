@@ -1,64 +1,74 @@
 defmodule SurfBoard.Driver.ChromeCDP do
   @moduledoc false
 
-  # Chrome over CDP — a `Strategy.SharedWS`-backed launcher (one shared
-  # WebSocket for every session started against it), per-session
-  # BrowserContext + Target + sessionId for routing.
+  # Chrome over CDP: ONE WebSocket per running ChromeCDP process,
+  # shared across every session started against it via CDP's
+  # flat-session protocol. This module IS the launcher — a GenServer
+  # holding the connection config plus a lazily-connected, cached
+  # ws_pid — not a generic `Launcher` configured with a `Strategy`.
+  # There's exactly one driver that behaves this way, so there's
+  # nothing to share the shape with; see the moduledoc note in
+  # `SurfBoard.Clients.CDP.SessionBringUp` for the one piece of CDP
+  # session bring-up that genuinely is shared (with Lightpanda's
+  # isolated-process connection mode).
   #
-  # Two ways to get a connection, matched to how different the two cases
-  # actually are underneath — not one function with a mode flag hiding
-  # that difference:
+  # Each `start_session/2`:
+  #
+  #   1. Fetches the shared ws_pid from this process's own state
+  #      (lazily connecting on first use, caching it for every session
+  #      that follows — see `handle_call/3`'s `:ws_pid` clause).
+  #   2. Creates a fresh BrowserContext on that shared WS.
+  #   3. Creates a Target inside that BrowserContext (about:blank).
+  #   4. Attaches to the target (flat session) → gets a sessionId that
+  #      becomes the routing key for this session.
+  #   5. Folds the above into a session template via
+  #      `SessionBringUp.start_session_from/3`.
+  #
+  # Teardown disposes the BrowserContext (which kills its targets) but
+  # leaves the shared WS alone.
+  #
+  # Two ways to get a connection, matched to how different the two
+  # cases actually are underneath — not one function with a mode flag
+  # hiding that difference:
   #
   #   * `start_link/1` — launches and owns a local Chrome process. This
-  #     is a Supervisor (not a launcher itself): it owns a
-  #     `Chrome.Server` and a `Launcher` as its two children, giving the
-  #     spawned Chrome the same crash-restart guarantee this module's
-  #     own default launcher gets. The launcher child is registered
-  #     under the `:name` you asked for — that name (not this
-  #     Supervisor's pid) is what you use afterward:
+  #     is a Supervisor (not this module itself): it owns a
+  #     `Chrome.Server` and this module's own GenServer as its two
+  #     children, giving the spawned Chrome the same crash-restart
+  #     guarantee this driver's own default instance gets. The
+  #     GenServer child is registered under the `:name` you asked for
+  #     — that name (not this Supervisor's pid) is what you use
+  #     afterward:
   #
   #       {:ok, _sup} = Driver.ChromeCDP.start_link(name: MyApp.TestChrome)
-  #       {:ok, session} = Launcher.start_session(MyApp.TestChrome)
+  #       {:ok, session} = Driver.ChromeCDP.start_session(MyApp.TestChrome)
   #
   #   * `connect/1` — connects to a Chrome you don't manage, via `:url`
   #     (a literal ws(s):// URL, or a bare host:port DevTools endpoint
   #     discovered via /json/version). Nothing to spawn, nothing to
-  #     supervise — it's a plain `Launcher.start_link/1` call under the
-  #     hood, returning `{:ok, launcher_pid}` directly (or registering
-  #     it under `:name` if given).
-  #
-  # `default_launcher_spec/0` picks between the two for this driver's
-  # own default launcher, started lazily under `SurfBoard.DriverSupervisor`
-  # on first use — the same choice a caller building their own launcher
-  # makes directly via `start_link/1`/`connect/1`. Pass your own
-  # `:build_template`/`:post_start` to either constructor to override
-  # this driver's defaults entirely; pass `launcher:` to `start_session/1`
-  # (or call `Launcher.start_session/2` on it directly) to use a
-  # different launcher instead (e.g. an application connecting to a
-  # remote Chrome while its own test suite launches and owns a second,
-  # local one via `start_link/1`, both alive in the same BEAM).
+  #     supervise — it's a plain `GenServer.start_link/3` under the
+  #     hood, returning `{:ok, pid}` directly (or registering it under
+  #     `:name` if given).
 
-  @behaviour SurfBoard.Driver
+  use GenServer
 
   alias SurfBoard.DependencyError
   alias SurfBoard.Clients.CDP.Client, as: CDPClient
+  alias SurfBoard.Clients.CDP.SessionBringUp
   alias SurfBoard.Driver.Spec
   alias SurfBoard.Driver.Chrome.Server, as: ChromeServer
   alias SurfBoard.Launcher.{Metadata, UserAgent}
-  alias SurfBoard.Launcher
-  alias SurfBoard.Transport.Strategy.SharedWS
 
   @base_user_agent "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 " <>
                      "(KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36"
 
   # Full support for everything CDP offers — no overrides needed on
-  # top of CDPClient.default_strategies/0. Computed at runtime, not in a
-  # module attribute — calling CDPClient.default_strategies/0 at compile
-  # time would put a (compile) edge from this module to CDPClient in
-  # `mix xref graph`, coupling this driver's compilation to CDP client
-  # internals for no benefit (spec/0 isn't called often enough to need
-  # attribute-time precomputation).
-  @impl SurfBoard.Driver
+  # top of CDPClient.default_strategies/0. Computed at runtime, not in
+  # a module attribute — calling CDPClient.default_strategies/0 at
+  # compile time would put a (compile) edge from this module to
+  # CDPClient in `mix xref graph`, coupling this driver's compilation
+  # to CDP client internals for no benefit (spec/0 isn't called often
+  # enough to need attribute-time precomputation).
   def spec do
     struct!(
       Spec,
@@ -73,9 +83,9 @@ defmodule SurfBoard.Driver.ChromeCDP do
   defmodule Supervised do
     @moduledoc false
     # The actual Supervisor behind `start_link/1` — split into its own
-    # module so this module itself stays a plain module of functions,
-    # matching `connect/1`'s shape, rather than `use Supervisor` making
-    # the whole module implicitly one.
+    # module so this module itself stays a plain GenServer, matching
+    # `connect/1`'s shape (a bare `GenServer.start_link/3`), rather
+    # than `use Supervisor` making the whole module implicitly one.
     use Supervisor
 
     alias SurfBoard.Driver.ChromeCDP
@@ -87,18 +97,17 @@ defmodule SurfBoard.Driver.ChromeCDP do
     @impl Supervisor
     def init({name, opts}) do
       server_name = ChromeCDP.server_name(name)
-
-      launcher_opts = [
-        name: name,
-        strategy: SharedWS,
-        build_template: Keyword.get(opts, :build_template, &ChromeCDP.build_template/1),
-        post_start: Keyword.get(opts, :post_start, &ChromeCDP.post_start/2),
-        config: %SharedWS.Config{resolve_ws_url: fn -> ChromeServer.ws_url(server_name) end}
-      ]
+      config = %{resolve_ws_url: fn -> ChromeServer.ws_url(server_name) end}
 
       children = [
         {ChromeServer, [name: server_name]},
-        {Launcher, launcher_opts}
+        Supervisor.child_spec(
+          %{
+            id: name,
+            start: {ChromeCDP, :start_worker, [name, config, opts]}
+          },
+          []
+        )
       ]
 
       Supervisor.init(children, strategy: :one_for_one)
@@ -106,12 +115,11 @@ defmodule SurfBoard.Driver.ChromeCDP do
   end
 
   @doc """
-  Launches and owns a local Chrome process, wrapped in a `Launcher`.
-  Requires `:name` — the registered name of the `Launcher` child, and
-  what you pass to `Launcher.start_session/2` (or
-  `SurfBoard.start_session(launcher: ...)`) afterward. The returned pid
-  is this construct's Supervisor, useful only for putting it under your
-  own supervision tree — not something you call `Launcher` functions on
+  Launches and owns a local Chrome process. Requires `:name` — the
+  registered name of this module's own GenServer child, and what you
+  pass to `start_session/2` afterward. The returned pid is this
+  construct's Supervisor, useful only for putting it under your own
+  supervision tree — not something you call session functions on
   directly.
   """
   @spec start_link(keyword) :: Supervisor.on_start()
@@ -129,34 +137,17 @@ defmodule SurfBoard.Driver.ChromeCDP do
   end
 
   @doc """
-  Connects to a Chrome instance this doesn't manage, wrapped in a
-  `Launcher` — no process to spawn, no Supervisor. `:url` is required:
-  a literal ws(s):// DevTools URL, or a bare host:port DevTools
-  endpoint (discovered via /json/version on first use). Pass `:name` to
-  register the launcher; omitted, you get an anonymous pid back.
+  Connects to a Chrome instance this doesn't manage — no process to
+  spawn, no Supervisor. `:url` is required: a literal ws(s):// DevTools
+  URL, or a bare host:port DevTools endpoint (discovered via
+  /json/version on first use). Pass `:name` to register the process;
+  omitted, you get an anonymous pid back.
   """
-  @spec connect(keyword) :: Agent.on_start()
+  @spec connect(keyword) :: GenServer.on_start()
   def connect(opts) do
-    launcher_opts =
-      [
-        strategy: SharedWS,
-        config: connect_config(Keyword.fetch!(opts, :url)),
-        build_template: Keyword.get(opts, :build_template, &build_template/1),
-        post_start: Keyword.get(opts, :post_start, &post_start/2)
-      ] ++ Keyword.take(opts, [:name])
-
-    Launcher.start_link(launcher_opts)
-  end
-
-  @doc """
-  Builds the `%SharedWS.Config{}` `connect/1` uses, without starting
-  anything — for `default_launcher_spec/0`, which needs to fold a
-  "connect to this url" launcher into a child spec rather than start it
-  immediately.
-  """
-  @spec connect_config(String.t()) :: %SharedWS.Config{}
-  def connect_config(url) do
-    %SharedWS.Config{resolve_ws_url: fn -> resolve_remote_ws_url(url) end}
+    url = Keyword.fetch!(opts, :url)
+    config = %{resolve_ws_url: fn -> resolve_remote_ws_url(url) end}
+    start_worker(Keyword.get(opts, :name), config, opts)
   end
 
   @doc false
@@ -164,44 +155,48 @@ defmodule SurfBoard.Driver.ChromeCDP do
   @doc false
   def server_name(name), do: Module.concat(name, Server)
 
-  @default_launcher_name __MODULE__.DefaultLauncher
+  @default_name __MODULE__.Default
 
   # `connection` picks which of the two ways this driver's default
-  # launcher gets connected — unlike Lightpanda's `:connection` opt
-  # (re-resolved on every `start_session/1` call), this is decided once,
-  # the first time `default_launcher_spec/0`'s child actually starts
-  # (lazily, under `SurfBoard.DriverSupervisor`) and is never restarted
-  # per call, so by the time a second call could pass a different opt,
-  # this choice is already fixed. It's app config, not a session opt. A
-  # caller wanting a *different* configuration entirely should build
-  # their own launcher via `start_link/1`/`connect/1` and pass it via
-  # `start_session(launcher: ...)`.
+  # instance gets connected — this is decided once, the first time
+  # `default_child_spec/0`'s child actually starts and is never
+  # restarted per call, so by the time a second call could pass a
+  # different opt, this choice is already fixed. It's app config, not
+  # a session opt. A caller wanting a *different* configuration
+  # entirely should build their own via `start_link/1`/`connect/1`.
   #
   #   * `:shared`   — spawn and own a local Chrome process, via
   #                   `start_link/1`.
-  #   * `:external` — never spawn anything; connect the default launcher
-  #                   to a Chrome instance this driver doesn't manage,
-  #                   via `remote_url/0` (`connect_config/1`).
+  #   * `:external` — never spawn anything; connect the default
+  #                   instance to a Chrome this driver doesn't manage,
+  #                   via `remote_url/0`.
   #
   # Omitted (the default): auto-detect — `:external` if `remote_url/0`
   # resolves to something, else `:shared`.
-  @impl SurfBoard.Driver
-  def default_launcher_spec do
-    launcher_opts = [
-      name: @default_launcher_name,
-      build_template: &build_template/1,
-      post_start: &post_start/2
-    ]
-
+  @doc """
+  A child spec for this driver's default instance, meant to be started
+  once, under whatever supervisor the application chooses (this driver
+  no longer starts anything on its own — see the top-level README for
+  how to wire a driver into your supervision tree).
+  """
+  def default_child_spec do
     case resolve_connection() do
       :external ->
-        config = connect_config(remote_url())
-        {Launcher, launcher_opts ++ [strategy: SharedWS, config: config]}
+        %{
+          id: @default_name,
+          start: {__MODULE__, :start_link_connect, [[name: @default_name, url: remote_url()]]}
+        }
 
       :shared ->
-        {__MODULE__, launcher_opts}
+        {__MODULE__, name: @default_name}
     end
   end
+
+  @doc false
+  def start_link_connect(opts), do: connect(opts)
+
+  @doc false
+  def default_name, do: @default_name
 
   defp resolve_connection do
     case configured_connection() do
@@ -220,7 +215,7 @@ defmodule SurfBoard.Driver.ChromeCDP do
   installed — without starting anything. Returns
   `:ok | {:error, %SurfBoard.DependencyError{}}`.
   """
-  @impl SurfBoard.Driver
+  @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
     case resolve_connection() do
       :external ->
@@ -246,19 +241,120 @@ defmodule SurfBoard.Driver.ChromeCDP do
     end
   end
 
-  @impl SurfBoard.Driver
-  def cleanup_stale_sessions, do: :ok
-
   # ----- Session lifecycle -----
 
-  @impl SurfBoard.Driver
-  def start_session(opts \\ []) do
-    launcher = Keyword.get(opts, :launcher, @default_launcher_name)
-    Launcher.start_session(launcher, opts)
+  @doc """
+  Starts a new session against `server` (a pid, or the name a
+  `start_link/1`/`connect/1` instance was registered under).
+
+  Only the cached shared ws_pid lookup runs inside `server`'s own
+  process (a brief `GenServer.call`, `:get_ws_pid`) — the actual
+  session-start sequence (BrowserContext/Target/attach wire round
+  trips, session bring-up) runs in the CALLING process, same as every
+  other driver's `start_session/2`. Serializing all of that through
+  one GenServer would turn concurrent session starts into a queue
+  behind a single mailbox; the shared ws_pid is the only thing that
+  genuinely needs one owner.
+  """
+  @spec start_session(GenServer.server(), keyword) ::
+          {:ok, SurfBoard.Session.t()} | {:error, term}
+  def start_session(server, opts) when server != nil and is_list(opts) do
+    ws_pid = GenServer.call(server, :get_ws_pid)
+    template = build_template(opts)
+
+    with {:ok, %{"browserContextId" => ctx_id}} <-
+           SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.createBrowserContext", %{}),
+         {:ok, %{"targetId" => target_id}} <-
+           SurfBoard.Transport.WebSocket.send_sync(ws_pid, "Target.createTarget", %{
+             url: "about:blank",
+             browserContextId: ctx_id
+           }),
+         {:ok, session_id} <- CDPClient.attach_to_target(ws_pid, target_id) do
+      teardown = fn _session -> CDPClient.dispose_browser_context(ws_pid, ctx_id) end
+
+      acquired = %{
+        ws_pid: ws_pid,
+        target_id: target_id,
+        session_id: session_id,
+        browser_context_id: ctx_id,
+        teardown_fun: teardown,
+        driver_state: %SurfBoard.Transport.DriverState{
+          target_id: target_id,
+          browser_context_id: ctx_id,
+          flat_session_id?: true,
+          shared_connection?: true
+        }
+      }
+
+      with {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
+        post_start(session, opts)
+      end
+    end
   end
 
+  @doc """
+  Starts a session against this driver's default instance (see
+  `default_child_spec/0`).
+  """
+  @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
+  def start_session(opts) when is_list(opts) do
+    start_session(@default_name, opts)
+  end
+
+  # ----- GenServer -----
+  #
+  # This process holds exactly one piece of state: the lazily-connected,
+  # cached shared ws_pid. It does no session-start work itself — see
+  # start_session/2's moduledoc above for why.
+
   @doc false
-  def build_template(opts) do
+  def start_worker(name, config, opts) do
+    start_opts = if name, do: [name: name], else: []
+    GenServer.start_link(__MODULE__, config, start_opts ++ Keyword.take(opts, [:name]))
+  end
+
+  @impl GenServer
+  def init(%{resolve_ws_url: resolve_ws_url}) do
+    {:ok, %{resolve_ws_url: resolve_ws_url, ws_pid: nil}}
+  end
+
+  @impl GenServer
+  def handle_call(:get_ws_pid, _from, state) do
+    {ws_pid, state} = ensure_ws_pid(state)
+    {:reply, ws_pid, state}
+  end
+
+  defp ensure_ws_pid(%{ws_pid: pid} = state) when is_pid(pid) do
+    if Process.alive?(pid) do
+      {pid, state}
+    else
+      connect_ws(state)
+    end
+  end
+
+  defp ensure_ws_pid(state), do: connect_ws(state)
+
+  defp connect_ws(%{resolve_ws_url: resolve_ws_url} = state) do
+    # `WebSocket.start_link` would link to the *current caller* (this
+    # GenServer, since connect_ws/1 runs inside handle_call/3), so the
+    # shared WS would die if this process ever crashed anyway — but we
+    # still use `start/1` for an unlinked process whose lifetime is
+    # tied to this GenServer's explicit lifecycle, not to link
+    # propagation. Cached here, in this process's own state, so two
+    # independently-started instances never share a connection.
+    {:ok, pid} = SurfBoard.Transport.WebSocket.start(resolve_ws_url.())
+
+    # Target.detachedFromTarget only reaches a connection that has
+    # target discovery enabled on the BROWSER session (no sessionId)
+    # — done once here, covering every session subsequently attached
+    # over this shared connection.
+    {:ok, _} =
+      SurfBoard.Transport.WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{discover: true})
+
+    {pid, %{state | ws_pid: pid}}
+  end
+
+  defp build_template(opts) do
     %SurfBoard.Session{
       id: "chrome-#{System.unique_integer([:positive])}",
       url: "about:blank",
@@ -270,8 +366,7 @@ defmodule SurfBoard.Driver.ChromeCDP do
     }
   end
 
-  @doc false
-  def post_start(session, opts) do
+  defp post_start(session, opts) do
     caller = Keyword.get(opts, :owner, self())
 
     # Forward console + exception events to the test caller's mailbox
@@ -305,7 +400,12 @@ defmodule SurfBoard.Driver.ChromeCDP do
       _ = CDPClient.set_window_size(session, window_size[:width], window_size[:height])
     end
 
-    {:ok, session}
+    # `:base_url`/`:max_wait_time` govern later calls rather than
+    # session startup, so they ride on the session — that way an
+    # application's own session isn't governed by whatever a test
+    # suite configured globally.
+    session_opts = Keyword.take(opts, [:base_url, :max_wait_time])
+    {:ok, %{session | session_opts: session_opts}}
   end
 
   # ----- Per-spec overrides -----
