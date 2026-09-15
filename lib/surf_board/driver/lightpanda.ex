@@ -106,23 +106,44 @@ defmodule SurfBoard.Driver.Lightpanda do
     end
   end
 
+  @default_name __MODULE__.Default
+
   @doc """
   Launches and owns a local Lightpanda process that every session
-  multiplexes over. Requires `:name` — the name sessions look this
-  instance up by (see `start_session/2`). The returned pid is this
-  construct's Supervisor, useful only for putting it under your own
-  supervision tree.
+  multiplexes over. `:name` defaults to this driver's default instance
+  name (what `start_session/1` looks up), so `start_link([])` — or a
+  bare `Driver.Lightpanda` in a children list, which resolves to
+  `child_spec([])` — spawns and registers *the* default instance
+  (assuming the optional `lightpanda` package is on the load path; see
+  `maybe_default_child_spec/0` if you want that checked for you rather
+  than raised on). Pass your own `:name` to own a second, independent
+  instance instead. The returned pid is this construct's Supervisor,
+  useful only for putting it under your own supervision tree.
   """
   @spec start_link(keyword) :: Supervisor.on_start()
   def start_link(opts) do
-    name = Keyword.fetch!(opts, :name)
+    name = Keyword.get(opts, :name, @default_name)
     Supervised.start_link({name, opts})
   end
 
+  @doc """
+  A child spec for this driver, meant to be added to a supervision
+  tree the normal way — bare `SurfBoard.Driver.Lightpanda` (or
+  `{SurfBoard.Driver.Lightpanda, []}`) spawns and owns the default
+  instance; `{SurfBoard.Driver.Lightpanda, name: MyApp.TestLightpanda}`
+  spawns and owns a separate, independently-named one. Unlike
+  `maybe_default_child_spec/0`, this doesn't check whether the
+  optional `lightpanda` package is loaded first — `start_link/1` (and
+  so this) will raise if it isn't. Use `maybe_default_child_spec/0`
+  instead if you want that checked for you, with `nil` (nothing to
+  start) instead of a raise when the package is missing.
+  """
   def child_spec(opts) do
+    name = Keyword.get(opts, :name, @default_name)
+
     %{
-      id: Keyword.fetch!(opts, :name),
-      start: {__MODULE__, :start_link, [opts]},
+      id: name,
+      start: {__MODULE__, :start_link, [Keyword.put(opts, :name, name)]},
       type: :supervisor
     }
   end
@@ -202,15 +223,18 @@ defmodule SurfBoard.Driver.Lightpanda do
     end
   end
 
-  @default_name __MODULE__.Default
-
   @doc """
-  A child spec for this driver's default *shared* instance, meant to
-  be added to a supervision tree the normal way. Returns `nil` if the
-  optional `lightpanda` package isn't on the load path — there's
-  nothing to start.
+  A child spec for this driver's default instance that checks the
+  optional `lightpanda` package is loaded first, returning `nil`
+  (nothing to start) rather than raising if it isn't — unlike
+  `child_spec/1`/`{Driver.Lightpanda, []}`, which assume you already
+  know the package is available and let `start_link/1` raise if not.
+  Meant to be added to a supervision tree only when you want that
+  "skip silently if unavailable" behavior (see
+  `integration_test/support/driver_supervisor.ex` for the pattern this
+  project's own test suite uses).
   """
-  def default_child_spec do
+  def maybe_default_child_spec do
     if Code.ensure_loaded?(@lightpanda_server) do
       {__MODULE__, name: @default_name}
     end
@@ -275,7 +299,7 @@ defmodule SurfBoard.Driver.Lightpanda do
 
   @doc """
   Starts a session against this driver's default *shared* instance
-  (see `default_child_spec/0`).
+  (see `child_spec/1`/`maybe_default_child_spec/0`).
   """
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) when is_list(opts) do

@@ -33,18 +33,19 @@ defmodule SurfBoard do
 
   None of them start anything on their own — nothing about loading
   this library depends on Chrome/Lightpanda being installed, only on
-  actually adding a driver's `default_child_spec/0` to a supervision
-  tree once, the same way you'd add any other child (a Repo, a
-  PubSub, ...). Not every entry point has a persistent instance to
-  hold — `Driver.Lightpanda.spawn_session/1`/`connect_session/2` start
-  or dial fresh per session, so there's no `default_child_spec/0` for
-  those:
+  actually adding a driver to a supervision tree once, the same way
+  you'd add any other child (a Repo, a PubSub, ...): bare
+  `SurfBoard.Driver.ChromeCDP` in a children list resolves to its
+  `child_spec/1` callback, which spawns and registers *the* default
+  instance. Not every entry point has a persistent instance to hold —
+  `Driver.Lightpanda.spawn_session/1`/`connect_session/2` start or
+  dial fresh per session, so there's no child spec for those at all:
 
   ```
   # in your application's own Supervisor (or a script's, via
   # Supervisor.start_link/2 directly, if there's no application of its own)
   children = [
-    SurfBoard.Driver.ChromeCDP.default_child_spec()
+    SurfBoard.Driver.ChromeCDP
     # ...
   ]
   ```
@@ -70,10 +71,11 @@ defmodule SurfBoard do
   {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(pid, [])
   ```
 
-  `Driver.ChromeCDP` also has a *default connected* instance
-  (`default_remote_child_spec/0`) for applications that want the
-  library-wide default to connect rather than spawn — wire up one or
-  the other, not both.
+  `Driver.ChromeCDP` also has a `remote_child_spec/0` for applications
+  that want the library-wide default to connect rather than spawn —
+  both register under the same default-instance name, so wire up one
+  or the other, not both (the second to start would fail with
+  `:already_started`).
 
   ## Session options
 

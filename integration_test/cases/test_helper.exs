@@ -10,12 +10,8 @@ Application.put_env(:surf_board, :base_url, SurfBoard.Integration.FixtureServer.
 # are exercised directly by connection_modes_test.exs instead, dialing
 # these same shared instances rather than needing SURF_BOARD_CHROME_URL
 # configured for a truly separate remote Chrome.
-for driver <- [
-      SurfBoard.Driver.ChromeCDP,
-      SurfBoard.Driver.ChromeBiDi,
-      SurfBoard.Driver.Lightpanda
-    ] do
-  :ok = SurfBoard.Integration.DriverSupervisor.start_default(driver)
-end
+:ok = SurfBoard.Integration.DriverSupervisor.start_default(SurfBoard.Driver.ChromeCDP.child_spec([]))
+:ok = SurfBoard.Integration.DriverSupervisor.start_default(SurfBoard.Driver.ChromeBiDi.default_child_spec())
+:ok = SurfBoard.Integration.DriverSupervisor.start_default(SurfBoard.Driver.Lightpanda.maybe_default_child_spec())
 
 ExUnit.start(exclude: [:pending])

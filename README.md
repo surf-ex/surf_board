@@ -16,7 +16,7 @@ so this is a real step, not boilerplate:
 # lib/my_app/application.ex
 def start(_type, _args) do
   children = [
-    SurfBoard.Driver.ChromeCDP.default_child_spec(),
+    SurfBoard.Driver.ChromeCDP,
     # ...your app's own children
   ]
 
@@ -42,11 +42,7 @@ A one-off script with no application of its own can call
 `Supervisor.start_link/2` directly instead:
 
 ```elixir
-{:ok, _} =
-  Supervisor.start_link(
-    [SurfBoard.Driver.ChromeCDP.default_child_spec()],
-    strategy: :one_for_one
-  )
+{:ok, _} = Supervisor.start_link([SurfBoard.Driver.ChromeCDP], strategy: :one_for_one)
 ```
 
 See [guides/implementing_a_driver.md](guides/implementing_a_driver.md) for

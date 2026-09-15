@@ -51,9 +51,9 @@ defmodule SurfBoard.Driver.ChromeCDP do
   # Teardown disposes the BrowserContext (which kills its targets) but
   # leaves the shared WS alone.
   #
-  # There's a default instance for each entry point —
-  # `default_child_spec/0` (spawn a local Chrome) and
-  # `default_remote_child_spec/0` (connect to `remote_url/0`) — but
+  # There's a default instance for each entry point — bare `child_spec/1`
+  # (spawn a local Chrome) and `remote_child_spec/0` (connect to
+  # `remote_url/0`) — both registered under the same fixed name, so
   # only one is meant to actually run in a given application; pick
   # whichever matches how you want the *default*, unnamed
   # `start_session/1` to connect.
@@ -125,41 +125,45 @@ defmodule SurfBoard.Driver.ChromeCDP do
     end
   end
 
-  @doc """
-  Launches and owns a local Chrome process. Requires `:name` — the
-  registered name of this module's own GenServer child, and what you
-  pass to `start_session/2` afterward. The returned pid is this
-  construct's Supervisor, useful only for putting it under your own
-  supervision tree — not something you call session functions on
-  directly.
-  """
-  @spec start_link(keyword) :: Supervisor.on_start()
-  def start_link(opts) do
-    name = Keyword.fetch!(opts, :name)
-    Supervised.start_link({name, opts})
-  end
-
-  def child_spec(opts) do
-    %{
-      id: Keyword.fetch!(opts, :name),
-      start: {__MODULE__, :start_link, [opts]},
-      type: :supervisor
-    }
-  end
-
   @default_name __MODULE__.Default
 
   @doc """
-  A child spec for this driver's default *spawned* instance, meant to
-  be added to a supervision tree the normal way (e.g.
-  `{Driver.ChromeCDP, []}` is equivalent — `default_name/0` is what
-  `start_session/1` calls against by default). This driver starts
-  nothing on its own; adding this to a supervisor is what actually
-  brings one up. Use `default_remote_child_spec/0` instead if you want
-  the default instance to connect to an existing Chrome rather than
-  spawn one — don't add both.
+  Launches and owns a local Chrome process. `:name` defaults to this
+  driver's default instance name (what `start_session/1` looks up),
+  so `start_link([])` — or a bare `Driver.ChromeCDP` in a children
+  list, which resolves to `child_spec([])` — spawns and registers
+  *the* default instance. Pass your own `:name` to own a second,
+  independent instance instead. The returned pid is this construct's
+  Supervisor, useful only for putting it under your own supervision
+  tree — not something you call session functions on directly.
   """
-  def default_child_spec, do: {__MODULE__, name: @default_name}
+  @spec start_link(keyword) :: Supervisor.on_start()
+  def start_link(opts) do
+    name = Keyword.get(opts, :name, @default_name)
+    Supervised.start_link({name, opts})
+  end
+
+  @doc """
+  A child spec for this driver, meant to be added to a supervision
+  tree the normal way — bare `SurfBoard.Driver.ChromeCDP` (or
+  `{SurfBoard.Driver.ChromeCDP, []}`) spawns and owns the default
+  instance; `{SurfBoard.Driver.ChromeCDP, name: MyApp.TestChrome}`
+  spawns and owns a separate, independently-named one. This driver
+  starts nothing on its own; adding this to a supervisor is what
+  actually brings one up. Use `remote_child_spec/0` instead if you
+  want the default instance to connect to an existing Chrome rather
+  than spawn one — don't add both (they'd register under the same
+  name; the second one to start fails with `:already_started`).
+  """
+  def child_spec(opts) do
+    name = Keyword.get(opts, :name, @default_name)
+
+    %{
+      id: name,
+      start: {__MODULE__, :start_link, [Keyword.put(opts, :name, name)]},
+      type: :supervisor
+    }
+  end
 
   @doc false
   def default_name, do: @default_name
@@ -200,22 +204,22 @@ defmodule SurfBoard.Driver.ChromeCDP do
   @doc false
   def start_link_connect(opts), do: connect(opts)
 
-  @default_remote_name __MODULE__.DefaultRemote
-
   @doc """
-  A child spec for this driver's default *connected* instance, meant
-  to be added to a supervision tree the normal way. Connects to
-  `remote_url/0` (`SURF_BOARD_CHROME_URL`, or
-  `config :surf_board, :chrome_cdp, remote_url: "..."`). This driver
-  starts nothing on its own; adding this to a supervisor is what
-  actually brings one up. Use `default_child_spec/0` instead if you
-  want the default instance to spawn its own Chrome rather than
-  connect to an existing one — don't add both.
+  A child spec that connects to `remote_url/0`
+  (`SURF_BOARD_CHROME_URL`, or `config :surf_board, :chrome_cdp,
+  remote_url: "..."`) instead of spawning a local Chrome, meant to be
+  added to a supervision tree in place of (never alongside)
+  `child_spec/1`/`{Driver.ChromeCDP, []}` — both register under this
+  driver's one default instance name, so wiring up both would leave
+  the second to start failing with `:already_started` rather than
+  quietly registering an instance `start_session/1` can never reach.
+  This driver starts nothing on its own; adding this to a supervisor
+  is what actually brings one up.
   """
-  def default_remote_child_spec do
+  def remote_child_spec do
     %{
-      id: @default_remote_name,
-      start: {__MODULE__, :start_link_connect, [[name: @default_remote_name, url: remote_url()]]}
+      id: @default_name,
+      start: {__MODULE__, :start_link_connect, [[name: @default_name, url: remote_url()]]}
     }
   end
 
@@ -281,11 +285,10 @@ defmodule SurfBoard.Driver.ChromeCDP do
   end
 
   @doc """
-  Starts a session against this driver's default *spawned* instance
-  (see `default_child_spec/0`). If your application instead wires up
-  `default_remote_child_spec/0`, pass that instance's name explicitly
-  via `start_session/2` — `start_session/1` always targets the spawned
-  default's name.
+  Starts a session against this driver's default instance — whichever
+  one your application wired up, `child_spec/1` (spawned) or
+  `remote_child_spec/0` (connected); both register under the same
+  name, so this works either way.
   """
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts) when is_list(opts) do

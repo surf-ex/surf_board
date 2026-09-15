@@ -134,23 +134,31 @@ suite the same way the other two do.
   Call it yourself, wherever it makes sense (a supervisor's `init/1`,
   or before spawning a process) — nothing calls it generically for
   you.
-* **`default_child_spec/0`** (and, if your driver has more than one
-  mode with a persistent default instance worth wiring up separately,
-  a second differently-named one — see `Driver.ChromeCDP`'s
-  `default_remote_child_spec/0`) — a child spec for that mode's
-  default, shared instance, meant to be started once by whoever owns
-  your supervision tree (an application, or a test suite's
-  `test_helper.exs` — see `integration_test/support/driver_supervisor.ex`
-  for the pattern this project's own test suite uses). Drivers start
-  nothing lazily on their own; nothing about loading this library
-  depends on Chrome/Lightpanda being installed until something
-  actually starts a child spec. Return `nil` if there's genuinely
-  nothing to start (see `Driver.Lightpanda.default_child_spec/0` —
-  returns `nil` when the optional `lightpanda` package isn't loaded).
-  Skip this function entirely for a mode with no persistent instance
-  at all — see `Driver.Lightpanda.spawn_session/1`/`connect_session/2`,
-  which spawn or dial fresh every session and have nothing for a
-  supervisor to hold ahead of time.
+* **`child_spec/1`** — the real OTP callback, not a driver-invented
+  convenience: implement it (or let `use Supervisor`/`use GenServer`
+  give you a default one, then override it) so a bare
+  `SurfBoard.Driver.YourVendor` — or `{SurfBoard.Driver.YourVendor, opts}`
+  — works directly in a children list. Default `:name` to a fixed
+  atom (see `Driver.ChromeCDP.child_spec/1`) when the caller doesn't
+  pass one, so the *unnamed*, no-args form spawns and registers *the*
+  default instance — the same name `start_session/1` looks up (see
+  below). If your vendor has a second mode worth wiring up as an
+  alternate default (see `Driver.ChromeCDP`'s `remote_child_spec/0`),
+  give it a plain, non-callback name and register it under the *same*
+  fixed name `child_spec/1` uses — don't invent a second atom for it.
+  That way whichever one an application actually wires up,
+  `start_session/1` finds it, and wiring up both fails loudly
+  (`:already_started`) instead of silently leaving one unreachable.
+  If a mode has nothing persistent to hold at all (see
+  `Driver.Lightpanda.spawn_session/1`/`connect_session/2`), it has no
+  child spec of any kind — nothing to add here. If a mode's default
+  instance might not exist (see
+  `Driver.Lightpanda.maybe_default_child_spec/0` — returns `nil` when
+  the optional `lightpanda` package isn't loaded), give *that* variant
+  its own explicitly-named function too — `nil` isn't a valid
+  `child_spec/1` return, so it can't live in the real callback; keep
+  it as a plain function a caller explicitly checks, like
+  `integration_test/support/driver_supervisor.ex` does.
 
 A driver doesn't own session teardown either — `SurfBoard.end_session/1`
 calls `Transport.Protocol.stop/1` directly, the same for every driver, so
@@ -177,14 +185,15 @@ has today):
   worker holding a cached connection; `connect/1` supervises only the
   worker (nothing to spawn); `Driver.Lightpanda.spawn_session/1`
   supervises nothing persistent at all (every session spawns and owns
-  its own binary, killed on teardown). A single `default_child_spec/0`
-  that would need to sometimes return a two-child tree, sometimes one
+  its own binary, killed on teardown). A single `child_spec/1` that
+  would need to sometimes return a two-child tree, sometimes one
   child, and sometimes `nil` depending on a runtime option is a sign
   the underlying thing being supervised isn't actually one shape —
-  which is exactly why `default_child_spec/0` and
-  `default_remote_child_spec/0` are two separate functions on
-  `Driver.ChromeCDP`, and why `Driver.Lightpanda.spawn_session/1`/
-  `connect_session/2` have none at all.
+  which is exactly why `child_spec/1`/`start_link/1` (spawn) and
+  `remote_child_spec/0`/`connect/1` (connect) are two separate
+  function pairs on `Driver.ChromeCDP`, and why
+  `Driver.Lightpanda.spawn_session/1`/`connect_session/2` have no
+  child spec at all.
 
 What genuinely *is* shared across your modes — the capability `Spec`,
 the session template, post-connection setup, and (where the
@@ -248,25 +257,43 @@ a new connection mode for an existing vendor).
        )
      end
 
+     @default_name __MODULE__.Default
+
      @doc """
-     A child spec for this driver's default instance, meant to be
-     started once, under whatever supervisor the application chooses.
+     Launches this driver's connection. `:name` defaults to this
+     driver's default instance name (what `start_session/1` looks
+     up), so a bare `SurfBoard.Driver.YourVendor` in a children list
+     — which resolves to `child_spec([])` — spawns and registers *the*
+     default instance. Pass your own `:name` to own a second,
+     independent instance instead.
      """
-     def default_child_spec do
+     def start_link(opts) do
+       name = Keyword.get(opts, :name, @default_name)
        # Whatever process(es) your connection needs — a Supervisor
-       # wrapping them, or a bare {__MODULE__, opts} child spec if your
-       # driver itself is the process (see Driver.ChromeCDP's own
-       # `Supervised` submodule and `start_worker/3` for the
-       # "I am a GenServer, here's my child spec" shape, or
-       # Driver.ChromeBiDi's `Supervised` for the "I supervise a
-       # sidecar, I hold no state myself" shape). Omit this function
-       # entirely if your driver has nothing persistent to hold (see
-       # Driver.Lightpanda.spawn_session/1/connect_session/2).
-       {__MODULE__, name: default_name()}
+       # wrapping them (see Driver.ChromeCDP's own `Supervised`
+       # submodule and `start_worker/3` for the "I am a GenServer,
+       # here's my child spec" shape, or Driver.ChromeBiDi's
+       # `Supervised` for the "I supervise a sidecar, I hold no state
+       # myself" shape), or a bare GenServer.start_link/3 if your
+       # driver itself is the process.
      end
 
-     @doc false
-     def default_name, do: __MODULE__.Default
+     @doc """
+     The real OTP callback, not a driver-invented convenience — a bare
+     `SurfBoard.Driver.YourVendor` (or `{SurfBoard.Driver.YourVendor, opts}`)
+     in a children list resolves through this. Omit entirely if your
+     driver has nothing persistent to hold at all (see
+     `Driver.Lightpanda.spawn_session/1`/`connect_session/2`).
+     """
+     def child_spec(opts) do
+       name = Keyword.get(opts, :name, @default_name)
+
+       %{
+         id: name,
+         start: {__MODULE__, :start_link, [Keyword.put(opts, :name, name)]},
+         type: :supervisor
+       }
+     end
 
      @doc """
      Checks whether this driver can actually work, without starting
