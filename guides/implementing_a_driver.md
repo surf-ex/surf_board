@@ -1,15 +1,36 @@
 # Implementing a Driver
 
-A **driver** is `SurfBoard.Driver.<Vendor>` — one (vendor, protocol,
-process-model) combination (`Driver.ChromeCDP`, `Driver.ChromeBiDi`,
-`Driver.Lightpanda`): a self-contained OTP module owning everything
-needed to get a session running against it — its own supervision (if
-it needs any), its own connection-handling, its own capability-dispatch
-`Spec`, and its own `start_session` function. There's no shared
-behaviour to implement and no registration step: a driver is called
-directly, by module name, everywhere. This guide is for adding a new
-one — a new vendor (e.g. Firefox), a new wire protocol, or a new
-connection strategy for an existing vendor.
+A **driver** is `SurfBoard.Driver.<Name>` — one (vendor, protocol,
+connection mode) combination (`Driver.SharedChromeCDP`,
+`Driver.ExternalChromeCDP`, `Driver.ChromeBiDi`,
+`Driver.SharedLightpanda`, `Driver.IsolatedLightpanda`,
+`Driver.ExternalLightpanda`): a self-contained OTP module owning
+everything needed to get a session running against it — its own
+supervision (if it needs any), its own connection-handling, its own
+capability-dispatch `Spec`, and its own `start_session` function.
+There's no shared behaviour to implement and no registration step: a
+driver is called directly, by module name, everywhere.
+
+**Connection mode is part of a driver's identity, not a runtime
+option.** ChromeCDP and Lightpanda each support more than one way to
+get connected (spawn-and-own vs. connect-to-existing; for Lightpanda,
+also a fresh-process-per-session mode) — earlier versions of this
+codebase modeled that as one driver module per vendor with a
+`:connection` opt branching internally. That got split apart: nothing
+downstream of "I have a connection" (`spec/0`, the session template,
+post-connection setup) differs between modes, so those parts are
+duplicated verbatim across the mode-specific modules rather than
+shared — but everything *about* acquiring the connection (what fails,
+what gets supervised, what config is needed) does differ enough that
+folding modes into one module with a branch was hiding real
+differences behind a shared name. If your new driver has more than one
+real way to connect, give each its own module rather than a
+`:connection`-style option — see
+[One driver per connection mode](#one-driver-per-connection-mode)
+before you start.
+
+This guide is for adding a new driver — a new vendor (e.g. Firefox), a
+new wire protocol, or a new connection mode for an existing vendor.
 
 ## The two layers underneath a driver
 
@@ -20,9 +41,10 @@ lives inside the driver module itself:
   surface: CDP or WebDriver BiDi today. Lives under `SurfBoard.Clients.CDP.*` /
   `SurfBoard.Clients.BiDi.*`. This is vendor-neutral protocol code — command
   building, response parsing, dialog/window/frame handling, event decoding.
-  `Clients.CDP.Client` is the clearest proof this layer earns its keep: both
-  `Driver.ChromeCDP` and `Driver.Lightpanda` call the exact same module,
-  unmodified — real reuse, not just shared shape.
+  `Clients.CDP.Client` is the clearest proof this layer earns its keep: every
+  CDP-speaking driver (`SharedChromeCDP`, `ExternalChromeCDP`,
+  `SharedLightpanda`, `IsolatedLightpanda`, `ExternalLightpanda`) calls the
+  exact same module, unmodified — real reuse, not just shared shape.
 * **`SurfBoard.Transport.Actor`/`Protocol`/`Common`/`WireSocket`**
   (`lib/surf_board/transport/`) — the low-level actor/wire machinery a
   driver's own connection-handling code builds on: a generic GenServer
@@ -36,20 +58,29 @@ Everything else — how a driver gets its connection (spawn a process?
 connect to an existing one? one shared WebSocket or one per session?),
 how it supervises what it owns, how it builds a session template, what
 runs after the connection comes up — lives directly in that driver's own
-module. Earlier versions of this codebase had a `Strategy.*` layer
-between drivers and `Transport.Actor` (`Strategy.SharedWS`,
-`Strategy.PerSession`, `Strategy.IsolatedProcess`, `Strategy.BiDi`) and a
-generic `Launcher` process wrapping "strategy + config + hooks" — both
-were removed because nothing in this codebase ever paired one driver's
-connection logic with another's: each strategy had exactly one real
-caller. A shared interface with no second implementor isn't reuse, it's
-just an extra hop; read `lib/surf_board/driver/chrome_cdp.ex`,
-`chrome_bidi.ex`, and `lightpanda.ex` directly to see what each driver's
-connection-handling actually looks like now — they're a genuinely useful
-reference for how different three drivers' real needs are (ChromeCDP
-caches one shared WebSocket in its own GenServer state; Lightpanda's
-`:shared` mode caches nothing at all and re-resolves a URL per call;
-ChromeBiDi caches nothing either and does one POST-then-WS per session).
+module, duplicated across driver modules rather than shared when it
+differs, even where the duplication is substantial. Earlier versions of
+this codebase had a `Strategy.*` layer between drivers and
+`Transport.Actor` (`Strategy.SharedWS`, `Strategy.PerSession`,
+`Strategy.IsolatedProcess`, `Strategy.BiDi`), a generic `Launcher`
+process wrapping "strategy + config + hooks", and — one layer up — a
+single driver module per vendor with an internal `:connection` opt
+picking between modes. All three were removed: nothing in this codebase
+ever paired one driver's connection logic with another's (each strategy
+had exactly one real caller), and folding several connection modes into
+one module hid genuinely different failure modes and config behind a
+shared name. A shared interface — or a shared module — with no second
+real implementor isn't reuse, it's just an extra hop or a false
+merge; read `lib/surf_board/driver/shared_chrome_cdp.ex`,
+`external_chrome_cdp.ex`, `chrome_bidi.ex`, `shared_lightpanda.ex`,
+`isolated_lightpanda.ex`, and `external_lightpanda.ex` directly to see
+what each driver's connection-handling actually looks like now —
+they're a genuinely useful reference for how different each one's real
+needs are (`SharedChromeCDP` caches one shared WebSocket in its own
+GenServer state; `SharedLightpanda` caches nothing at all and
+re-resolves a URL per call; `ChromeBiDi` caches nothing either and does
+one POST-then-WS per session; `IsolatedLightpanda`/`ExternalLightpanda`
+spawn or dial fresh every single session).
 
 Underneath both, `SurfBoard.Transport.WireSocket` is shared low-level Mint
 WebSocket plumbing (connect, upgrade, encode/decode, frame dispatch) — it
@@ -72,7 +103,7 @@ suite the same way the other three do.
   there's no layer between them and it. See
   [Capability dimensions](#capability-dimensions) for when to reuse an
   existing implementation vs. write a new one. Compute it in a plain
-  function, not a module attribute — see `Driver.ChromeCDP.spec/0`'s
+  function, not a module attribute — see `Driver.SharedChromeCDP.spec/0`'s
   comment for why (a module attribute calling another module's
   function at compile time creates an unnecessary `mix xref graph`
   compile-time edge).
@@ -83,8 +114,8 @@ suite the same way the other three do.
   subscription, ...), returns `{:ok, session} | {:error, term}`. This
   is genuinely one function per driver, not shared logic, because
   connection acquisition differs too much underneath — compare
-  `Driver.ChromeCDP.start_session/2` (fetch a cached shared ws_pid,
-  then per-session BrowserContext/Target/attach) with
+  `Driver.SharedChromeCDP.start_session/2` (fetch a cached shared
+  ws_pid, then per-session BrowserContext/Target/attach) with
   `Driver.ChromeBiDi.start_session/1` (POST /session, open a fresh WS,
   no caching at all). Also stash `:base_url`/`:max_wait_time` from opts
   onto `session.session_opts` before returning — every driver does this
@@ -107,25 +138,66 @@ suite the same way the other three do.
   lazily on their own; nothing about loading this library depends on
   Chrome/Lightpanda being installed until something actually starts a
   child spec. Return `nil` if there's genuinely nothing to start (see
-  `Driver.Lightpanda.default_child_spec/0` — returns `nil` when the
-  optional `lightpanda` package isn't loaded).
+  `Driver.SharedLightpanda.default_child_spec/0` — returns `nil` when
+  the optional `lightpanda` package isn't loaded). Skip this function
+  entirely if your driver has no persistent instance at all — see
+  `Driver.IsolatedLightpanda`/`Driver.ExternalLightpanda`, which spawn
+  or dial fresh every session and have nothing for a supervisor to
+  hold ahead of time.
 
 A driver doesn't own session teardown either — `SurfBoard.end_session/1`
 calls `Transport.Protocol.stop/1` directly, the same for every driver, so
 there's no `end_session` convention to implement.
 
+## One driver per connection mode
+
+If your vendor has more than one real way to get connected — spawn a
+process vs. connect to one that's already running, cache a shared
+connection vs. get a fresh one per session — that's more than one
+driver, not one driver with a `:connection` opt. Two symptoms that
+tell you the modes are different enough to split, both true for every
+mode split in this codebase today:
+
+* **They fail differently.** "Chrome isn't installed" (spawn mode)
+  and "no remote_url configured" (connect mode) are different
+  `validate/0` outcomes with different fixes — collapsing them into
+  one `validate/0` with a `case` just relocates that difference
+  instead of removing it.
+* **They need different things supervised (or nothing at all).**
+  `Driver.SharedChromeCDP` supervises a Chrome process and a worker
+  holding a cached connection; `Driver.ExternalChromeCDP` supervises
+  only the worker (nothing to spawn); `Driver.IsolatedLightpanda`
+  supervises nothing persistent at all (every session spawns and owns
+  its own binary). A `default_child_spec/0` that sometimes returns a
+  two-child tree, sometimes one child, and sometimes `nil` depending
+  on a runtime option is a sign the underlying thing being supervised
+  isn't actually one shape.
+
+What *is* shared across your modes (the capability `Spec`, the session
+template, post-connection setup) still won't have a home to live in
+once you split — duplicate it into each mode's module rather than
+inventing a shared module for it (see the top of this guide for why:
+nothing in this codebase has ever had a second real implementor for
+that kind of shared connection-handling module, and a shared module
+with one real caller is worse than duplication, not better).
+
 ## Adding a driver for a vendor that already has a protocol client
 
 This is the common case: a new way to run/connect-to a browser that
 already speaks CDP or BiDi (e.g. a different Chromium-based browser, or
-a new connection strategy for an existing vendor).
+a new connection mode for an existing vendor).
 
-1. **Create `lib/surf_board/driver/<your_driver>.ex`.** `Driver.Lightpanda`
-   is the best reference — it has three connection modes and shows how
-   to structure a driver that supports more than one. `Driver.ChromeCDP`
-   shows the "cache one shared connection across sessions" pattern.
-   `Driver.ChromeBiDi` shows the "cache nothing, one POST + one WS per
-   session" pattern. A minimal skeleton:
+1. **Create `lib/surf_board/driver/<your_driver>.ex`** — one file per
+   connection mode, not one file per vendor (see
+   [One driver per connection mode](#one-driver-per-connection-mode)
+   above). `Driver.SharedLightpanda` shows the "cache nothing, resolve
+   a URL fresh against a persistent shared process" pattern.
+   `Driver.SharedChromeCDP` shows the "cache one shared connection
+   across sessions" pattern. `Driver.ChromeBiDi` shows the "cache
+   nothing, one POST + one WS per session, nothing persistent to
+   supervise beyond a sidecar" pattern. `Driver.IsolatedLightpanda`/
+   `Driver.ExternalLightpanda` show the "nothing persistent at all,
+   spawn or dial fresh every session" pattern. A minimal skeleton:
 
    ```elixir
    defmodule SurfBoard.Driver.YourDriver do
@@ -163,11 +235,13 @@ a new connection strategy for an existing vendor).
      def default_child_spec do
        # Whatever process(es) your connection needs — a Supervisor
        # wrapping them, or a bare {__MODULE__, opts} child spec if your
-       # driver itself is the process (see Driver.ChromeCDP's own
+       # driver itself is the process (see Driver.SharedChromeCDP's own
        # `Supervised` submodule and `start_worker/3` for the
        # "I am a GenServer, here's my child spec" shape, or
        # Driver.ChromeBiDi's `Supervised` for the "I supervise a sidecar,
-       # I hold no state myself" shape).
+       # I hold no state myself" shape). Omit this function entirely if
+       # your driver has nothing persistent to hold (see
+       # Driver.IsolatedLightpanda/Driver.ExternalLightpanda).
        {__MODULE__, name: default_name()}
      end
 
@@ -250,12 +324,12 @@ a new connection strategy for an existing vendor).
 
    * **`socket`** — `{:fused, ws_url}` if this session gets its own
      socket and you want the actor to own the `WireSocket` connection
-     directly, no separate process, no extra hop (Lightpanda's `:shared`
-     mode — see `Driver.Lightpanda`'s `start_session_per_session/2`).
+     directly, no separate process, no extra hop (see
+     `Driver.SharedLightpanda`'s `start_session_from_ws/2`).
      `{:remote, module, pid}` if the socket is (or might be) shared with
      other sessions, or already started by something else — pass the
      module and pid of a `SurfBoard.Transport.WebSocket` or your
-     protocol's equivalent (`Driver.ChromeCDP`'s shared-connection path,
+     protocol's equivalent (`Driver.SharedChromeCDP`'s connection path,
      and `Clients.CDP.SessionBringUp.start_session_from/3`, both use
      this shape).
    * **`load`** — `:buffer` if your protocol's load-milestone event can
@@ -271,10 +345,10 @@ a new connection strategy for an existing vendor).
      `SurfBoard.Clients.BiDi.Wire` today).
 
    If your vendor speaks CDP over a connection shape that matches
-   ChromeCDP's or Lightpanda's isolated-process mode, use
+   `Driver.SharedChromeCDP`'s or `Driver.IsolatedLightpanda`'s, use
    `SurfBoard.Clients.CDP.SessionBringUp.start_session_from/3` directly
    rather than writing your own bring-up sequence — it's the one piece
-   of CDP session bring-up genuinely shared between those two drivers
+   of CDP session bring-up genuinely shared between those drivers
    today (folds an "acquired connection" map into a session template,
    brings up the actor, and runs the standard page-lifecycle/bootstrap/
    frame-tracking init sequence). `Transport.Common` (the shared

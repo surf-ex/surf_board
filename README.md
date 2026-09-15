@@ -8,16 +8,15 @@ with no dependency on ExUnit or Phoenix. Use it to script a browser from a plain
 or a GenServer — screen scraping, PDF rendering, automating a third-party site, or anything else
 that needs a real (or Lightpanda) browser without a testing framework attached.
 
-Add the driver you want to your application's own supervision tree
-(`SurfBoard.Driver.ChromeCDP`, `SurfBoard.Driver.ChromeBiDi`, and
-`SurfBoard.Driver.Lightpanda` are self-contained OTP modules — nothing
-starts automatically, so this is a real step, not boilerplate):
+Add the driver you want to your application's own supervision tree —
+each is a self-contained OTP module, and nothing starts automatically,
+so this is a real step, not boilerplate:
 
 ```elixir
 # lib/my_app/application.ex
 def start(_type, _args) do
   children = [
-    SurfBoard.Driver.ChromeCDP.default_child_spec(),
+    SurfBoard.Driver.SharedChromeCDP.default_child_spec(),
     # ...your app's own children
   ]
 
@@ -28,7 +27,7 @@ end
 Then, from anywhere:
 
 ```elixir
-{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session([])
+{:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session([])
 
 session
 |> SurfBoard.Browser.visit("https://example.com")
@@ -45,7 +44,7 @@ A one-off script with no application of its own can call
 ```elixir
 {:ok, _} =
   Supervisor.start_link(
-    [SurfBoard.Driver.ChromeCDP.default_child_spec()],
+    [SurfBoard.Driver.SharedChromeCDP.default_child_spec()],
     strategy: :one_for_one
   )
 ```
@@ -56,9 +55,15 @@ shared default one.
 
 ## Drivers
 
-- **Chrome CDP** — real Chrome/Chromium via the DevTools Protocol.
-- **Chrome BiDi** — real Chrome via WebDriver BiDi (chromium-bidi).
-- **Lightpanda** — a lightweight headless browser, faster to start and run than Chrome.
+There's no single "the Chrome driver" — connection mode is part of a
+driver's identity, not an option you pass:
+
+- **`Driver.SharedChromeCDP`** — spawn and own a local Chrome process, via CDP.
+- **`Driver.ExternalChromeCDP`** — connect to a Chrome you don't manage, via CDP.
+- **`Driver.ChromeBiDi`** — real Chrome over WebDriver BiDi (chromium-bidi).
+- **`Driver.SharedLightpanda`** — reuse an already-running shared Lightpanda binary.
+- **`Driver.IsolatedLightpanda`** — spawn a brand-new private Lightpanda binary per session.
+- **`Driver.ExternalLightpanda`** — connect to a Lightpanda instance this library never launches.
 
 ## LiveView awareness
 
@@ -67,7 +72,7 @@ same on any page. Pass `live_view_aware: true` to a driver's `start_session/1` f
 that need to wait on LiveView's `phx-*` patch lifecycle (e.g. testing a LiveView app):
 
 ```elixir
-{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(live_view_aware: true)
+{:ok, session} = SurfBoard.Driver.SharedChromeCDP.start_session(live_view_aware: true)
 ```
 
 ## Installation

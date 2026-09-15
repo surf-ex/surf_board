@@ -1,16 +1,23 @@
-defmodule SurfBoard.Driver.ChromeCDP do
+defmodule SurfBoard.Driver.SharedChromeCDP do
   @moduledoc false
 
-  # Chrome over CDP: ONE WebSocket per running ChromeCDP process,
-  # shared across every session started against it via CDP's
-  # flat-session protocol. This module IS the launcher — a GenServer
-  # holding the connection config plus a lazily-connected, cached
-  # ws_pid — not a generic `Launcher` configured with a `Strategy`.
-  # There's exactly one driver that behaves this way, so there's
-  # nothing to share the shape with; see the moduledoc note in
-  # `SurfBoard.Clients.CDP.SessionBringUp` for the one piece of CDP
-  # session bring-up that genuinely is shared (with Lightpanda's
-  # isolated-process connection mode).
+  # Chrome over CDP, spawning and owning a local Chrome process: ONE
+  # WebSocket per running instance, shared across every session started
+  # against it via CDP's flat-session protocol. This module IS the
+  # launcher — a GenServer holding the connection config plus a
+  # lazily-connected, cached ws_pid.
+  #
+  # Fully self-contained on purpose — no shared module with
+  # `Driver.ExternalChromeCDP` beyond `SurfBoard.Clients.CDP.Client`/
+  # `SessionBringUp` (genuinely shared protocol/bring-up code, used by
+  # other drivers too). Everything specific to "spawn and own a Chrome
+  # process" lives only here; connecting to a Chrome you don't manage
+  # is a different enough job (different failure modes, different
+  # config, nothing to supervise) that it's a fully separate driver,
+  # not a branch inside this one.
+  #
+  #   {:ok, _sup} = Driver.SharedChromeCDP.start_link(name: MyApp.TestChrome)
+  #   {:ok, session} = Driver.SharedChromeCDP.start_session(MyApp.TestChrome, [])
   #
   # Each `start_session/2`:
   #
@@ -26,29 +33,6 @@ defmodule SurfBoard.Driver.ChromeCDP do
   #
   # Teardown disposes the BrowserContext (which kills its targets) but
   # leaves the shared WS alone.
-  #
-  # Two ways to get a connection, matched to how different the two
-  # cases actually are underneath — not one function with a mode flag
-  # hiding that difference:
-  #
-  #   * `start_link/1` — launches and owns a local Chrome process. This
-  #     is a Supervisor (not this module itself): it owns a
-  #     `Chrome.Server` and this module's own GenServer as its two
-  #     children, giving the spawned Chrome the same crash-restart
-  #     guarantee this driver's own default instance gets. The
-  #     GenServer child is registered under the `:name` you asked for
-  #     — that name (not this Supervisor's pid) is what you use
-  #     afterward:
-  #
-  #       {:ok, _sup} = Driver.ChromeCDP.start_link(name: MyApp.TestChrome)
-  #       {:ok, session} = Driver.ChromeCDP.start_session(MyApp.TestChrome)
-  #
-  #   * `connect/1` — connects to a Chrome you don't manage, via `:url`
-  #     (a literal ws(s):// URL, or a bare host:port DevTools endpoint
-  #     discovered via /json/version). Nothing to spawn, nothing to
-  #     supervise — it's a plain `GenServer.start_link/3` under the
-  #     hood, returning `{:ok, pid}` directly (or registering it under
-  #     `:name` if given).
 
   use GenServer
 
@@ -83,20 +67,18 @@ defmodule SurfBoard.Driver.ChromeCDP do
   defmodule Supervised do
     @moduledoc false
     # The actual Supervisor behind `start_link/1` — split into its own
-    # module so this module itself stays a plain GenServer, matching
-    # `connect/1`'s shape (a bare `GenServer.start_link/3`), rather
-    # than `use Supervisor` making the whole module implicitly one.
+    # module so this module itself stays a plain GenServer.
     use Supervisor
 
-    alias SurfBoard.Driver.ChromeCDP
+    alias SurfBoard.Driver.SharedChromeCDP
 
     def start_link({name, opts}) do
-      Supervisor.start_link(__MODULE__, {name, opts}, name: ChromeCDP.supervisor_name(name))
+      Supervisor.start_link(__MODULE__, {name, opts}, name: SharedChromeCDP.supervisor_name(name))
     end
 
     @impl Supervisor
     def init({name, opts}) do
-      server_name = ChromeCDP.server_name(name)
+      server_name = SharedChromeCDP.server_name(name)
       config = %{resolve_ws_url: fn -> ChromeServer.ws_url(server_name) end}
 
       children = [
@@ -104,7 +86,7 @@ defmodule SurfBoard.Driver.ChromeCDP do
         Supervisor.child_spec(
           %{
             id: name,
-            start: {ChromeCDP, :start_worker, [name, config, opts]}
+            start: {SharedChromeCDP, :start_worker, [name, config, opts]}
           },
           []
         )
@@ -136,20 +118,6 @@ defmodule SurfBoard.Driver.ChromeCDP do
     }
   end
 
-  @doc """
-  Connects to a Chrome instance this doesn't manage — no process to
-  spawn, no Supervisor. `:url` is required: a literal ws(s):// DevTools
-  URL, or a bare host:port DevTools endpoint (discovered via
-  /json/version on first use). Pass `:name` to register the process;
-  omitted, you get an anonymous pid back.
-  """
-  @spec connect(keyword) :: GenServer.on_start()
-  def connect(opts) do
-    url = Keyword.fetch!(opts, :url)
-    config = %{resolve_ws_url: fn -> resolve_remote_ws_url(url) end}
-    start_worker(Keyword.get(opts, :name), config, opts)
-  end
-
   @doc false
   def supervisor_name(name), do: Module.concat(name, Supervisor)
   @doc false
@@ -157,58 +125,17 @@ defmodule SurfBoard.Driver.ChromeCDP do
 
   @default_name __MODULE__.Default
 
-  # `connection` picks which of the two ways this driver's default
-  # instance gets connected — this is decided once, the first time
-  # `default_child_spec/0`'s child actually starts and is never
-  # restarted per call, so by the time a second call could pass a
-  # different opt, this choice is already fixed. It's app config, not
-  # a session opt. A caller wanting a *different* configuration
-  # entirely should build their own via `start_link/1`/`connect/1`.
-  #
-  #   * `:shared`   — spawn and own a local Chrome process, via
-  #                   `start_link/1`.
-  #   * `:external` — never spawn anything; connect the default
-  #                   instance to a Chrome this driver doesn't manage,
-  #                   via `remote_url/0`.
-  #
-  # Omitted (the default): auto-detect — `:external` if `remote_url/0`
-  # resolves to something, else `:shared`.
   @doc """
-  A child spec for this driver's default instance, meant to be started
-  once, under whatever supervisor the application chooses (this driver
-  no longer starts anything on its own — see the top-level README for
-  how to wire a driver into your supervision tree).
+  A child spec for this driver's default instance, meant to be added
+  to a supervision tree the normal way (e.g. `{Driver.SharedChromeCDP, []}`
+  is equivalent — `default_name/0` is what `start_session/1` calls
+  against by default). This driver starts nothing on its own; adding
+  this to a supervisor is what actually brings one up.
   """
-  def default_child_spec do
-    case resolve_connection() do
-      :external ->
-        %{
-          id: @default_name,
-          start: {__MODULE__, :start_link_connect, [[name: @default_name, url: remote_url()]]}
-        }
-
-      :shared ->
-        {__MODULE__, name: @default_name}
-    end
-  end
-
-  @doc false
-  def start_link_connect(opts), do: connect(opts)
+  def default_child_spec, do: {__MODULE__, name: @default_name}
 
   @doc false
   def default_name, do: @default_name
-
-  defp resolve_connection do
-    case configured_connection() do
-      nil -> if remote_url(), do: :external, else: :shared
-      :external -> :external
-      :shared -> :shared
-    end
-  end
-
-  defp configured_connection do
-    Application.get_env(:surf_board, :chrome_cdp, []) |> Keyword.get(:connection)
-  end
 
   @doc """
   Checks whether `start_link/1` can actually succeed — Chrome is
@@ -217,27 +144,13 @@ defmodule SurfBoard.Driver.ChromeCDP do
   """
   @spec validate() :: :ok | {:error, DependencyError.t()}
   def validate do
-    case resolve_connection() do
-      :external ->
-        if remote_url() do
-          :ok
-        else
-          {:error,
-           DependencyError.exception(
-             "connection: :external configured, but no remote_url is set. " <>
-               "Set SURF_BOARD_CHROME_URL or config :surf_board, :chrome_cdp, remote_url: \"...\"."
-           )}
-        end
-
-      :shared ->
-        if match?({:ok, _}, SurfBoard.Launcher.BrowserPaths.chrome_path()) do
-          :ok
-        else
-          {:error,
-           DependencyError.exception(
-             "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
-           )}
-        end
+    if match?({:ok, _}, SurfBoard.Launcher.BrowserPaths.chrome_path()) do
+      :ok
+    else
+      {:error,
+       DependencyError.exception(
+         "Chrome not found. Run `mix surf_board.install` or set SURF_BOARD_CHROME_URL."
+       )}
     end
   end
 
@@ -245,16 +158,15 @@ defmodule SurfBoard.Driver.ChromeCDP do
 
   @doc """
   Starts a new session against `server` (a pid, or the name a
-  `start_link/1`/`connect/1` instance was registered under).
+  `start_link/1` instance was registered under).
 
   Only the cached shared ws_pid lookup runs inside `server`'s own
   process (a brief `GenServer.call`, `:get_ws_pid`) — the actual
   session-start sequence (BrowserContext/Target/attach wire round
-  trips, session bring-up) runs in the CALLING process, same as every
-  other driver's `start_session/2`. Serializing all of that through
-  one GenServer would turn concurrent session starts into a queue
-  behind a single mailbox; the shared ws_pid is the only thing that
-  genuinely needs one owner.
+  trips, session bring-up) runs in the CALLING process. Serializing
+  all of that through one GenServer would turn concurrent session
+  starts into a queue behind a single mailbox; the shared ws_pid is
+  the only thing that genuinely needs one owner.
   """
   @spec start_session(GenServer.server(), keyword) ::
           {:ok, SurfBoard.Session.t()} | {:error, term}
@@ -430,94 +342,5 @@ defmodule SurfBoard.Driver.ChromeCDP do
       err ->
         err
     end
-  end
-
-  # ----- Internal -----
-
-  @doc false
-  def remote_url do
-    SurfBoard.Launcher.BrowserPaths.chrome_url() ||
-      Application.get_env(:surf_board, :chrome_cdp, []) |> Keyword.get(:remote_url)
-  end
-
-  # `url` is either a literal ws(s):// DevTools URL, or a bare HTTP
-  # endpoint (host:port) that needs /json/version discovery to find
-  # the actual webSocketDebuggerUrl.
-  defp resolve_remote_ws_url("ws://" <> _ = url), do: url
-  defp resolve_remote_ws_url("wss://" <> _ = url), do: url
-
-  defp resolve_remote_ws_url(endpoint) do
-    Task.async(fn -> discover_ws_url(endpoint) end) |> Task.await(10_000)
-  end
-
-  defp discover_ws_url(endpoint) do
-    endpoint = String.trim_trailing(endpoint, "/")
-
-    {:ok, conn} = Mint.HTTP.connect(:http, host(endpoint), port(endpoint))
-
-    {:ok, conn, ref} =
-      Mint.HTTP.request(conn, "GET", "/json/version", [{"host", "localhost"}], nil)
-
-    {body, conn} = receive_body!(conn, ref)
-    _ = Mint.HTTP.close(conn)
-
-    case Jason.decode(body) do
-      {:ok, %{"webSocketDebuggerUrl" => ws_url}} ->
-        rewrite_ws_host(ws_url, endpoint)
-
-      {:ok, other} ->
-        raise "Chrome /json/version did not include webSocketDebuggerUrl: #{inspect(other)}"
-
-      {:error, _} ->
-        raise "Chrome /json/version returned invalid JSON: #{body}"
-    end
-  end
-
-  defp receive_body!(conn, ref, acc \\ "") do
-    receive do
-      message ->
-        case Mint.HTTP.stream(conn, message) do
-          {:ok, conn, responses} ->
-            {conn, body} =
-              Enum.reduce(responses, {conn, acc}, fn
-                {:data, ^ref, data}, {c, a} -> {c, a <> data}
-                {:done, ^ref}, {c, a} -> {c, a}
-                _, {c, a} -> {c, a}
-              end)
-
-            if Enum.any?(responses, &match?({:done, ^ref}, &1)) do
-              {body, conn}
-            else
-              receive_body!(conn, ref, body)
-            end
-
-          :unknown ->
-            receive_body!(conn, ref, acc)
-
-          {:error, _conn, reason, _} ->
-            raise "Chrome /json/version request failed: #{inspect(reason)}"
-        end
-    after
-      5_000 -> raise "Chrome /json/version timed out"
-    end
-  end
-
-  defp host(endpoint) do
-    case String.split(endpoint, ":") do
-      [h | _] -> h
-      _ -> endpoint
-    end
-  end
-
-  defp port(endpoint) do
-    case String.split(endpoint, ":") do
-      [_, p] -> String.to_integer(p)
-      _ -> 9222
-    end
-  end
-
-  defp rewrite_ws_host(ws_url, endpoint) do
-    uri = URI.parse(ws_url)
-    URI.to_string(%{uri | host: host(endpoint), port: port(endpoint)})
   end
 end
