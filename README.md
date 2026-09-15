@@ -8,8 +8,27 @@ with no dependency on ExUnit or Phoenix. Use it to script a browser from a plain
 or a GenServer — screen scraping, PDF rendering, automating a third-party site, or anything else
 that needs a real (or Lightpanda) browser without a testing framework attached.
 
+Add the driver you want to your application's own supervision tree
+(`SurfBoard.Driver.ChromeCDP`, `SurfBoard.Driver.ChromeBiDi`, and
+`SurfBoard.Driver.Lightpanda` are self-contained OTP modules — nothing
+starts automatically, so this is a real step, not boilerplate):
+
 ```elixir
-{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session()
+# lib/my_app/application.ex
+def start(_type, _args) do
+  children = [
+    SurfBoard.Driver.ChromeCDP.default_child_spec(),
+    # ...your app's own children
+  ]
+
+  Supervisor.start_link(children, strategy: :one_for_one, name: MyApp.Supervisor)
+end
+```
+
+Then, from anywhere:
+
+```elixir
+{:ok, session} = SurfBoard.Driver.ChromeCDP.start_session([])
 
 session
 |> SurfBoard.Browser.visit("https://example.com")
@@ -19,6 +38,21 @@ session
 
 SurfBoard.end_session(session)
 ```
+
+A one-off script with no application of its own can call
+`Supervisor.start_link/2` directly instead:
+
+```elixir
+{:ok, _} =
+  Supervisor.start_link(
+    [SurfBoard.Driver.ChromeCDP.default_child_spec()],
+    strategy: :one_for_one
+  )
+```
+
+See [guides/implementing_a_driver.md](guides/implementing_a_driver.md) for
+the full picture, including how to own your own instance instead of the
+shared default one.
 
 ## Drivers
 

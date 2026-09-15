@@ -15,23 +15,28 @@ defmodule SurfBoard do
 
   ## Starting a session
 
-  There's no central dispatcher — call the driver module you want directly:
-
-  ```
-  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session()
-  ```
-
+  There's no central dispatcher — call the driver module you want directly.
   Each driver is a self-contained OTP module: `SurfBoard.Driver.ChromeCDP`,
-  `SurfBoard.Driver.ChromeBiDi`, `SurfBoard.Driver.Lightpanda`. Calling
-  `start_session/1` against a driver that hasn't started its own default
-  instance yet starts one lazily on first use (for `ChromeCDP`/`Lightpanda`)
-  — nothing about loading this library depends on Chrome/Lightpanda being
-  installed, only on actually calling `start_session/1`.
+  `SurfBoard.Driver.ChromeBiDi`, `SurfBoard.Driver.Lightpanda`. None of them
+  start anything on their own — nothing about loading this library depends
+  on Chrome/Lightpanda being installed, only on actually adding a driver's
+  `default_child_spec/0` to a supervision tree once, the same way you'd add
+  any other child (a Repo, a PubSub, ...):
 
-  `ChromeBiDi` is the one exception: it needs its sidecar process
-  (`Driver.ChromeBiDi.default_child_spec/0`) started under your own
-  supervision tree first, since there's no implicit "start on first call"
-  hook for it — see that module's docs.
+  ```
+  # in your application's own Supervisor (or a script's, via
+  # Supervisor.start_link/2 directly, if there's no application of its own)
+  children = [
+    SurfBoard.Driver.ChromeCDP.default_child_spec()
+    # ...
+  ]
+  ```
+
+  Then, from anywhere:
+
+  ```
+  {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session([])
+  ```
 
   To own your own instance instead of using a driver's shared default
   (e.g. a test suite launching and owning a second, independent Chrome):
@@ -79,7 +84,7 @@ defmodule SurfBoard do
 
   ```
   {:ok, mobile} = SurfBoard.Driver.ChromeCDP.start_session(user_agent: "…iPhone…")
-  {:ok, desktop} = SurfBoard.Driver.ChromeCDP.start_session()
+  {:ok, desktop} = SurfBoard.Driver.ChromeCDP.start_session([])
   ```
 
   That option is Chrome-only. Lightpanda sets its User-Agent per process
@@ -99,13 +104,13 @@ defmodule SurfBoard do
   @message_list Query.css(".messages")
 
   test "That multiple sessions work" do
-    {:ok, user1} = SurfBoard.Driver.ChromeCDP.start_session()
+    {:ok, user1} = SurfBoard.Driver.ChromeCDP.start_session([])
     user1
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello there!")
     |> click(@share_button)
 
-    {:ok, user2} = SurfBoard.Driver.ChromeCDP.start_session()
+    {:ok, user2} = SurfBoard.Driver.ChromeCDP.start_session([])
     user2
     |> visit("/page.html")
     |> fill_in(@message_field, with: "Hello yourself")
