@@ -8,7 +8,6 @@ defmodule SurfBoard do
   SurfBoard supports the following options:
 
   * `:screenshot_dir` - The directory to store screenshots.
-  * `:screenshot_on_failure` - if SurfBoard should take screenshots on test failures (defaults to `false`).
   * `:max_wait_time` - The amount of time that SurfBoard should wait to find an element on the page. (defaults to `3_000`)
   * `:js_errors` - if SurfBoard should re-throw JavaScript errors in elixir (defaults to true).
   * `:js_logger` - IO device where JavaScript console logs are written to. Defaults to :stdio. This option can also be set to a file or any other io device. You can disable JavaScript console logging by setting this to `nil`.
@@ -185,25 +184,5 @@ defmodule SurfBoard do
     after
       0 -> :ok
     end
-  end
-
-  @doc false
-  def stop(_state) do
-    :ok
-  end
-
-  @doc false
-  def screenshot_on_failure? do
-    Application.get_env(:surf_board, :screenshot_on_failure)
-  end
-
-  @doc false
-  def js_errors? do
-    Application.get_env(:surf_board, :js_errors, true)
-  end
-
-  @doc false
-  def js_logger do
-    Application.get_env(:surf_board, :js_logger, :stdio)
   end
 end
