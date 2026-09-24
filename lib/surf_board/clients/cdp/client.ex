@@ -139,18 +139,22 @@ defmodule SurfBoard.Clients.CDP.Client do
   Opens a WebSocket to `ws_url` and enables target discovery on the
   BROWSER session (no sessionId) — needed once per connection so
   `Target.detachedFromTarget` reaches every session subsequently
-  attached over it. Unlinked (`WebSocket.start/1`, not `start_link/1`)
-  so the connection's lifetime is tied to whoever holds `ws_pid`
-  explicitly, not to the calling process crashing.
+  attached over it. Unlinked, so the caller decides the connection's
+  lifetime (`Driver.ChromeCDP` links it to its own process).
   """
   @spec connect_ws(String.t()) :: {:ok, pid} | {:error, term}
   def connect_ws(ws_url) when is_binary(ws_url) do
-    with {:ok, pid} <- SurfBoard.Transport.WebSocket.start(ws_url),
-         {:ok, _} <-
-           SurfBoard.Transport.WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{
+    with {:ok, pid} <- SurfBoard.Transport.WebSocket.start(ws_url) do
+      case SurfBoard.Transport.WebSocket.send_sync(pid, "Target.setDiscoverTargets", %{
              discover: true
            }) do
-      {:ok, pid}
+        {:ok, _} ->
+          {:ok, pid}
+
+        err ->
+          SurfBoard.Transport.WebSocket.close(pid)
+          err
+      end
     end
   end
 

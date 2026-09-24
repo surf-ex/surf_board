@@ -39,6 +39,53 @@ defmodule SurfBoard.Integration.ConnectionModesTest do
     end
   end
 
+  describe "Driver.ChromeCDP connection failures" do
+    test "an unreachable browser is an error, not a driver crash" do
+      {:ok, pid} = SurfBoard.Driver.ChromeCDP.connect(url: "ws://127.0.0.1:1/devtools/browser/x")
+
+      try do
+        assert {:error, _} = SurfBoard.Driver.ChromeCDP.start_session(pid, [])
+        assert Process.alive?(pid)
+      after
+        GenServer.stop(pid)
+      end
+    end
+
+    test "the shared socket dies with the driver" do
+      {:ok, pid} = SurfBoard.Driver.ChromeCDP.connect(url: default_chrome_ws_url())
+      Process.unlink(pid)
+      {:ok, ws_pid} = GenServer.call(pid, :get_ws_pid)
+      ref = Process.monitor(ws_pid)
+
+      Process.exit(pid, :kill)
+
+      assert_receive {:DOWN, ^ref, :process, ^ws_pid, _}, 2_000
+    end
+
+    test "a dead shared socket is reconnected on the next session" do
+      {:ok, pid} = SurfBoard.Driver.ChromeCDP.connect(url: default_chrome_ws_url())
+
+      try do
+        {:ok, ws_pid} = GenServer.call(pid, :get_ws_pid)
+        Process.exit(ws_pid, :kill)
+
+        {:ok, session} = SurfBoard.Driver.ChromeCDP.start_session(pid, [])
+        refute session.ws_pid == ws_pid
+        visit(session, "/index.html")
+        assert page_title(session) == "SurfBoard Fixture"
+        SurfBoard.end_session(session)
+      after
+        GenServer.stop(pid)
+      end
+    end
+  end
+
+  defp default_chrome_ws_url do
+    SurfBoard.Driver.ChromeCDP.default_name()
+    |> SurfBoard.Driver.ChromeCDP.server_name()
+    |> SurfBoard.Driver.Chrome.Server.ws_url()
+  end
+
   describe "Driver.Lightpanda.spawn_session/1" do
     test "spawns a private binary and starts a session against it" do
       {:ok, session} = SurfBoard.Driver.Lightpanda.spawn_session([])
