@@ -127,6 +127,10 @@ defmodule SurfBoard.Driver.ChromeCDP do
 
   @default_name __MODULE__.Default
 
+  # Bounds :get_ws_pid, which may include /json/version discovery plus
+  # the connect and Target.setDiscoverTargets round trips.
+  @connect_timeout 30_000
+
   @doc """
   Launches and owns a local Chrome process. `:name` defaults to this
   driver's default instance name (what `start_session/1` looks up),
@@ -274,10 +278,10 @@ defmodule SurfBoard.Driver.ChromeCDP do
   @spec start_session(GenServer.server(), keyword) ::
           {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(server, opts) when server != nil and is_list(opts) do
-    ws_pid = GenServer.call(server, :get_ws_pid)
     template = build_template(opts)
 
-    with {:ok, acquired} <-
+    with {:ok, ws_pid} <- GenServer.call(server, :get_ws_pid, @connect_timeout),
+         {:ok, acquired} <-
            Acquire.shared_ws(ws_pid, %SurfBoard.Transport.DriverState{shared_connection?: true}),
          {:ok, session} <- SessionBringUp.start_session_from(acquired, template, opts) do
       post_start(session, opts)
@@ -299,7 +303,9 @@ defmodule SurfBoard.Driver.ChromeCDP do
   #
   # This process holds exactly one piece of state: the lazily-connected,
   # cached shared ws_pid. It does no session-start work itself — see
-  # start_session/2's moduledoc above for why.
+  # start_session/2's moduledoc above for why. It links to the socket
+  # (trapping exits), so the socket dies with it and a dead socket is
+  # reconnected on the next call.
 
   @doc false
   def start_worker(name, config, opts) do
@@ -309,34 +315,50 @@ defmodule SurfBoard.Driver.ChromeCDP do
 
   @impl GenServer
   def init(%{resolve_ws_url: resolve_ws_url}) do
+    Process.flag(:trap_exit, true)
     {:ok, %{resolve_ws_url: resolve_ws_url, ws_pid: nil}}
   end
 
   @impl GenServer
   def handle_call(:get_ws_pid, _from, state) do
-    {ws_pid, state} = ensure_ws_pid(state)
-    {:reply, ws_pid, state}
-  end
-
-  defp ensure_ws_pid(%{ws_pid: pid} = state) when is_pid(pid) do
-    if Process.alive?(pid) do
-      {pid, state}
+    # alive? covers a socket that died before its EXIT was handled.
+    if is_pid(state.ws_pid) and Process.alive?(state.ws_pid) do
+      {:reply, {:ok, state.ws_pid}, state}
     else
-      establish_ws(state)
+      reply_with_new_ws(state)
     end
   end
 
-  defp ensure_ws_pid(state), do: establish_ws(state)
+  defp reply_with_new_ws(state) do
+    case establish_ws(state.resolve_ws_url) do
+      {:ok, pid} -> {:reply, {:ok, pid}, %{state | ws_pid: pid}}
+      {:error, _} = err -> {:reply, err, state}
+    end
+  end
 
-  defp establish_ws(%{resolve_ws_url: resolve_ws_url} = state) do
-    # CDPClient.connect_ws/1 uses `WebSocket.start/1`, not `start_link/1`
-    # — this GenServer would otherwise be linked to the WS process (since
-    # establish_ws/1 runs inside handle_call/3), tying the shared WS's
-    # lifetime to link propagation instead of this GenServer's explicit
-    # lifecycle. Cached here, in this process's own state, so two
-    # independently-started instances never share a connection.
-    {:ok, pid} = CDPClient.connect_ws(resolve_ws_url.())
-    {pid, %{state | ws_pid: pid}}
+  @impl GenServer
+  def handle_info({:EXIT, pid, _reason}, %{ws_pid: pid} = state) do
+    {:noreply, %{state | ws_pid: nil}}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl GenServer
+  def terminate(_reason, %{ws_pid: pid}) when is_pid(pid) do
+    SurfBoard.Transport.WebSocket.close(pid)
+  catch
+    :exit, _ -> :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
+  defp establish_ws(resolve_ws_url) do
+    with {:ok, pid} <- CDPClient.connect_ws(resolve_ws_url.()) do
+      Process.link(pid)
+      {:ok, pid}
+    end
+  catch
+    kind, reason -> {:error, {:connect_failed, {kind, reason}}}
   end
 
   defp build_template(opts) do

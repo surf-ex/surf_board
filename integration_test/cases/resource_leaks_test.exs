@@ -28,7 +28,7 @@ defmodule SurfBoard.Integration.ResourceLeaksTest do
   end
 
   test "chrome_cdp: ended sessions leave nothing in the shared socket's subscriber table" do
-    ws_pid = GenServer.call(SurfBoard.Driver.ChromeCDP.default_name(), :get_ws_pid)
+    {:ok, ws_pid} = GenServer.call(SurfBoard.Driver.ChromeCDP.default_name(), :get_ws_pid)
 
     # Warm up once, so one-time global subscriptions are already in.
     {:ok, s} = start_test_session(:chrome_cdp)
