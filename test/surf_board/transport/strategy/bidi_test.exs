@@ -158,6 +158,6 @@ defmodule SurfBoard.Transport.Strategy.BiDiTest do
   end
 
   defp start(base_url, extra \\ []) do
-    SurfBoard.Driver.ChromeBiDi.start_session(Keyword.merge([base_url: base_url], extra))
+    SurfBoard.Driver.ChromeBiDi.start_session(Keyword.merge([bidi_url: base_url], extra))
   end
 end

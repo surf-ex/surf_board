@@ -11,7 +11,7 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   # used by this driver, unlike the CDP bring-up shared with
   # Lightpanda — see `SurfBoard.Clients.CDP.SessionBringUp`).
   #
-  #   {:ok, session} = Driver.ChromeBiDi.start_session(base_url: "http://localhost:12345")
+  #   {:ok, session} = Driver.ChromeBiDi.start_session(bidi_url: "http://localhost:12345")
   #
   # `Supervised` owns the chromium-bidi Node sidecar (`BiDi.Server`) —
   # this driver's default instance, started once, lazily, under
@@ -123,15 +123,14 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   # ----- Session lifecycle -----
 
   @doc """
-  Starts a new BiDi session. `:base_url` (the chromium-bidi server's
-  HTTP base URL) is resolved via `resolve_base_url/1` if not given
-  directly — a caller-supplied one wins; otherwise this driver's own
-  default sidecar (must already be started — see
-  `default_child_spec/0`).
+  Starts a new BiDi session. `:bidi_url` is the chromium-bidi server's
+  HTTP URL; omitted, this driver's default sidecar is used (it must
+  already be started — see `default_child_spec/0`). `:base_url` is the
+  application base URL for relative `visit/2` paths, as on every driver.
   """
   @spec start_session(keyword) :: {:ok, SurfBoard.Session.t()} | {:error, term}
   def start_session(opts \\ []) do
-    base_url = resolve_base_url(opts)
+    bidi_url = resolve_bidi_url(opts)
     caps = Keyword.get(opts, :capabilities)
     handshake_opts = if caps, do: [capabilities: caps], else: []
     template = build_template(opts)
@@ -143,20 +142,20 @@ defmodule SurfBoard.Driver.ChromeBiDi do
     # initial-context block on `{:error, {:subscribe_failed, _}}` so
     # tests aren't held responsible for protocol-level flakes.
     with {:ok, session} <-
-           start_with_retry(base_url, handshake_opts, template, teardown_fun, owner, 4) do
+           start_with_retry(bidi_url, handshake_opts, template, teardown_fun, owner, 4) do
       post_start(session, opts)
     end
   end
 
   @doc """
-  Resolves the `base_url` a session should connect to: a caller-given
-  one wins; otherwise the sidecar's own WS URL (`:launcher_name`,
+  Resolves the chromium-bidi URL a session should connect to: a
+  caller-given `:bidi_url` wins; otherwise the sidecar's own WS URL (`:launcher_name`,
   defaulting to the default instance), converted to its HTTP
   equivalent (they share host/port; chromium-bidi serves both).
   """
-  @spec resolve_base_url(keyword) :: String.t()
-  def resolve_base_url(opts) do
-    case Keyword.get(opts, :base_url) do
+  @spec resolve_bidi_url(keyword) :: String.t()
+  def resolve_bidi_url(opts) do
+    case Keyword.get(opts, :bidi_url) do
       url when is_binary(url) ->
         url
 
@@ -190,8 +189,8 @@ defmodule SurfBoard.Driver.ChromeBiDi do
       bidi_ws_url_with_retry(name, retries_left - 1)
   end
 
-  defp start_with_retry(base_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
-    with {:ok, ws_url} <- Handshake.post_session(base_url, handshake_opts),
+  defp start_with_retry(bidi_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
+    with {:ok, ws_url} <- Handshake.post_session(bidi_url, handshake_opts),
          {:ok, socket_pid} <- WebSocketClient.start_link(ws_url),
          {:ok, session} <- start_actor(socket_pid, session_struct, teardown_fun, owner),
          :ok <- subscribe_load_events(socket_pid, session.pid),
@@ -210,7 +209,7 @@ defmodule SurfBoard.Driver.ChromeBiDi do
         Process.sleep(250)
 
         start_with_retry(
-          base_url,
+          bidi_url,
           handshake_opts,
           session_struct,
           teardown_fun,
@@ -222,7 +221,7 @@ defmodule SurfBoard.Driver.ChromeBiDi do
         Process.sleep(250)
 
         start_with_retry(
-          base_url,
+          bidi_url,
           handshake_opts,
           session_struct,
           teardown_fun,
