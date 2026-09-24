@@ -13,6 +13,7 @@ defmodule SurfBoard.Driver.Chrome.Server do
     :port,
     :os_pid,
     :ws_url,
+    :user_data_dir,
     ready?: false,
     buffer: "",
     calls_awaiting_readiness: []
@@ -42,12 +43,20 @@ defmodule SurfBoard.Driver.Chrome.Server do
 
   @impl true
   def init(opts) do
+    # Without this, a supervisor shutdown skips terminate/2 and leaves
+    # Chrome and its profile directory behind.
+    Process.flag(:trap_exit, true)
+
     chrome_path =
       Keyword.get_lazy(opts, :chrome_path, fn ->
         SurfBoard.Launcher.BrowserPaths.chrome_path!()
       end)
 
-    args = chrome_args(opts)
+    user_data_dir =
+      System.tmp_dir!() |> Path.join("surf_board_chrome_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(user_data_dir)
+    args = chrome_args(user_data_dir, opts)
 
     port =
       Port.open(
@@ -63,7 +72,7 @@ defmodule SurfBoard.Driver.Chrome.Server do
       )
 
     Process.send_after(self(), :startup_timeout, @startup_timeout)
-    {:ok, %__MODULE__{port: port}}
+    {:ok, %__MODULE__{port: port, user_data_dir: user_data_dir}}
   end
 
   @impl true
@@ -97,17 +106,15 @@ defmodule SurfBoard.Driver.Chrome.Server do
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
-  def terminate(_reason, %{os_pid: os_pid} = state) do
+  def terminate(_reason, state) do
     if state.port, do: catch_port_close(state.port)
 
-    if os_pid do
-      System.cmd("kill", ["-9", to_string(os_pid)], stderr_to_stdout: true)
-    end
+    if state.os_pid,
+      do: System.cmd("kill", ["-9", to_string(state.os_pid)], stderr_to_stdout: true)
 
+    if state.user_data_dir, do: File.rm_rf(state.user_data_dir)
     :ok
   end
-
-  def terminate(_reason, _state), do: :ok
 
   # --- Internal ---
 
@@ -146,19 +153,14 @@ defmodule SurfBoard.Driver.Chrome.Server do
     end
   end
 
-  defp chrome_args(opts) do
-    tmp_dir =
-      System.tmp_dir!() |> Path.join("surf_board_chrome_#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(tmp_dir)
-
+  defp chrome_args(user_data_dir, opts) do
     base_args = [
       "--remote-debugging-port=0",
       "--no-sandbox",
       # --disable-gpu removed: not needed since Chrome 112, and it forces
       # software rendering in headless which halves CDP throughput.
       "--headless",
-      "--user-data-dir=#{tmp_dir}",
+      "--user-data-dir=#{user_data_dir}",
       "--disable-background-networking",
       "--disable-background-timer-throttling",
       "--disable-backgrounding-occluded-windows",
