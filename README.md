@@ -86,6 +86,13 @@ end
 mix surf_board.install
 ```
 
+## Development
+
+```bash
+mix test                           # unit tests
+SURF_BOARD_INTEGRATION=1 mix test  # real Chrome (CDP + BiDi) and Lightpanda; run `mix surf_board.install` first
+```
+
 ## Status
 
 This is a fresh extraction (v0.1.0) — the driving code itself has real production mileage as
