@@ -70,7 +70,7 @@ defmodule SurfBoard.Transport.Actor do
     @moduledoc false
 
     @enforce_keys [:socket, :load, :wire]
-    defstruct [:socket, :load, :wire]
+    defstruct [:socket, :load, :wire, owns_socket?: false]
 
     @type socket :: {:fused, ws_url :: String.t()} | {:remote, module(), pid()}
 
@@ -80,7 +80,11 @@ defmodule SurfBoard.Transport.Actor do
             # The Wire.handle_event/3-shaped module for this actor's
             # protocol — SurfBoard.Clients.CDP.Wire or
             # SurfBoard.Clients.BiDi.Wire.
-            wire: module()
+            wire: module(),
+            # `:remote` only: the socket process serves just this
+            # session, so the actor links to it and closes it on
+            # terminate. False for a socket shared across sessions.
+            owns_socket?: boolean()
           }
   end
 
@@ -194,6 +198,7 @@ defmodule SurfBoard.Transport.Actor do
     Process.flag(:trap_exit, true)
     ref = Process.monitor(owner)
     socket_ref = Process.monitor(socket_pid)
+    if config.owns_socket?, do: Process.link(socket_pid)
 
     case init_fun.() do
       {:ok, %SurfBoard.Session{} = session} ->
@@ -463,6 +468,14 @@ defmodule SurfBoard.Transport.Actor do
       when not is_nil(wire_socket) do
     WireSocket.close(wire_socket)
     finish_terminate(state)
+  end
+
+  def terminate(
+        _reason,
+        %{config: %{socket: {:remote, socket_mod, socket_pid}, owns_socket?: true}} = state
+      ) do
+    finish_terminate(state)
+    socket_mod.close(socket_pid)
   end
 
   def terminate(_reason, state), do: finish_terminate(state)

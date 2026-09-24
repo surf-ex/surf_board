@@ -46,6 +46,14 @@ defmodule SurfBoard.Transport.WebSocketClient do
   end
 
   @doc """
+  Starts unlinked, for a caller that hands the socket to a
+  `Transport.Actor` (`owns_socket?: true`), which links to it instead.
+  """
+  def start(ws_url) do
+    GenServer.start(__MODULE__, ws_url)
+  end
+
+  @doc """
   Asynchronously send a BiDi command. The response (or transport
   failure) will be delivered to `owner_pid` as a
   `t:SurfBoard.Transport.Protocol.v2_response/0` message.
