@@ -29,7 +29,7 @@ defmodule SurfBoard.Clients.BiDi.ClientTest do
   end
 
   defp start(base_url) do
-    SurfBoard.Driver.ChromeBiDi.start_session(base_url: base_url)
+    SurfBoard.Driver.ChromeBiDi.start_session(bidi_url: base_url)
   end
 
   defp data_url(html), do: "data:text/html;charset=utf-8," <> URI.encode(html)
