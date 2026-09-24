@@ -33,13 +33,13 @@ defmodule SurfBoard.Browser.LogChecker do
   def maybe_check_logs(false, _session, fun), do: fun.()
 
   defp parse_log(%{"level" => "SEVERE", "source" => "javascript", "message" => msg}) do
-    if SurfBoard.js_errors?() do
+    if Application.get_env(:surf_board, :js_errors, true) do
       raise SurfBoard.JSError, msg
     end
   end
 
   defp parse_log(%{"level" => "INFO", "source" => "console-api", "message" => msg}) do
-    if SurfBoard.js_logger() do
+    if js_logger() do
       case Regex.named_captures(@log_regex, msg) do
         %{"message" => message} -> print_message(message)
       end
@@ -48,6 +48,8 @@ defmodule SurfBoard.Browser.LogChecker do
 
   defp parse_log(_), do: nil
 
+  defp js_logger, do: Application.get_env(:surf_board, :js_logger, :stdio)
+
   defp print_message(message) do
     message =
       case Regex.named_captures(@string_regex, message) do
@@ -55,7 +57,7 @@ defmodule SurfBoard.Browser.LogChecker do
         nil -> message
       end
 
-    IO.puts(SurfBoard.js_logger(), message)
+    IO.puts(js_logger(), message)
   end
 
   defp format_string(message) do
