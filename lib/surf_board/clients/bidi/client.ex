@@ -22,7 +22,6 @@ defmodule SurfBoard.Clients.BiDi.Client do
   alias SurfBoard.Element
   alias SurfBoard.Clients.BiDi.{Commands, Dialogs, Frames, ResponseParser, Windows}
   alias SurfBoard.Clients.BiDi.SendKeysSession, as: BiDiSendKeysSession
-  alias SurfBoard.Clients.Bootstrap
   alias SurfBoard.Clients.OpsShared
   alias SurfBoard.Transport.Protocol
   alias SurfBoard.Session
@@ -621,19 +620,6 @@ defmodule SurfBoard.Clients.BiDi.Client do
               nil
           end)
           |> Enum.reject(&is_nil/1)
-
-        # Best-effort cleanup of the bootstrap's stored entry so memory
-        # doesn't accumulate across queries.
-        Protocol.cdp_cast(
-          session,
-          "script.callFunction",
-          %{
-            "functionDeclaration" => "() => { #{Bootstrap.cleanup_js(query_id)} }",
-            "awaitPromise" => false,
-            "target" => %{"context" => ctx}
-          },
-          []
-        )
 
         {:ok, elements}
 

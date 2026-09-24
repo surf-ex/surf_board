@@ -42,7 +42,10 @@ defmodule SurfBoard.Transport.WebSocket do
   defstruct [
     :wire,
     :subscribers_table,
-    pending: %{}
+    pending: %{},
+    # subscriber pid => monitor ref, so a dead subscriber's rows are
+    # dropped however it died.
+    monitors: %{}
   ]
 
   @type routing_key :: String.t() | :global
@@ -175,7 +178,7 @@ defmodule SurfBoard.Transport.WebSocket do
     key = {event_method, routing_key}
     existing = lookup_subs(state.subscribers_table, key)
     :ets.insert(state.subscribers_table, {key, [subscriber | List.delete(existing, subscriber)]})
-    {:reply, :ok, state}
+    {:reply, :ok, monitor_subscriber(state, subscriber)}
   end
 
   def handle_call({:unsubscribe, event_method, routing_key, subscriber}, _from, state) do
@@ -201,6 +204,12 @@ defmodule SurfBoard.Transport.WebSocket do
   end
 
   @impl true
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{monitors: monitors} = state)
+      when is_map_key(monitors, pid) do
+    drop_subscriber(state.subscribers_table, pid)
+    {:noreply, %{state | monitors: Map.delete(monitors, pid)}}
+  end
+
   def handle_info(message, state) do
     case WireSocket.handle_message(state.wire, message, state, callbacks()) do
       {:ok, state, wire} ->
@@ -274,6 +283,23 @@ defmodule SurfBoard.Transport.WebSocket do
     end)
 
     state
+  end
+
+  defp monitor_subscriber(%{monitors: monitors} = state, pid) when is_map_key(monitors, pid),
+    do: state
+
+  defp monitor_subscriber(state, pid),
+    do: %{state | monitors: Map.put(state.monitors, pid, Process.monitor(pid))}
+
+  defp drop_subscriber(table, pid) do
+    for {key, pids} <- :ets.tab2list(table), pid in pids do
+      case List.delete(pids, pid) do
+        [] -> :ets.delete(table, key)
+        rest -> :ets.insert(table, {key, rest})
+      end
+    end
+
+    :ok
   end
 
   defp lookup_subs(table, key) do
