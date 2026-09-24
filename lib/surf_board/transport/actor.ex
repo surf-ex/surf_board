@@ -367,24 +367,6 @@ defmodule SurfBoard.Transport.Actor do
   # ----- Inbound: socket messages + timer messages -----
 
   @impl true
-  def handle_info(message, %{config: %{socket: {:fused, _}}} = state) do
-    case WireSocket.handle_message(state.wire_socket, message, state, wire_callbacks(state)) do
-      {:ok, state, wire_socket} ->
-        maybe_handle_target_crash(%{state | wire_socket: wire_socket})
-
-      {:error, reason, state, wire_socket} ->
-        Logger.debug(
-          "Transport.Actor transport error pid=#{inspect(self())} reason=#{inspect(reason)}"
-        )
-
-        state = notify_all_pending(%{state | wire_socket: wire_socket}, {:error, :session_closed})
-        {:stop, {:transport_error, reason}, state}
-
-      :unknown ->
-        handle_internal_message(message, state)
-    end
-  end
-
   def handle_info(
         {:v2_response, wire_id, result},
         %{config: %{socket: {:remote, _mod, _pid}}} = state
@@ -429,11 +411,29 @@ defmodule SurfBoard.Transport.Actor do
     {:stop, {:socket_exit, reason}, state}
   end
 
+  # Socket traffic for a fused actor. Must come after the timer and
+  # owner-`:DOWN` clauses above, or it would swallow them.
+  def handle_info(message, %{config: %{socket: {:fused, _}}} = state) do
+    case WireSocket.handle_message(state.wire_socket, message, state, wire_callbacks(state)) do
+      {:ok, state, wire_socket} ->
+        maybe_handle_target_crash(%{state | wire_socket: wire_socket})
+
+      {:error, reason, state, wire_socket} ->
+        Logger.debug(
+          "Transport.Actor transport error pid=#{inspect(self())} reason=#{inspect(reason)}"
+        )
+
+        state = notify_all_pending(%{state | wire_socket: wire_socket}, {:error, :session_closed})
+        {:stop, {:transport_error, reason}, state}
+
+      :unknown ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   def handle_info(_msg, state), do: {:noreply, state}
-
-  defp handle_internal_message(_msg, state), do: {:noreply, state}
 
   # ----- WireSocket callbacks (:fused mode only) -----
 
