@@ -532,25 +532,36 @@ defmodule SurfBoard.Clients.OpsShared do
       :ok = Protocol.register_find(session, query_id, timeout)
       client.cast_register(session, ops.parent_id, register_js)
 
-      case Protocol.await_find_result(session, query_id, timeout) do
-        {:ok, found, _meta} when found > 0 ->
-          case mode do
-            :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
-            :eager -> client.fetch_element_refs(session, query_id, found)
-          end
+      result = await_found(client, parent, session, query_id, ops, ops_json, timeout, mode)
 
-        {:ok, _, _} ->
-          {:ok, []}
+      # Drop the page-side entry whatever the outcome: a resolved one
+      # pins its DOM nodes, an unresolved one is re-checked on every
+      # mutation. Casts are ordered, so this lands after any ref fetch.
+      client.cast_register(session, nil, Bootstrap.cleanup_js(query_id))
 
-        {:error, :invalid_selector} ->
-          {:error, :invalid_selector}
+      result
+    end
+  end
 
-        {:timeout, _} ->
-          # Push didn't fire (count-shape mismatch — e.g. query asked
-          # for exactly 1 but page has 2). Run W.run synchronously so
-          # callers see the actual element count for error messaging.
-          client.final_sync_exec(session, ops_json, ops.parent_id)
-      end
+  defp await_found(client, parent, session, query_id, ops, ops_json, timeout, mode) do
+    case Protocol.await_find_result(session, query_id, timeout) do
+      {:ok, found, _meta} when found > 0 ->
+        case mode do
+          :lazy -> {:ok, lazy_elements(parent, ops.ops, found)}
+          :eager -> client.fetch_element_refs(session, query_id, found)
+        end
+
+      {:ok, _, _} ->
+        {:ok, []}
+
+      {:error, :invalid_selector} ->
+        {:error, :invalid_selector}
+
+      {:timeout, _} ->
+        # Push didn't fire (count-shape mismatch — e.g. query asked
+        # for exactly 1 but page has 2). Run W.run synchronously so
+        # callers see the actual element count for error messaging.
+        client.final_sync_exec(session, ops_json, ops.parent_id)
     end
   end
 
