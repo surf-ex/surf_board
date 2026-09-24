@@ -190,10 +190,52 @@ defmodule SurfBoard.Driver.ChromeBiDi do
   end
 
   defp start_with_retry(bidi_url, handshake_opts, session_struct, teardown_fun, owner, retries) do
+    case start_attempt(bidi_url, handshake_opts, session_struct, teardown_fun, owner) do
+      {:error, reason} = err ->
+        if retries > 0 and retryable?(reason) do
+          Process.sleep(250)
+
+          start_with_retry(
+            bidi_url,
+            handshake_opts,
+            session_struct,
+            teardown_fun,
+            owner,
+            retries - 1
+          )
+        else
+          err
+        end
+
+      ok ->
+        ok
+    end
+  end
+
+  defp retryable?({:subscribe_failed, _}), do: true
+  defp retryable?(:timeout), do: true
+  defp retryable?(_), do: false
+
+  # One full bring-up. Anything that fails after the actor is up stops
+  # it, which closes the socket and so this attempt's chromium-bidi
+  # session — a retry must not leave the previous attempt running.
+  defp start_attempt(bidi_url, handshake_opts, session_struct, teardown_fun, owner) do
     with {:ok, ws_url} <- Handshake.post_session(bidi_url, handshake_opts),
-         {:ok, socket_pid} <- WebSocketClient.start_link(ws_url),
-         {:ok, session} <- start_actor(socket_pid, session_struct, teardown_fun, owner),
-         :ok <- subscribe_load_events(socket_pid, session.pid),
+         {:ok, socket_pid} <- WebSocketClient.start(ws_url),
+         {:ok, session} <- start_actor(socket_pid, session_struct, teardown_fun, owner) do
+      case bring_up(session, socket_pid) do
+        {:ok, session} ->
+          {:ok, session}
+
+        err ->
+          Protocol.stop(session)
+          err
+      end
+    end
+  end
+
+  defp bring_up(session, socket_pid) do
+    with :ok <- subscribe_load_events(socket_pid, session.pid),
          {:ok, context_id} <- find_or_create_initial_context(session),
          :ok <- install_bootstrap(session) do
       session = %{session | browsing_context: context_id, ws_pid: socket_pid}
@@ -204,33 +246,6 @@ defmodule SurfBoard.Driver.ChromeBiDi do
       :ok = GenServer.call(session.pid, {:update_browsing_context, context_id, nil})
 
       {:ok, session}
-    else
-      {:error, {:subscribe_failed, _}} when retries > 0 ->
-        Process.sleep(250)
-
-        start_with_retry(
-          bidi_url,
-          handshake_opts,
-          session_struct,
-          teardown_fun,
-          owner,
-          retries - 1
-        )
-
-      {:error, {:timeout, {GenServer, :call, _}}} when retries > 0 ->
-        Process.sleep(250)
-
-        start_with_retry(
-          bidi_url,
-          handshake_opts,
-          session_struct,
-          teardown_fun,
-          owner,
-          retries - 1
-        )
-
-      other ->
-        other
     end
   end
 
@@ -238,7 +253,8 @@ defmodule SurfBoard.Driver.ChromeBiDi do
     config = %Actor.Config{
       socket: {:remote, WebSocketClient, socket_pid},
       load: :wake_once,
-      wire: Wire
+      wire: Wire,
+      owns_socket?: true
     }
 
     case Actor.start_link(

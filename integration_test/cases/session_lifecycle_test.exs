@@ -20,6 +20,26 @@ defmodule SurfBoard.Integration.SessionLifecycleTest do
     end
   end
 
+  # A BiDi session's WebSocket is its chromium-bidi session (and
+  # browser); it must close with the session.
+  test "chrome: end_session closes the session's socket" do
+    {:ok, session} = start_test_session(:chrome)
+    ref = Process.monitor(session.ws_pid)
+
+    SurfBoard.end_session(session)
+
+    assert_receive {:DOWN, ^ref, :process, _, _}, 5_000
+  end
+
+  test "chrome: owner death closes the session's socket" do
+    session = start_owned_session(:chrome)
+    ref = Process.monitor(session.ws_pid)
+
+    Process.exit(session_owner(), :kill)
+
+    assert_receive {:DOWN, ^ref, :process, _, _}, 5_000
+  end
+
   # Starts a session from a throwaway process, so the test can kill
   # that owner without taking itself down.
   defp start_owned_session(driver) do
