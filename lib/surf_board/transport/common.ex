@@ -118,42 +118,41 @@ defmodule SurfBoard.Transport.Common do
         if state.nav_pending, do: max(timeout_ms, @nav_pending_timeout), else: timeout_ms
 
       timer_ref = Process.send_after(self(), {:page_ready_timeout, from}, effective_timeout)
+      waiters = [{from, pre_page_id, timer_ref} | state.page_ready_waiters]
 
-      {:noreply, %{state | page_ready_waiter: {from, pre_page_id, timer_ref}, nav_pending: false}}
+      {:noreply, %{state | page_ready_waiters: waiters, nav_pending: false}}
     end
   end
 
   @doc """
-  Records the most recent pageId and wakes any waiter whose `pre_page_id`
-  differs (i.e. a transition has occurred).
+  Records the most recent pageId and wakes every waiter whose
+  `pre_page_id` differs (i.e. a transition has occurred).
   """
   @spec update_last_page_id(map(), term()) :: map()
   def update_last_page_id(state, page_id) do
-    state = %{state | last_page_id: page_id}
+    {woken, waiting} =
+      Enum.split_with(state.page_ready_waiters, fn {_from, pre, _ref} -> pre != page_id end)
 
-    case state.page_ready_waiter do
-      {from, pre_page_id, timer_ref} when pre_page_id != page_id ->
-        Process.cancel_timer(timer_ref)
-        GenServer.reply(from, :ok)
-        %{state | page_ready_waiter: nil}
+    Enum.each(woken, fn {from, _pre, timer_ref} ->
+      Process.cancel_timer(timer_ref)
+      GenServer.reply(from, :ok)
+    end)
 
-      _ ->
-        state
-    end
+    %{state | last_page_id: page_id, page_ready_waiters: waiting}
   end
 
   @doc """
   Handles a `{:page_ready_timeout, from}` message. Replies `:timeout` only
-  if the waiter is still the one named in the message.
+  if `from` is still waiting.
   """
   @spec handle_page_ready_timeout(map(), GenServer.from()) :: map()
   def handle_page_ready_timeout(state, from) do
-    case state.page_ready_waiter do
-      {^from, _pre, _ref} ->
+    case List.keytake(state.page_ready_waiters, from, 0) do
+      {_waiter, rest} ->
         GenServer.reply(from, :timeout)
-        %{state | page_ready_waiter: nil}
+        %{state | page_ready_waiters: rest}
 
-      _ ->
+      nil ->
         state
     end
   end
@@ -387,17 +386,16 @@ defmodule SurfBoard.Transport.Common do
         update_last_page_id(state, page_id)
 
       {:ok, %{"type" => "nav_pending"}} ->
-        case state.page_ready_waiter do
-          {from, pre, old_ref} ->
-            Process.cancel_timer(old_ref)
-
-            new_ref =
-              Process.send_after(self(), {:page_ready_timeout, from}, @nav_pending_timeout)
-
-            %{state | page_ready_waiter: {from, pre, new_ref}, nav_pending: false}
-
-          nil ->
+        case state.page_ready_waiters do
+          [] ->
             %{state | nav_pending: true}
+
+          waiters ->
+            %{
+              state
+              | page_ready_waiters: Enum.map(waiters, &extend_for_nav/1),
+                nav_pending: false
+            }
         end
 
       _ ->
@@ -406,4 +404,9 @@ defmodule SurfBoard.Transport.Common do
   end
 
   def route_bootstrap_payload(state, _), do: state
+
+  defp extend_for_nav({from, pre, old_ref}) do
+    Process.cancel_timer(old_ref)
+    {from, pre, Process.send_after(self(), {:page_ready_timeout, from}, @nav_pending_timeout)}
+  end
 end
