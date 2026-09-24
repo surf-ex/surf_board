@@ -46,4 +46,27 @@ defmodule SurfBoard.Transport.ActorTest do
       assert new_state.find_waiters == %{}
     end
   end
+
+  # A fused actor owns its socket, so socket traffic and its own
+  # messages share one mailbox — the socket clause must not eat these.
+  describe "fused-mode non-socket messages" do
+    setup do
+      config = %Actor.Config{socket: {:fused, "ws://unused"}, load: :buffer, wire: nil}
+      {:ok, state: %Actor{config: config}}
+    end
+
+    test "owner :DOWN stops the actor", %{state: state} do
+      ref = make_ref()
+      state = %{state | owner_ref: ref}
+
+      assert {:stop, :normal, _} =
+               Actor.handle_info({:DOWN, ref, :process, self(), :killed}, state)
+    end
+
+    test "find timeout is handled", %{state: state} do
+      state = %{state | find_waiters: %{"q1" => {:pending, make_ref(), nil}}}
+      assert {:noreply, new_state} = Actor.handle_info({:find_timeout, "q1"}, state)
+      assert new_state.find_waiters == %{}
+    end
+  end
 end
