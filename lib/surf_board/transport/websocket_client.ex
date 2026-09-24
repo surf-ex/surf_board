@@ -179,9 +179,16 @@ defmodule SurfBoard.Transport.WebSocketClient do
         do: IO.puts(">>> SEND #{method} qlen=#{qlen} pending=#{map_size(state.pending)}")
     end
 
-    {wire_id, wire} = WireSocket.send(state.wire, method, params, opts)
-    pending = Map.put(state.pending, wire_id, owner_pid)
-    {:reply, wire_id, %{state | wire: wire, pending: pending}}
+    case WireSocket.send(state.wire, method, params, opts) do
+      {:ok, wire_id, wire} ->
+        pending = Map.put(state.pending, wire_id, owner_pid)
+        {:reply, wire_id, %{state | wire: wire, pending: pending}}
+
+      {:error, wire_id, reason, wire} ->
+        # No reply will come for an unsent frame — fail it now.
+        send(owner_pid, {:v2_response, wire_id, {:error, reason}})
+        {:reply, wire_id, %{state | wire: wire}}
+    end
   end
 
   def handle_call({:subscribe, event_method, subscriber, session_id}, {caller, _}, state) do

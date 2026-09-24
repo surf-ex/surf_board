@@ -169,9 +169,17 @@ defmodule SurfBoard.Transport.WebSocket do
         state
       ) do
     t0 = SurfBoard.Transport.Timing.mark_now()
-    {id, wire} = WireSocket.send(state.wire, method, params, opts)
-    pending = Map.put(state.pending, id, {owner_pid, t0})
-    {:reply, id, %{state | wire: wire, pending: pending}}
+
+    case WireSocket.send(state.wire, method, params, opts) do
+      {:ok, id, wire} ->
+        pending = Map.put(state.pending, id, {owner_pid, t0})
+        {:reply, id, %{state | wire: wire, pending: pending}}
+
+      {:error, id, reason, wire} ->
+        # No reply will come for an unsent frame — fail it now.
+        send(owner_pid, {:v2_response, id, {:error, reason}})
+        {:reply, id, %{state | wire: wire}}
+    end
   end
 
   def handle_call({:subscribe, event_method, routing_key, subscriber}, _from, state) do

@@ -34,9 +34,10 @@ defmodule SurfBoard.Transport.WireSocket do
     :conn,
     :ref,
     :websocket,
-    :status,
     next_id: 1,
-    queued: []
+    # Set when the peer sends a close frame; handle_message/4 then
+    # reports the connection as gone.
+    closed?: false
   ]
 
   @type t :: %__MODULE__{}
@@ -46,13 +47,12 @@ defmodule SurfBoard.Transport.WireSocket do
           on_event: (String.t(), map(), term() -> term())
         }
 
-  @doc """
-  Connects and upgrades a Mint WebSocket to `ws_url`. Returns the
-  initial `%__MODULE__{}` state on success.
+  @upgrade_timeout 10_000
 
-  The handshake completion (`{:headers, ...}` with status 101) arrives
-  later via `handle_message/4` — `websocket` is `nil` until then, and
-  any `send/6` issued before that point is queued (see `flush_queued/1`).
+  @doc """
+  Connects to `ws_url` and completes the WebSocket upgrade before
+  returning, so a rejected upgrade fails here rather than as later
+  timeouts. The connection is switched to active mode on success.
   """
   @spec connect(String.t()) :: {:ok, t()} | {:error, term()}
   def connect(ws_url) when is_binary(ws_url) do
@@ -71,10 +71,15 @@ defmodule SurfBoard.Transport.WireSocket do
     # the handshake match.
     upgrade_headers = [{"host", "localhost"}]
 
-    with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port),
-         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers) do
-      {:ok, %__MODULE__{conn: conn, ref: ref}}
+    with {:ok, conn} <- Mint.HTTP.connect(http_scheme, uri.host, port, mode: :passive),
+         {:ok, conn, ref} <- Mint.WebSocket.upgrade(ws_scheme, conn, path, upgrade_headers),
+         {:ok, conn, websocket} <- await_upgrade(conn, ref, %{}),
+         {:ok, conn} <- Mint.HTTP.set_mode(conn, :active) do
+      {:ok, %__MODULE__{conn: conn, ref: ref, websocket: websocket}}
     else
+      {:error, {:upgrade_rejected, _, _} = reason} ->
+        {:error, reason}
+
       {:error, reason} ->
         {:error, {:connection_failed, reason}}
 
@@ -84,20 +89,54 @@ defmodule SurfBoard.Transport.WireSocket do
     end
   end
 
+  defp await_upgrade(conn, ref, acc) do
+    case Mint.WebSocket.recv(conn, 0, @upgrade_timeout) do
+      {:ok, conn, responses} ->
+        acc = Enum.reduce(responses, acc, &collect_upgrade_response(&1, &2, ref))
+
+        cond do
+          acc[:status] == 101 and Map.has_key?(acc, :headers) ->
+            Mint.WebSocket.new(conn, ref, 101, acc.headers)
+
+          is_integer(acc[:status]) and acc[:status] != 101 and acc[:done] ->
+            Mint.HTTP.close(conn)
+            {:error, {:upgrade_rejected, acc.status, Map.get(acc, :body, "")}}
+
+          true ->
+            await_upgrade(conn, ref, acc)
+        end
+
+      {:error, conn, reason, _responses} ->
+        {:error, conn, reason}
+    end
+  end
+
+  defp collect_upgrade_response({:status, ref, status}, acc, ref),
+    do: Map.put(acc, :status, status)
+
+  defp collect_upgrade_response({:headers, ref, h}, acc, ref), do: Map.put(acc, :headers, h)
+
+  defp collect_upgrade_response({:data, ref, data}, acc, ref),
+    do: Map.update(acc, :body, data, &(&1 <> data))
+
+  defp collect_upgrade_response({:done, ref}, acc, ref), do: Map.put(acc, :done, true)
+  defp collect_upgrade_response(_other, acc, _ref), do: acc
+
   @doc """
-  Assigns a wire id and sends (or queues, if the upgrade hasn't
-  completed yet) a CDP/BiDi command. Returns the assigned id and the
-  updated state — the caller stashes the id in its own pending-calls
-  bookkeeping to correlate the eventual `on_reply` callback.
+  Assigns a wire id and sends a CDP/BiDi command. On success the
+  caller stashes the id to correlate the eventual `on_reply` callback;
+  on error no reply will ever come, so the caller must fail the call.
   """
-  @spec send(t(), String.t(), map(), keyword()) :: {non_neg_integer(), t()}
+  @spec send(t(), String.t(), map(), keyword()) ::
+          {:ok, non_neg_integer(), t()} | {:error, non_neg_integer(), term(), t()}
   def send(%__MODULE__{} = state, method, params, opts \\ []) do
     id = state.next_id
     state = %{state | next_id: id + 1}
+    message = build_message(id, method, params, opts) |> Jason.encode!()
 
-    case do_send(state, id, method, params, opts) do
-      {:ok, state} -> {id, state}
-      {:error, state, _reason} -> {id, state}
+    case send_frame(state, {:text, message}) do
+      {:ok, state} -> {:ok, id, state}
+      {:error, state, reason} -> {:error, id, reason, state}
     end
   end
 
@@ -108,6 +147,8 @@ defmodule SurfBoard.Transport.WireSocket do
   state}` if the underlying transport failed (the caller should stop),
   or `:unknown` if `message` wasn't a Mint message for this connection
   at all (the caller should handle it as its own internal message).
+  A close frame from the peer is reported as `{:error, :closed_by_peer,
+  acc, state}`.
   """
   @spec handle_message(t(), term(), acc, callbacks()) ::
           {:ok, acc, t()} | {:error, term(), acc, t()} | :unknown
@@ -117,7 +158,10 @@ defmodule SurfBoard.Transport.WireSocket do
       {:ok, conn, responses} ->
         state = %{state | conn: conn}
         {state, acc} = Enum.reduce(responses, {state, acc}, &process_response(&1, &2, callbacks))
-        {:ok, acc, state}
+
+        if state.closed?,
+          do: {:error, :closed_by_peer, acc, state},
+          else: {:ok, acc, state}
 
       {:error, conn, reason, _responses} ->
         {:error, reason, acc, %{state | conn: conn}}
@@ -133,11 +177,6 @@ defmodule SurfBoard.Transport.WireSocket do
   the underlying Mint connection.
   """
   @spec close(t()) :: :ok
-  def close(%__MODULE__{websocket: nil, conn: conn}) do
-    if conn, do: Mint.HTTP.close(conn)
-    :ok
-  end
-
   def close(%__MODULE__{conn: conn} = state) do
     case send_frame(state, :close) do
       {:ok, %{conn: conn}} -> Mint.HTTP.close(conn)
@@ -165,51 +204,6 @@ defmodule SurfBoard.Transport.WireSocket do
   def parse_response(other), do: {:ok, other}
 
   # ----- Frame processing -----
-
-  defp process_response({:status, ref, status}, {%{ref: ref} = state, acc}, _callbacks) do
-    if status != 101 do
-      Logger.error("WireSocket upgrade failed with status #{status}")
-    end
-
-    {%{state | status: status}, acc}
-  end
-
-  # If the upgrade was rejected (non-101 status), drop body data and the
-  # trailing `:done`. Without this guard, `Mint.WebSocket.decode/2` would
-  # be called with `websocket: nil` and raise on `:buffer`, masking the
-  # real cause (e.g. Chromium 148's Host-header rejection).
-  defp process_response(
-         {:data, ref, data},
-         {%{ref: ref, websocket: nil, status: status} = state, acc},
-         _callbacks
-       ) do
-    Logger.error(
-      "WireSocket upgrade rejected (status #{status}): #{inspect(String.slice(data, 0, 200))}"
-    )
-
-    {state, acc}
-  end
-
-  defp process_response({:done, ref}, {%{ref: ref, websocket: nil} = state, acc}, _callbacks) do
-    {state, acc}
-  end
-
-  defp process_response(
-         {:headers, ref, headers},
-         {%{ref: ref, status: 101} = state, acc},
-         callbacks
-       ) do
-    case Mint.WebSocket.new(state.conn, ref, 101, headers) do
-      {:ok, conn, websocket} ->
-        flush_queued(%{state | conn: conn, websocket: websocket}, acc, callbacks)
-
-      {:error, conn, reason} ->
-        Logger.error("WireSocket handshake failed: #{inspect(reason)}")
-        {%{state | conn: conn}, acc}
-    end
-  end
-
-  defp process_response({:headers, _ref, _headers}, acc_state, _callbacks), do: acc_state
 
   defp process_response({:data, ref, data}, {%{ref: ref} = state, acc}, callbacks) do
     case Mint.WebSocket.decode(state.websocket, data) do
@@ -246,22 +240,12 @@ defmodule SurfBoard.Transport.WireSocket do
   end
 
   defp process_frame({:close, _code, _reason}, {state, acc}, _callbacks) do
-    {state, acc}
+    {%{state | closed?: true}, acc}
   end
 
   defp process_frame(_frame, acc_state, _callbacks), do: acc_state
 
   # ----- Send -----
-
-  defp do_send(%{websocket: nil} = state, id, method, params, opts) do
-    queued = state.queued ++ [{id, method, params, opts}]
-    {:ok, %{state | queued: queued}}
-  end
-
-  defp do_send(state, id, method, params, opts) do
-    message = build_message(id, method, params, opts) |> Jason.encode!()
-    send_frame(state, {:text, message})
-  end
 
   defp build_message(id, method, params, opts) do
     base = %{id: id, method: method, params: params}
@@ -292,21 +276,5 @@ defmodule SurfBoard.Transport.WireSocket do
       {:error, websocket, reason} ->
         {:error, %{state | websocket: websocket}, reason}
     end
-  end
-
-  defp flush_queued(%{queued: []} = state, acc, _callbacks), do: {state, acc}
-
-  defp flush_queued(state, acc, callbacks) do
-    Enum.reduce(state.queued, {%{state | queued: []}, acc}, fn {id, method, params, opts},
-                                                               {state, acc} ->
-      case do_send(state, id, method, params, opts) do
-        {:ok, state} ->
-          {state, acc}
-
-        {:error, state, reason} ->
-          acc = callbacks.on_reply.(id, {:error, reason}, acc)
-          {state, acc}
-      end
-    end)
   end
 end

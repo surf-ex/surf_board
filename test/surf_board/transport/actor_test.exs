@@ -47,6 +47,42 @@ defmodule SurfBoard.Transport.ActorTest do
     end
   end
 
+  describe "page-ready waiters" do
+    alias SurfBoard.Transport.Common
+
+    test "every waiter is woken by the next page_ready" do
+      {state, [a, b]} = add_waiters(%Actor{last_page_id: "p1"}, 2, "p1")
+
+      state = Common.update_last_page_id(state, "p2")
+
+      assert_receive {^a, :ok}
+      assert_receive {^b, :ok}
+      assert state.page_ready_waiters == []
+    end
+
+    test "a timeout answers only its own waiter" do
+      {state, [a, b]} = add_waiters(%Actor{last_page_id: "p1"}, 2, "p1")
+
+      state = Common.handle_page_ready_timeout(state, {self(), a})
+
+      assert_receive {^a, :timeout}
+      refute_received {^b, _}
+      assert [{{_, ^b}, _, _}] = state.page_ready_waiters
+    end
+
+    defp add_waiters(state, n, pre_page_id) do
+      Enum.map_reduce(1..n, state, fn _, state ->
+        tag = make_ref()
+
+        {:noreply, state} =
+          Common.await_page_ready_after(state, pre_page_id, 60_000, {self(), tag})
+
+        {tag, state}
+      end)
+      |> then(fn {tags, state} -> {state, tags} end)
+    end
+  end
+
   # A fused actor owns its socket, so socket traffic and its own
   # messages share one mailbox — the socket clause must not eat these.
   describe "fused-mode non-socket messages" do

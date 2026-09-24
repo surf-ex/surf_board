@@ -102,9 +102,9 @@ defmodule SurfBoard.Transport.Actor do
     :session,
     :owner_ref,
     :teardown_fun,
-    :page_ready_waiter,
     :last_page_id,
     pending_calls: %{},
+    page_ready_waiters: [],
     loads: %{},
     load_waiters: [],
     responses: %{},
@@ -503,8 +503,10 @@ defmodule SurfBoard.Transport.Actor do
   # ----- Send helpers -----
 
   defp send_inline(%{config: %{socket: {:fused, _}}} = state, method, params, opts) do
-    {wire_id, wire_socket} = WireSocket.send(state.wire_socket, method, params, opts)
-    {:ok, wire_id, %{state | wire_socket: wire_socket}}
+    case WireSocket.send(state.wire_socket, method, params, opts) do
+      {:ok, wire_id, wire_socket} -> {:ok, wire_id, %{state | wire_socket: wire_socket}}
+      {:error, _id, reason, wire_socket} -> {:error, %{state | wire_socket: wire_socket}, reason}
+    end
   end
 
   defp send_inline(
@@ -522,8 +524,10 @@ defmodule SurfBoard.Transport.Actor do
   end
 
   defp send_inline_cast(%{config: %{socket: {:fused, _}}} = state, method, params, opts) do
-    {_wire_id, wire_socket} = WireSocket.send(state.wire_socket, method, params, opts)
-    {:ok, %{state | wire_socket: wire_socket}}
+    case WireSocket.send(state.wire_socket, method, params, opts) do
+      {:ok, _wire_id, wire_socket} -> {:ok, %{state | wire_socket: wire_socket}}
+      {:error, _id, reason, wire_socket} -> {:error, %{state | wire_socket: wire_socket}, reason}
+    end
   end
 
   defp send_inline_cast(
